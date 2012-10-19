@@ -2025,12 +2025,29 @@ NICEAPI_EXPORT gboolean
 nice_agent_add_local_address (NiceAgent *agent, NiceAddress *addr)
 {
   NiceAddress *dup;
+  gboolean found = FALSE;
+  GSList *item;
 
   agent_lock();
 
   dup = nice_address_dup (addr);
   nice_address_set_port (dup, 0);
-  agent->local_addresses = g_slist_append (agent->local_addresses, dup);
+
+  for (item = agent->local_addresses; item; item = g_slist_next (item)) {
+    NiceAddress *address = item->data;
+
+    if (nice_address_equal (dup, address)) {
+      found = TRUE;
+      break;
+    }
+  }
+
+  if (!found) {
+    agent->local_addresses = g_slist_append (agent->local_addresses, dup);
+  }
+  else {
+    nice_address_free(dup);
+  }
 
   agent_unlock();
   return TRUE;
