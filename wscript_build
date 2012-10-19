@@ -1,0 +1,6 @@
+#!/usr/bin/env python
+
+bld(features="autotools", name="libnice",
+    target=bld.path.abspath(),
+    install_from_autotools_pkg=['lib/libnice.so*'],
+    depends_on='gstreamer')

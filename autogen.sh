@@ -17,6 +17,12 @@ for arg in $*; do
     esac
 done
 
+test -n "$NOCONFIGURE" && {
+  echo "skipping configure stage for package libnice, as requested."
+  echo "autogen.sh done."
+  exit 0
+}
+
 if test $run_configure = true; then
     ./configure "$@"
 fi
