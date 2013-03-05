@@ -56,6 +56,9 @@
 
 G_BEGIN_DECLS
 
+#define NICE_TYPE_CANDIDATE \
+  (nice_candidate_get_type ())
+
 
 #define NICE_CANDIDATE_TYPE_PREF_HOST                 120
 #define NICE_CANDIDATE_TYPE_PREF_PEER_REFLEXIVE       110

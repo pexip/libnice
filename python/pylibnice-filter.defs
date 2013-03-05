@@ -1,0 +1,15 @@
+(define-boxed Candidate
+  (in-module "Nice")
+  (c-name "NiceCandidate")
+  (gtype-id "NICE_TYPE_CANDIDATE")
+  (release-func nice_candidate_free)
+)
+
+;; Because libnice hides the NiceAgent struct inside "agent-priv.h" h2def.py
+;; wont detect this as a class so we have to manually add it here
+(define-object Agent
+  (in-module "Nice")
+  (parent "GObject")
+  (c-name "NiceAgent")
+  (gtype-id "NICE_TYPE_AGENT")
+)
