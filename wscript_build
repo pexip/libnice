@@ -2,5 +2,6 @@
 
 bld(features="autotools", name="libnice",
     target=bld.path.abspath(),
-    install_from_autotools_pkg=['lib/libnice.so*'],
-    depends_on='gstreamer')
+    install_from_autotools_pkg=['lib/libnice.so*',
+                                'lib/python2.7/site-packages/libnice.so'],
+    depends_on='gstreamer gst-python')
