@@ -53,22 +53,6 @@
 #include "agent.h"
 #include "component.h"
 
-GType
-nice_candidate_get_type (void)
-{
-  static GType candidate_type = 0;
-  if (candidate_type == 0)
-  {
-    candidate_type = g_boxed_type_register_static (
-        "NiceCandidate",
-        (GBoxedCopyFunc)nice_candidate_copy,
-        (GBoxedFreeFunc)nice_candidate_free);
-  }
-
-  return candidate_type;
-}
-
-
 /* (ICE 4.1.1 "Gathering Candidates") ""Every candidate is a transport
  * address. It also has a type and a base. Three types are defined and 
  * gathered by this specification - host candidates, server reflexive 
