@@ -11,3 +11,4 @@ INSTALL
 install-sh
 ltmain.sh
 missing
+m4

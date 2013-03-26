@@ -7,20 +7,6 @@
 # Licensed under MPL 1.1/LGPL 2.1. See file COPYING.
 
 include $(top_srcdir)/common.mk
-include $(top_srcdir)/common-modified/gst-glib-gen.mak
-
-libagentincludedir = $(includedir)/agent
-
-public_headers = agent.h \
-	address.h \
-	candidate.h \
-	component.h \
-	stream.h
-
-glib_enum_headers=$(public_headers)
-glib_enum_define=AGENT
-glib_gen_prefix=_agent
-glib_gen_basename=agent
 
 AM_CFLAGS = \
 	-DG_LOG_DOMAIN=\"libnice\" \
@@ -47,16 +33,9 @@ agent-signals-marshal.c: agent-signals-marshal.list
 	glib-genmarshal --body --prefix=agent_marshal $? | \
 	sed -e 's/^}$$/(void)return_value;(void)invocation_hint;}/' >> $@
 
-nodist_libagentinclude_HEADERS = \
-		agent-enumtypes.h
-
-nodist_libagent_la_SOURCES = \
-	agent-enumtypes.c
-
 BUILT_SOURCES = \
 	agent-signals-marshal.h \
-	agent-signals-marshal.c \
-	$(nodist_libagentinclude_HEADERS)
+	agent-signals-marshal.c
 
 CLEANFILES += $(BUILT_SOURCES)
 

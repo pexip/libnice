@@ -27,7 +27,6 @@ AC_CONFIG_FILES([
 	docs/reference/Makefile
 	docs/reference/libnice/Makefile
 	tests/Makefile
-    python/Makefile
 	])
 
 # Set the libtool C/A/R version info
@@ -50,7 +49,6 @@ m4_ifdef([AM_SILENT_RULES],[AM_SILENT_RULES([yes])],
   [AM_DEFAULT_VERBOSITY=1
    AC_SUBST(AM_DEFAULT_VERBOSITY)])
 
-AM_PATH_PYTHON([2.4])
 
 # Checks for programs.
 
@@ -167,25 +165,6 @@ AC_SUBST(gstplugin010dir)
 
 AM_CONDITIONAL(WITH_GSTREAMER, test "$with_gstreamer" = yes)
 AM_CONDITIONAL(WITH_GSTREAMER010, test "$with_gstreamer010" = yes)
-
-AC_ARG_ENABLE([python],
-	AC_HELP_STRING([--disable-python], [Disable Python bindings]),
-	[case "${enableval}" in
-	    yes) WANT_PYTHON=yes ;;
-	    no)  WANT_PYTHON=no ;;
-	    *) AC_MSG_ERROR(bad value ${enableval} for --enable-python) ;;
-        esac],
-	WANT_PYTHON=yes)
-if test "x$WANT_PYTHON" = "xyes"; then
-   AM_CHECK_PYTHON_HEADERS(,[AC_MSG_ERROR(could not find Python headers)])
-   PKG_CHECK_MODULES(LIBNICE, [ pygobject-2.0 >= 2.12.0
-				   gst-python-0.10 >= 0.10.10] )
-   PKG_CHECK_MODULES(PYCODEGEN, [ pygobject-2.0 >= 2.16.0 ],
-     PYCODEGEN=pygobject-codegen-2.0,
-       AC_MSG_ERROR([You need pygobject 2.16+ for the codegen]))
-fi
-AC_SUBST(PYCODEGEN)
-AM_CONDITIONAL(WANT_PYTHON, test "x$WANT_PYTHON" = "xyes")
 
 GUPNP_IGD_REQUIRED=0.1.2
 
