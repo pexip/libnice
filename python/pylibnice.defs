@@ -1,0 +1,387 @@
+(define-boxed Candidate
+  (in-module "Nice")
+  (c-name "NiceCandidate")
+  (gtype-id "NICE_TYPE_CANDIDATE")
+  (release-func nice_candidate_free)
+)
+
+;; Because libnice hides the NiceAgent struct inside "agent-priv.h" h2def.py 
+;; wont detect this as a class so we have to manually add it here
+(define-object Agent
+  (in-module "Nice")
+  (parent "GObject")
+  (c-name "NiceAgent")
+  (gtype-id "NICE_TYPE_AGENT")
+)
+;; -*- scheme -*-
+; object definitions ...
+;; Enumerations and flags ...
+
+(define-enum ComponentState
+  (in-module "Nice")
+  (c-name "NiceComponentState")
+  (gtype-id "NICE_TYPE_COMPONENT_STATE")
+  (values
+    '("disconnected" "NICE_COMPONENT_STATE_DISCONNECTED")
+    '("gathering" "NICE_COMPONENT_STATE_GATHERING")
+    '("connecting" "NICE_COMPONENT_STATE_CONNECTING")
+    '("connected" "NICE_COMPONENT_STATE_CONNECTED")
+    '("ready" "NICE_COMPONENT_STATE_READY")
+    '("failed" "NICE_COMPONENT_STATE_FAILED")
+    '("last" "NICE_COMPONENT_STATE_LAST")
+  )
+)
+
+(define-enum ComponentType
+  (in-module "Nice")
+  (c-name "NiceComponentType")
+  (gtype-id "NICE_TYPE_COMPONENT_TYPE")
+  (values
+    '("rtp" "NICE_COMPONENT_TYPE_RTP")
+    '("rtcp" "NICE_COMPONENT_TYPE_RTCP")
+  )
+)
+
+(define-enum Compatibility
+  (in-module "Nice")
+  (c-name "NiceCompatibility")
+  (gtype-id "NICE_TYPE_COMPATIBILITY")
+  (values
+    '("rfc5245" "NICE_COMPATIBILITY_RFC5245")
+    '("google" "NICE_COMPATIBILITY_GOOGLE")
+    '("msn" "NICE_COMPATIBILITY_MSN")
+    '("wlm2009" "NICE_COMPATIBILITY_WLM2009")
+    '("oc2007" "NICE_COMPATIBILITY_OC2007")
+    '("oc2007r2" "NICE_COMPATIBILITY_OC2007R2")
+    '("draft19" "NICE_COMPATIBILITY_DRAFT19")
+    '("last" "NICE_COMPATIBILITY_LAST")
+  )
+)
+
+(define-enum ProxyType
+  (in-module "Nice")
+  (c-name "NiceProxyType")
+  (gtype-id "NICE_TYPE_PROXY_TYPE")
+  (values
+    '("none" "NICE_PROXY_TYPE_NONE")
+    '("socks5" "NICE_PROXY_TYPE_SOCKS5")
+    '("http" "NICE_PROXY_TYPE_HTTP")
+    '("last" "NICE_PROXY_TYPE_LAST")
+  )
+)
+
+
+;; From agent.h
+
+(define-function nice_agent_get_type
+  (c-name "nice_agent_get_type")
+  (return-type "GType")
+)
+
+(define-function nice_agent_new
+  (c-name "nice_agent_new")
+  (is-constructor-of "NiceAgent")
+  (return-type "NiceAgent*")
+  (parameters
+    '("GMainContext*" "ctx")
+    '("NiceCompatibility" "compat")
+  )
+)
+
+(define-function nice_agent_new_reliable
+  (c-name "nice_agent_new_reliable")
+  (return-type "NiceAgent*")
+  (parameters
+    '("GMainContext*" "ctx")
+    '("NiceCompatibility" "compat")
+  )
+)
+
+(define-method add_local_address
+  (of-object "NiceAgent")
+  (c-name "nice_agent_add_local_address")
+  (return-type "gboolean")
+  (parameters
+    '("NiceAddress*" "addr")
+  )
+)
+
+(define-method add_stream
+  (of-object "NiceAgent")
+  (c-name "nice_agent_add_stream")
+  (return-type "guint")
+  (parameters
+    '("guint" "n_components")
+  )
+)
+
+(define-method remove_stream
+  (of-object "NiceAgent")
+  (c-name "nice_agent_remove_stream")
+  (return-type "none")
+  (parameters
+    '("guint" "stream_id")
+  )
+)
+
+(define-method set_port_range
+  (of-object "NiceAgent")
+  (c-name "nice_agent_set_port_range")
+  (return-type "none")
+  (parameters
+    '("guint" "stream_id")
+    '("guint" "component_id")
+    '("guint" "min_port")
+    '("guint" "max_port")
+  )
+)
+
+(define-method set_relay_info
+  (of-object "NiceAgent")
+  (c-name "nice_agent_set_relay_info")
+  (return-type "gboolean")
+  (parameters
+    '("guint" "stream_id")
+    '("guint" "component_id")
+    '("const-gchar*" "server_ip")
+    '("guint" "server_port")
+    '("const-gchar*" "username")
+    '("const-gchar*" "password")
+    '("NiceRelayType" "type")
+  )
+)
+
+(define-method gather_candidates
+  (of-object "NiceAgent")
+  (c-name "nice_agent_gather_candidates")
+  (return-type "gboolean")
+  (parameters
+    '("guint" "stream_id")
+  )
+)
+
+(define-method set_remote_credentials
+  (of-object "NiceAgent")
+  (c-name "nice_agent_set_remote_credentials")
+  (return-type "gboolean")
+  (parameters
+    '("guint" "stream_id")
+    '("const-gchar*" "ufrag")
+    '("const-gchar*" "pwd")
+  )
+)
+
+(define-method get_local_credentials
+  (of-object "NiceAgent")
+  (c-name "nice_agent_get_local_credentials")
+  (return-type "gboolean")
+  (parameters
+    '("guint" "stream_id")
+    '("gchar**" "ufrag")
+    '("gchar**" "pwd")
+  )
+)
+
+(define-method set_remote_candidates
+  (of-object "NiceAgent")
+  (c-name "nice_agent_set_remote_candidates")
+  (return-type "int")
+  (parameters
+    '("guint" "stream_id")
+    '("guint" "component_id")
+    '("const-GSList*" "candidates")
+  )
+)
+
+(define-method send
+  (of-object "NiceAgent")
+  (c-name "nice_agent_send")
+  (return-type "gint")
+  (parameters
+    '("guint" "stream_id")
+    '("guint" "component_id")
+    '("guint" "len")
+    '("const-gchar*" "buf")
+  )
+)
+
+(define-method get_local_candidates
+  (of-object "NiceAgent")
+  (c-name "nice_agent_get_local_candidates")
+  (return-type "GSList*")
+  (parameters
+    '("guint" "stream_id")
+    '("guint" "component_id")
+  )
+)
+
+(define-method get_remote_candidates
+  (of-object "NiceAgent")
+  (c-name "nice_agent_get_remote_candidates")
+  (return-type "GSList*")
+  (parameters
+    '("guint" "stream_id")
+    '("guint" "component_id")
+  )
+)
+
+(define-method restart
+  (of-object "NiceAgent")
+  (c-name "nice_agent_restart")
+  (return-type "gboolean")
+)
+
+(define-method attach_recv
+  (of-object "NiceAgent")
+  (c-name "nice_agent_attach_recv")
+  (return-type "gboolean")
+  (parameters
+    '("guint" "stream_id")
+    '("guint" "component_id")
+    '("GMainContext*" "ctx")
+    '("NiceAgentRecvFunc" "func")
+    '("gpointer" "data")
+  )
+)
+
+(define-method set_selected_pair
+  (of-object "NiceAgent")
+  (c-name "nice_agent_set_selected_pair")
+  (return-type "gboolean")
+  (parameters
+    '("guint" "stream_id")
+    '("guint" "component_id")
+    '("const-gchar*" "lfoundation")
+    '("const-gchar*" "rfoundation")
+  )
+)
+
+(define-method set_selected_remote_candidate
+  (of-object "NiceAgent")
+  (c-name "nice_agent_set_selected_remote_candidate")
+  (return-type "gboolean")
+  (parameters
+    '("guint" "stream_id")
+    '("guint" "component_id")
+    '("NiceCandidate*" "candidate")
+  )
+)
+
+(define-method set_stream_tos
+  (of-object "NiceAgent")
+  (c-name "nice_agent_set_stream_tos")
+  (return-type "none")
+  (parameters
+    '("guint" "stream_id")
+    '("gint" "tos")
+  )
+)
+
+(define-method set_software
+  (of-object "NiceAgent")
+  (c-name "nice_agent_set_software")
+  (return-type "none")
+  (parameters
+    '("const-gchar*" "software")
+  )
+)
+
+
+;; -*- scheme -*-
+; object definitions ...
+;; Enumerations and flags ...
+
+(define-enum CandidateType
+  (in-module "Nice")
+  (c-name "NiceCandidateType")
+  (gtype-id "NICE_TYPE_CANDIDATE_TYPE")
+  (values
+    '("host" "NICE_CANDIDATE_TYPE_HOST")
+    '("server-reflexive" "NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE")
+    '("peer-reflexive" "NICE_CANDIDATE_TYPE_PEER_REFLEXIVE")
+    '("relayed" "NICE_CANDIDATE_TYPE_RELAYED")
+  )
+)
+
+(define-enum CandidateTransport
+  (in-module "Nice")
+  (c-name "NiceCandidateTransport")
+  (gtype-id "NICE_TYPE_CANDIDATE_TRANSPORT")
+  (values
+    '("udp" "NICE_CANDIDATE_TRANSPORT_UDP")
+  )
+)
+
+(define-enum RelayType
+  (in-module "Nice")
+  (c-name "NiceRelayType")
+  (gtype-id "NICE_TYPE_RELAY_TYPE")
+  (values
+    '("udp" "NICE_RELAY_TYPE_TURN_UDP")
+    '("tcp" "NICE_RELAY_TYPE_TURN_TCP")
+    '("tls" "NICE_RELAY_TYPE_TURN_TLS")
+  )
+)
+
+
+;; From candidate.h
+
+(define-function nice_candidate_new
+  (c-name "nice_candidate_new")
+  (is-constructor-of "NiceCandidate")
+  (return-type "NiceCandidate*")
+  (parameters
+    '("NiceCandidateType" "type")
+  )
+)
+
+(define-method free
+  (of-object "NiceCandidate")
+  (c-name "nice_candidate_free")
+  (return-type "none")
+)
+
+(define-method copy
+  (of-object "NiceCandidate")
+  (c-name "nice_candidate_copy")
+  (return-type "NiceCandidate*")
+)
+
+(define-method jingle_priority
+  (of-object "NiceCandidate")
+  (c-name "nice_candidate_jingle_priority")
+  (return-type "guint32")
+)
+
+(define-method msn_priority
+  (of-object "NiceCandidate")
+  (c-name "nice_candidate_msn_priority")
+  (return-type "guint32")
+)
+
+(define-function nice_candidate_ice_priority_full
+  (c-name "nice_candidate_ice_priority_full")
+  (return-type "guint32")
+  (parameters
+    '("guint" "type_pref")
+    '("guint" "local_pref")
+    '("guint" "component_id")
+  )
+)
+
+(define-method ice_priority
+  (of-object "NiceCandidate")
+  (c-name "nice_candidate_ice_priority")
+  (return-type "guint32")
+)
+
+(define-function nice_candidate_pair_priority
+  (c-name "nice_candidate_pair_priority")
+  (return-type "guint64")
+  (parameters
+    '("guint32" "o_prio")
+    '("guint32" "a_prio")
+  )
+)
+
+

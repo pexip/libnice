@@ -8,6 +8,12 @@
 
 include common.mk
 
+if WANT_PYTHON
+PYTHON_SUBDIR = python
+endif
+
+ACLOCAL_AMFLAGS = -I m4
+
 SUBDIRS = \
 	stun \
 	socket \
@@ -16,7 +22,8 @@ SUBDIRS = \
 	nice \
 	gst \
 	docs \
-	tests
+	tests \
+	$(PYTHON_SUBDIR)
 
 DISTCHECK_CONFIGURE_FLAGS = --disable-assert -enable-gtk-doc
 
