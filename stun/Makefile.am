@@ -9,8 +9,10 @@
 SUBDIRS = . tools tests
 
 include $(top_srcdir)/common.mk
+include $(top_srcdir)/common-modified/gst-glib-gen.mak
 
-AM_CFLAGS = -std=gnu99 -DG_LOG_DOMAIN=\"libnice-stun\" $(ERROR_CFLAGS)
+AM_CFLAGS = -std=gnu99 -DG_LOG_DOMAIN=\"libnice-stun\" $(ERROR_CFLAGS) $(GLIB_CFLAGS)
+
 AM_CPPFLAGS = -I$(top_srcdir)
 
 if WINDOWS
@@ -35,7 +37,7 @@ libstun_la_SOURCES = constants.h \
 	usages/turn.c usages/turn.h \
 	usages/timer.c usages/timer.h
 
-libstun_la_LIBADD = $(LIBRT)
+libstun_la_LIBADD = $(LIBRT) $(GLIB_LIBS)
 
 EXTRA_DIST = win32_common.h
 

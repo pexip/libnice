@@ -60,7 +60,7 @@ void stun_debug (const char *fmt, ...)
   va_list ap;
   if (debug_enabled) {
     va_start (ap, fmt);
-    vfprintf (stderr, fmt, ap);
+    g_logv (G_LOG_DOMAIN, G_LOG_LEVEL_DEBUG, fmt, ap);
     va_end (ap);
   }
 }
@@ -69,8 +69,11 @@ void stun_debug_bytes (const void *data, size_t len)
 {
   size_t i;
 
-  stun_debug ("0x");
+  gchar buffer[len*2+1];
+  
   for (i = 0; i < len; i++)
-    stun_debug ("%02x", ((const unsigned char *)data)[i]);
+    sprintf(&buffer[i*2], "%02x", ((const unsigned char *)data)[i]);
+  buffer[len*2] = '\0';
+  stun_debug("0x%s", buffer);
 }
 

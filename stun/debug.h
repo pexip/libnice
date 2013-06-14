@@ -37,6 +37,8 @@
 #ifndef STUN_DEBUG_H
 #define STUN_DEBUG_H
 
+#include <glib.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif

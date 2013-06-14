@@ -8,7 +8,8 @@
 #
 
 include $(top_srcdir)/common.mk
-AM_CFLAGS = -std=gnu99 $(ERROR_CFLAGS)
+include $(top_srcdir)/common-modified/gst-glib-gen.mak
+AM_CFLAGS = -std=gnu99 $(ERROR_CFLAGS) $(GLIB_CFLAGS)
 AM_CPPFLAGS = -I$(top_srcdir) 
 
 bin_PROGRAMS = stunbdc stund
@@ -16,11 +17,11 @@ bin_PROGRAMS = stunbdc stund
 check_PROGRAMS = stund
 
 stund_SOURCES = stund.c stund.h
-stund_LDADD = $(top_builddir)/stun/libstun.la
+stund_LDADD = $(top_builddir)/stun/libstun.la $(GLIB_LIBS)
 
 stunbdc_SOURCES = stunbdc.c 
 
-stunbdc_LDADD = $(top_builddir)/stun/libstun.la
+stunbdc_LDADD = $(top_builddir)/stun/libstun.la $(GLIB_LIBS)
 
 
 if WINDOWS
