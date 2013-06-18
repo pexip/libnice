@@ -111,6 +111,7 @@ struct _NiceAgent
   guint64 tie_breaker;            /* tie breaker (ICE sect 5.2
 				     "Determining Role" ID-19) */
   NiceCompatibility compatibility; /* property: Compatibility mode */
+  NiceCompatibility turn_compatibility; /* property: TURN server compatibility mode */
   StunAgent stun_agent;            /* STUN agent */
   gboolean media_after_tick;       /* Received media after keepalive tick */
 #ifdef HAVE_GUPNP

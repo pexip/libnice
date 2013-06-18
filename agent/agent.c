@@ -86,6 +86,7 @@ G_DEFINE_TYPE (NiceAgent, nice_agent, G_TYPE_OBJECT);
 enum
 {
   PROP_COMPATIBILITY = 1,
+  PROP_TURN_COMPATIBILITY,
   PROP_MAIN_CONTEXT,
   PROP_STUN_SERVER,
   PROP_STUN_SERVER_PORT,
@@ -175,15 +176,15 @@ agent_to_ice_compatibility (NiceAgent *agent)
 StunUsageTurnCompatibility
 agent_to_turn_compatibility (NiceAgent *agent)
 {
-  return agent->compatibility == NICE_COMPATIBILITY_GOOGLE ?
+  return agent->turn_compatibility == NICE_COMPATIBILITY_GOOGLE ?
       STUN_USAGE_TURN_COMPATIBILITY_GOOGLE :
-      agent->compatibility == NICE_COMPATIBILITY_MSN ?
+      agent->turn_compatibility == NICE_COMPATIBILITY_MSN ?
       STUN_USAGE_TURN_COMPATIBILITY_MSN :
-      agent->compatibility == NICE_COMPATIBILITY_WLM2009 ?
+      agent->turn_compatibility == NICE_COMPATIBILITY_WLM2009 ?
       STUN_USAGE_TURN_COMPATIBILITY_MSN :
-      agent->compatibility == NICE_COMPATIBILITY_OC2007 ?
+      agent->turn_compatibility == NICE_COMPATIBILITY_OC2007 ?
       STUN_USAGE_TURN_COMPATIBILITY_OC2007 :
-      agent->compatibility == NICE_COMPATIBILITY_OC2007R2 ?
+      agent->turn_compatibility == NICE_COMPATIBILITY_OC2007R2 ?
       STUN_USAGE_TURN_COMPATIBILITY_OC2007 :
       STUN_USAGE_TURN_COMPATIBILITY_RFC5766;
 }
@@ -191,15 +192,15 @@ agent_to_turn_compatibility (NiceAgent *agent)
 NiceTurnSocketCompatibility
 agent_to_turn_socket_compatibility (NiceAgent *agent)
 {
-  return agent->compatibility == NICE_COMPATIBILITY_GOOGLE ?
+  return agent->turn_compatibility == NICE_COMPATIBILITY_GOOGLE ?
       NICE_TURN_SOCKET_COMPATIBILITY_GOOGLE :
-      agent->compatibility == NICE_COMPATIBILITY_MSN ?
+      agent->turn_compatibility == NICE_COMPATIBILITY_MSN ?
       NICE_TURN_SOCKET_COMPATIBILITY_MSN :
-      agent->compatibility == NICE_COMPATIBILITY_WLM2009 ?
+      agent->turn_compatibility == NICE_COMPATIBILITY_WLM2009 ?
       NICE_TURN_SOCKET_COMPATIBILITY_MSN :
-      agent->compatibility == NICE_COMPATIBILITY_OC2007 ?
+      agent->turn_compatibility == NICE_COMPATIBILITY_OC2007 ?
       NICE_TURN_SOCKET_COMPATIBILITY_OC2007 :
-      agent->compatibility == NICE_COMPATIBILITY_OC2007R2 ?
+      agent->turn_compatibility == NICE_COMPATIBILITY_OC2007R2 ?
       NICE_TURN_SOCKET_COMPATIBILITY_OC2007 :
       NICE_TURN_SOCKET_COMPATIBILITY_RFC5766;
 }
@@ -304,6 +305,15 @@ nice_agent_class_init (NiceAgentClass *klass)
          "compatibility",
          "ICE specification compatibility",
          "The compatibility mode for the agent",
+         NICE_COMPATIBILITY_RFC5245, NICE_COMPATIBILITY_LAST,
+         NICE_COMPATIBILITY_RFC5245,
+         G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
+
+  g_object_class_install_property (gobject_class, PROP_TURN_COMPATIBILITY,
+      g_param_spec_uint (
+         "turn-compatibility",
+         "TURN specification compatibility",
+         "The compatibility mode for the agent when commmunicating with the TURN server",
          NICE_COMPATIBILITY_RFC5245, NICE_COMPATIBILITY_LAST,
          NICE_COMPATIBILITY_RFC5245,
          G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
@@ -713,10 +723,11 @@ nice_agent_init (NiceAgent *agent)
 
 
 NICEAPI_EXPORT NiceAgent *
-nice_agent_new (GMainContext *ctx, NiceCompatibility compat)
+nice_agent_new (GMainContext *ctx, NiceCompatibility compat, NiceCompatibility turn_compat)
 {
   NiceAgent *agent = g_object_new (NICE_TYPE_AGENT,
       "compatibility", compat,
+      "turn-compatibility", turn_compat,
       "main-context", ctx,
       "reliable", FALSE,
       NULL);
@@ -726,10 +737,11 @@ nice_agent_new (GMainContext *ctx, NiceCompatibility compat)
 
 
 NICEAPI_EXPORT NiceAgent *
-nice_agent_new_reliable (GMainContext *ctx, NiceCompatibility compat)
+nice_agent_new_reliable (GMainContext *ctx, NiceCompatibility compat, NiceCompatibility turn_compat)
 {
   NiceAgent *agent = g_object_new (NICE_TYPE_AGENT,
       "compatibility", compat,
+      "turn-compatibility", turn_compat,
       "main-context", ctx,
       "reliable", TRUE,
       NULL);
@@ -757,6 +769,10 @@ nice_agent_get_property (
 
     case PROP_COMPATIBILITY:
       g_value_set_uint (value, agent->compatibility);
+      break;
+
+    case PROP_TURN_COMPATIBILITY:
+      g_value_set_uint (value, agent->turn_compatibility);
       break;
 
     case PROP_STUN_SERVER:
@@ -887,7 +903,10 @@ nice_agent_set_property (
             STUN_AGENT_USAGE_USE_FINGERPRINT);
       }
       stun_agent_set_software (&agent->stun_agent, agent->software_attribute);
+      break;
 
+    case PROP_TURN_COMPATIBILITY:
+      agent->turn_compatibility = g_value_get_uint (value);
       break;
 
     case PROP_STUN_SERVER:
@@ -1453,18 +1472,18 @@ priv_add_new_candidate_discovery_turn (NiceAgent *agent,
   cdisco->component = stream_find_component_by_id (stream, component_id);
   cdisco->agent = agent;
 
-  if (agent->compatibility == NICE_COMPATIBILITY_GOOGLE) {
+  if (agent->turn_compatibility == NICE_COMPATIBILITY_GOOGLE) {
     stun_agent_init (&cdisco->stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
         STUN_COMPATIBILITY_RFC3489,
         STUN_AGENT_USAGE_SHORT_TERM_CREDENTIALS |
         STUN_AGENT_USAGE_IGNORE_CREDENTIALS);
-  } else if (agent->compatibility == NICE_COMPATIBILITY_MSN ||
-      agent->compatibility == NICE_COMPATIBILITY_WLM2009) {
+  } else if (agent->turn_compatibility == NICE_COMPATIBILITY_MSN ||
+      agent->turn_compatibility == NICE_COMPATIBILITY_WLM2009) {
     stun_agent_init (&cdisco->stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
         STUN_COMPATIBILITY_RFC3489,
         STUN_AGENT_USAGE_SHORT_TERM_CREDENTIALS);
-  } else if (agent->compatibility == NICE_COMPATIBILITY_OC2007 ||
-      agent->compatibility == NICE_COMPATIBILITY_OC2007R2) {
+  } else if (agent->turn_compatibility == NICE_COMPATIBILITY_OC2007 ||
+      agent->turn_compatibility == NICE_COMPATIBILITY_OC2007R2) {
     stun_agent_init (&cdisco->stun_agent, STUN_MSOC_KNOWN_ATTRIBUTES,
         STUN_COMPATIBILITY_OC2007,
         STUN_AGENT_USAGE_LONG_TERM_CREDENTIALS |
@@ -2279,6 +2298,14 @@ nice_agent_set_remote_candidates (NiceAgent *agent, guint stream_id, guint compo
  return added;
 }
 
+static gboolean _nice_should_have_padding(NiceCompatibility compatibility)
+{
+  if (compatibility == NICE_COMPATIBILITY_OC2007 || compatibility == NICE_COMPATIBILITY_OC2007R2) {
+    return FALSE;
+  } else {
+    return TRUE;
+  }
+}
 
 static gint
 _nice_agent_recv (
@@ -2292,6 +2319,7 @@ _nice_agent_recv (
   NiceAddress from;
   gint len;
   GList *item;
+  gboolean has_padding = _nice_should_have_padding(agent->compatibility);
 
   len = nice_socket_recv (socket, &from,  buf_len, buf);
 
@@ -2319,6 +2347,8 @@ _nice_agent_recv (
     TurnServer *turn = item->data;
     if (nice_address_equal (&from, &turn->server)) {
       GSList * i = NULL;
+      has_padding = _nice_should_have_padding(agent->turn_compatibility);
+
 #ifndef NDEBUG
       nice_debug ("Agent %p : Packet received from TURN server candidate.",
           agent);
@@ -2338,9 +2368,7 @@ _nice_agent_recv (
 
   agent->media_after_tick = TRUE;
 
-  if (stun_message_validate_buffer_length ((uint8_t *) buf, (size_t) len,
-      (agent->compatibility != NICE_COMPATIBILITY_OC2007 &&
-       agent->compatibility != NICE_COMPATIBILITY_OC2007R2)) != len)
+  if (stun_message_validate_buffer_length ((uint8_t *) buf, (size_t) len, has_padding) != len)
     /* If the retval is no 0, its not a valid stun packet, probably data */
     return len;
 

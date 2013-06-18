@@ -31,15 +31,20 @@ _wrap_nice_agent_new(PyGObject *self, PyObject *args, PyObject *kwargs)
 {
     PyObject* maincontext;
 	PyObject* compatibility_obj;
+	PyObject* turncompatibility_obj;
 	gint compatibility;
+	gint turn_compatibility;
 
-	if (! PyArg_ParseTuple( args, "O!O", &PyGMainContext_Type, &maincontext, &compatibility_obj))
+	if (! PyArg_ParseTuple( args, "O!OO", &PyGMainContext_Type, &maincontext, &compatibility_obj, &turncompatibility_obj))
         return -1;
 
 	if (pyg_enum_get_value(NICE_TYPE_COMPATIBILITY, compatibility_obj, &compatibility))
 	    return -1;
 
-    self->obj = (GObject *)nice_agent_new(pyg_boxed_get(maincontext, GMainContext), compatibility);
+	if (pyg_enum_get_value(NICE_TYPE_COMPATIBILITY, turncompatibility_obj, &turn_compatibility))
+	    return -1;
+
+	self->obj = (GObject *)nice_agent_new(pyg_boxed_get(maincontext, GMainContext), compatibility, turn_compatibility);
     return 0;
 }
 %%
