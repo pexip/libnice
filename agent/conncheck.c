@@ -2738,6 +2738,25 @@ gboolean conn_check_handle_inbound_stun (NiceAgent *agent, Stream *stream,
       break;
     }
   }
+
+  if (stunagent == NULL) {
+    /* Try and match against the refresh list */
+    for (i = agent->refresh_list; i; i = i->next)
+    {
+      CandidateRefresh *r = i->data;
+      if (r->stream == stream && r->component == component &&
+          r->nicesock == socket)
+      {
+        gchar tmpbuf[INET6_ADDRSTRLEN];
+        nice_address_to_string (from, tmpbuf);
+        nice_debug ("Agent %p: inbound STUN packet for %u/%u (stream/component) from [%s]:%u (%u octets) using refersh stun agent:",
+                    agent, stream->id, component->id, tmpbuf, nice_address_get_port (from), len);
+        stunagent = &r->stun_agent;
+        break;
+      }
+    }
+  }
+
   if (stunagent == NULL) {
     gchar tmpbuf[INET6_ADDRSTRLEN];
     nice_address_to_string (from, tmpbuf);
