@@ -80,6 +80,16 @@ static int priv_timer_expired (GTimeVal *timer, GTimeVal *now)
 }
 
 /*
+ * Convert TURN lifetime into a refresh interval IN MILLISECONDS. Refresh 30 seconds before 
+ * expiry, turn message parsing has already checked against a minimum supported lifetime of 
+ * 60 seconds
+ */
+static uint32_t priv_turn_lifetime_to_refresh_interval(uint32_t lifetime)
+{
+  return (lifetime - 30) * 1000;
+}
+
+/*
  * Finds the next connectivity check in WAITING state.
  */
 static CandidateCheckPair *priv_conn_check_find_next_waiting (GSList *conn_check_list)
@@ -2311,12 +2321,12 @@ priv_add_new_turn_refresh (CandidateDiscovery *cdisco, NiceCandidate *relay_cand
   }
 
   nice_debug ("Agent %p : Adding new refresh candidate %p with timeout %d",
-      agent, cand, (lifetime - 60) * 1000);
+              agent, cand, priv_turn_lifetime_to_refresh_interval(lifetime));
 
   /* step: also start the refresh timer */
   /* refresh should be sent 1 minute before it expires */
   cand->timer_source =
-      agent_timeout_add_with_context (agent, (lifetime - 60) * 1000,
+    agent_timeout_add_with_context (agent, priv_turn_lifetime_to_refresh_interval(lifetime),
           priv_turn_allocate_refresh_tick, cand);
 
   nice_debug ("timer source is : %d", cand->timer_source);
@@ -2474,7 +2484,6 @@ static gboolean priv_map_reply_to_relay_request (NiceAgent *agent, StunMessage *
   return trans_found;
 }
 
-
 /*
  * Tries to match STUN reply in 'buf' to an existing STUN discovery
  * transaction. If found, a reply is sent.
@@ -2505,7 +2514,7 @@ static gboolean priv_map_reply_to_relay_refresh (NiceAgent *agent, StunMessage *
         if (res == STUN_USAGE_TURN_RETURN_RELAY_SUCCESS) {
           /* refresh should be sent 1 minute before it expires */
           cand->timer_source =
-              agent_timeout_add_with_context (cand->agent, (lifetime - 60) * 1000,
+            agent_timeout_add_with_context (cand->agent, priv_turn_lifetime_to_refresh_interval(lifetime),
               priv_turn_allocate_refresh_tick, cand);
 
           g_source_destroy (cand->tick_source);

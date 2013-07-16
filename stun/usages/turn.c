@@ -66,6 +66,9 @@
 
 #define TURN_REQUESTED_TRANSPORT_UDP 0x11000000
 
+#define TURN_MINIMUM_LIFETIME 60
+#define TURN_DEFAULT_LIFETIME 600
+
 /** Non-blocking mode STUN TURN usage */
 
 size_t stun_usage_turn_create (StunAgent *agent, StunMessage *msg,
@@ -270,7 +273,7 @@ StunUsageTurnReturn stun_usage_turn_process (StunMessage *msg,
 {
   int val, code = -1;
   StunUsageTurnReturn ret = STUN_USAGE_TURN_RETURN_RELAY_SUCCESS;
-
+  
   if (stun_message_get_method (msg) != STUN_ALLOCATE)
     return STUN_USAGE_TURN_RETURN_INVALID;
 
@@ -355,8 +358,16 @@ StunUsageTurnReturn stun_usage_turn_process (StunMessage *msg,
     }
   }
 
+  *lifetime = TURN_DEFAULT_LIFETIME;
+  *bandwidth = 0;
+
   stun_message_find32 (msg, STUN_ATTRIBUTE_LIFETIME, lifetime);
   stun_message_find32 (msg, STUN_ATTRIBUTE_BANDWIDTH, bandwidth);
+
+  if (*lifetime < TURN_MINIMUM_LIFETIME ) {
+    stun_debug (" Lifetime too short!\n");
+    return STUN_USAGE_TURN_RETURN_INVALID;
+  }
 
   stun_debug (" Mapped address found!\n");
   return ret;
@@ -397,8 +408,15 @@ StunUsageTurnReturn stun_usage_turn_refresh_process (StunMessage *msg,
 
       return STUN_USAGE_TURN_RETURN_ERROR;
   }
+  
+  *lifetime = TURN_DEFAULT_LIFETIME;
 
   stun_message_find32 (msg, STUN_ATTRIBUTE_LIFETIME, lifetime);
+
+  if (*lifetime < TURN_MINIMUM_LIFETIME ) {
+    stun_debug (" Lifetime too short!\n");
+    return STUN_USAGE_TURN_RETURN_INVALID;
+  }
 
   stun_debug ("TURN Refresh successful!\n");
   return ret;
