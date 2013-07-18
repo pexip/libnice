@@ -570,7 +570,7 @@ int stun_message_validate_buffer_length (const uint8_t *msg, size_t length,
   len = mlen - 20;
 
   /* from then on, we know we have the entire packet in buffer */
-  while (len > 0)
+  while (len >= 4)
   {
     size_t alen = stun_getw (msg + STUN_ATTRIBUTE_TYPE_LEN);
     if (has_padding)
@@ -589,6 +589,11 @@ int stun_message_validate_buffer_length (const uint8_t *msg, size_t length,
 
     len -= alen;
     msg += 4 + alen;
+  }
+
+  if (len != 0) {
+    stun_debug ("STUN error: incomplete attribute header!\n");
+    return STUN_MESSAGE_BUFFER_INVALID; // no room for type and length
   }
 
   return mlen;
