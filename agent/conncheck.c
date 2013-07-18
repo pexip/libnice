@@ -2534,7 +2534,7 @@ static gboolean priv_map_reply_to_relay_refresh (NiceAgent *agent, StunMessage *
               STUN_ATTRIBUTE_REALM, &recv_realm_len);
 
           /* check for unauthorized error response */
-          if (cand->agent->compatibility == NICE_COMPATIBILITY_RFC5245 &&
+          if (cand->agent->turn_compatibility == NICE_COMPATIBILITY_RFC5245 &&
               stun_message_get_class (resp) == STUN_ERROR &&
               stun_message_find_error (resp, &code) ==
               STUN_MESSAGE_RETURN_SUCCESS &&
