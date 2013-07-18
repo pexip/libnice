@@ -60,6 +60,7 @@
 #include "stun/usages/ice.h"
 #include "stun/usages/bind.h"
 #include "stun/usages/turn.h"
+#include "stun/utils.h"
 
 static void priv_update_check_list_failed_components (NiceAgent *agent, Stream *stream);
 static void priv_update_check_list_state_for_ready (NiceAgent *agent, Stream *stream, Component *component);
@@ -2730,42 +2731,53 @@ gboolean conn_check_handle_inbound_stun (NiceAgent *agent, Stream *stream,
 #endif
 
   /* note: ICE  7.2. "STUN Server Procedures" (ID-19) */
-  /* Find the correct stun agent to use for validation */
+  /* 
+   * Find the correct stun agent to use for validation, binding requests always come from the remote 
+   * peer and should use the global stun agent, all other requests/responses come from the TURN server
+   * and should use either a discovery agent or refresh agent for validation.
+   */
   StunAgent* stunagent = NULL;
 
-  for (i = agent->discovery_list; i; i = i->next)
-  {
-    CandidateDiscovery *d = i->data;
-    if (d->stream == stream && d->component == component &&
-        d->nicesock == socket)
+  if (stun_get_type(buf) != STUN_BINDING) {
+    for (i = agent->discovery_list; i; i = i->next)
     {
-      gchar tmpbuf[INET6_ADDRSTRLEN];
-      nice_address_to_string (from, tmpbuf);
-      nice_debug ("Agent %p: inbound STUN packet for %u/%u (stream/component) from [%s]:%u (%u octets) using discovery stun agent:",
-                  agent, stream->id, component->id, tmpbuf, nice_address_get_port (from), len);
-      stunagent = &d->stun_agent;
-      break;
-    }
-  }
-
-  if (stunagent == NULL) {
-    /* Try and match against the refresh list */
-    for (i = agent->refresh_list; i; i = i->next)
-    {
-      CandidateRefresh *r = i->data;
-      if (r->stream == stream && r->component == component &&
-          r->nicesock == socket)
+      CandidateDiscovery *d = i->data;
+      if (d->stream == stream && d->component == component &&
+          d->nicesock == socket)
       {
         gchar tmpbuf[INET6_ADDRSTRLEN];
         nice_address_to_string (from, tmpbuf);
-        nice_debug ("Agent %p: inbound STUN packet for %u/%u (stream/component) from [%s]:%u (%u octets) using refersh stun agent:",
+        nice_debug ("Agent %p: inbound STUN packet for %u/%u (stream/component) from [%s]:%u (%u octets) using discovery stun agent:",
                     agent, stream->id, component->id, tmpbuf, nice_address_get_port (from), len);
-        stunagent = &r->stun_agent;
+        stunagent = &d->stun_agent;
         break;
       }
     }
+    
+    if (stunagent == NULL) {
+      /* Try and match against the refresh list */
+      for (i = agent->refresh_list; i; i = i->next)
+      {
+        CandidateRefresh *r = i->data;
+        if (r->stream == stream && r->component == component &&
+            r->nicesock == socket)
+        {
+          gchar tmpbuf[INET6_ADDRSTRLEN];
+          nice_address_to_string (from, tmpbuf);
+          nice_debug ("Agent %p: inbound STUN packet for %u/%u (stream/component) from [%s]:%u (%u octets) using refersh stun agent:",
+                      agent, stream->id, component->id, tmpbuf, nice_address_get_port (from), len);
+          stunagent = &r->stun_agent;
+          break;
+        }
+      }
+    }
+  } else {
+    gchar tmpbuf[INET6_ADDRSTRLEN];
+    nice_address_to_string (from, tmpbuf);
+    nice_debug ("Agent %p: inbound STUN BINDING request for %u/%u (stream/component) from [%s]:%u (%u octets) not checking against discovery/refresh agents:",
+                agent, stream->id, component->id, tmpbuf, nice_address_get_port (from), len);
   }
-
+  
   if (stunagent == NULL) {
     gchar tmpbuf[INET6_ADDRSTRLEN];
     nice_address_to_string (from, tmpbuf);

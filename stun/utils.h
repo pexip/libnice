@@ -65,6 +65,7 @@ uint16_t stun_getw (const uint8_t *ptr);
 
 void *stun_setw (uint8_t *ptr, uint16_t value);
 
+StunMethod stun_get_type (uint8_t *h);
 void stun_set_type (uint8_t *h, StunClass c, StunMethod m);
 
 StunMessageReturn stun_xor_address (const StunMessage *msg,
