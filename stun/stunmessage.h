@@ -952,5 +952,13 @@ bool stun_optional (uint16_t t);
  */
 const char *stun_strerror (StunError code);
 
+/** 
+ * stun_message_to_string:
+ * @msg: The #StunMessage
+ *
+ * Returns: Printable string version of the message suitable for debug logs etc
+ *          Caller must deallocate the string with g_free when finished
+ */
+char *stun_message_to_string (const StunMessage* msg);
 
 #endif /* _STUN_MESSAGE_H */

@@ -45,7 +45,6 @@
 
 #include "debug.h"
 
-
 static int debug_enabled = 1;
 
 void stun_debug_enable (void) {
@@ -53,6 +52,33 @@ void stun_debug_enable (void) {
 }
 void stun_debug_disable (void) {
   debug_enabled = 0;
+}
+
+void stun_message_log(StunMessage* msg, gboolean transmit, struct sockaddr* addr)
+{
+  char *msgbuff = stun_message_to_string(msg);
+
+  char addrbuf[INET6_ADDRSTRLEN];
+  memset(addrbuf, 0, sizeof(addrbuf));
+  
+  switch (addr->sa_family) {
+    case AF_INET:
+      inet_ntop (AF_INET, &((struct sockaddr_in *)addr)->sin_addr, addrbuf, INET_ADDRSTRLEN);
+      break;
+    case AF_INET6:
+      inet_ntop (AF_INET6, &((struct sockaddr_in6 *)addr)->sin6_addr, addrbuf, INET6_ADDRSTRLEN);
+      break;
+    default:
+      g_return_if_reached ();
+  }
+
+  if (transmit) {
+    g_log (G_LOG_DOMAIN, G_LOG_LEVEL_INFO, "Message=\"Sending STUN message\" Dst-address=\"%s\" %s", addrbuf, msgbuff);
+  } else {
+    g_log (G_LOG_DOMAIN, G_LOG_LEVEL_INFO, "Message=\"Received STUN message\" Src-address=\"%s\" %s", addrbuf, msgbuff);
+  }
+
+  g_free (msgbuff);
 }
 
 void stun_debug (const char *fmt, ...)

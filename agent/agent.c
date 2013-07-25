@@ -1347,6 +1347,24 @@ void agent_signal_component_state_change (NiceAgent *agent, guint stream_id, gui
   }
 }
 
+void agent_signal_turn_allocation_failure (NiceAgent* agent, guint stream_id, guint component_id, const NiceAddress* relay_addr, const StunMessage* response, const char* reason)
+{
+  char* msgstr = NULL;
+  char addrstr[NICE_ADDRESS_STRING_LEN];
+  memset(addrstr, 0, sizeof(addrstr));
+
+  if (response)
+    msgstr = stun_message_to_string(response);
+
+  if (relay_addr)
+    nice_address_to_string(relay_addr, addrstr);
+
+  g_log (G_LOG_DOMAIN, G_LOG_LEVEL_INFO, "TURN ALLOCATION FAILED for stream=%u component=%u server=%s response=%s reason=%s", 
+         stream_id, component_id, addrstr, msgstr ? msgstr : "none", reason ? reason : "none");
+
+  if (msgstr) g_free(msgstr);
+}
+
 guint64
 agent_candidate_pair_priority (NiceAgent *agent, NiceCandidate *local, NiceCandidate *remote)
 {

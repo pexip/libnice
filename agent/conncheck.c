@@ -762,6 +762,12 @@ static gboolean priv_turn_allocate_refresh_retransmissions_tick (gpointer pointe
         stun_message_id (&cand->stun_message, id);
         stun_agent_forget_transaction (&cand->stun_agent, id);
 
+        agent_signal_turn_allocation_failure(cand->agent, 
+                                             cand->stream->id,
+                                             cand->component->id,
+                                             &cand->server,
+                                             NULL,
+                                             "Allocate/Refresh timed out");
         refresh_cancel (cand);
         break;
       }
@@ -831,8 +837,13 @@ static void priv_turn_allocate_refresh_tick_unlocked (CandidateRefresh *cand)
   }
 
   if (buffer_len > 0) {
+    struct sockaddr_storage server_address;
+
     stun_timer_start (&cand->timer, STUN_TIMER_DEFAULT_TIMEOUT,
         STUN_TIMER_DEFAULT_MAX_RETRANSMISSIONS);
+    
+    nice_address_copy_to_sockaddr(&cand->server, (struct sockaddr *)&server_address);
+    stun_message_log(&cand->stun_message, TRUE, (struct sockaddr *)&server_address);
 
     /* send the refresh */
     nice_socket_send (cand->nicesock, &cand->server,
@@ -2341,7 +2352,7 @@ priv_add_new_turn_refresh (CandidateDiscovery *cdisco, NiceCandidate *relay_cand
  * 
  * @return TRUE if a matching transaction is found
  */
-static gboolean priv_map_reply_to_relay_request (NiceAgent *agent, StunMessage *resp)
+static gboolean priv_map_reply_to_relay_request (NiceAgent *agent, StunMessage *resp, const NiceAddress* from)
 {
   struct sockaddr_storage sockaddr;
   socklen_t socklen = sizeof (sockaddr);
@@ -2356,6 +2367,7 @@ static gboolean priv_map_reply_to_relay_request (NiceAgent *agent, StunMessage *
   gboolean trans_found = FALSE;
   StunTransactionId discovery_id;
   StunTransactionId response_id;
+  struct sockaddr_storage server_address;
   stun_message_id (resp, response_id);
 
   for (i = agent->discovery_list; i && trans_found != TRUE; i = i->next) {
@@ -2371,8 +2383,12 @@ static gboolean priv_map_reply_to_relay_request (NiceAgent *agent, StunMessage *
             (struct sockaddr *) &sockaddr, &socklen,
             (struct sockaddr *) &alternate, &alternatelen,
             &bandwidth, &lifetime, agent_to_turn_compatibility (agent));
+
+        nice_address_copy_to_sockaddr(from, (struct sockaddr *)&server_address);
+        stun_message_log(resp, FALSE, (struct sockaddr *)&server_address);
+
         nice_debug ("Agent %p : stun_turn_process/disc for %p res %d.",
-            agent, d, (int)res);
+                    agent, d, (int)res);
 
         if (res == STUN_USAGE_TURN_RETURN_ALTERNATE_SERVER) {
           /* handle alternate server */
@@ -2465,12 +2481,23 @@ static gboolean priv_map_reply_to_relay_request (NiceAgent *agent, StunMessage *
               d->stun_resp_msg.buffer_len = sizeof(d->stun_resp_buffer);
               d->pending = FALSE;
             } else {
+              agent_signal_turn_allocation_failure(d->agent, 
+                                                   d->stream->id,
+                                                   d->component->id,
+                                                   from,
+                                                   resp, "");
               /* case: a real unauthorized error */
               d->stun_message.buffer = NULL;
               d->stun_message.buffer_len = 0;
               d->done = TRUE;
             }
           } else {
+            agent_signal_turn_allocation_failure(d->agent, 
+                                                 d->stream->id,
+                                                 d->component->id,
+                                                 from,
+                                                 resp, "");
+            
             /* case: STUN error, the check STUN context was freed */
             d->stun_message.buffer = NULL;
             d->stun_message.buffer_len = 0;
@@ -2491,12 +2518,13 @@ static gboolean priv_map_reply_to_relay_request (NiceAgent *agent, StunMessage *
  * 
  * @return TRUE if a matching transaction is found
  */
-static gboolean priv_map_reply_to_relay_refresh (NiceAgent *agent, StunMessage *resp)
+static gboolean priv_map_reply_to_relay_refresh (NiceAgent *agent, StunMessage *resp, const NiceAddress* from)
 {
   uint32_t lifetime;
   GSList *i;
   StunUsageTurnReturn res;
   gboolean trans_found = FALSE;
+  struct sockaddr_storage server_address;
   StunTransactionId refresh_id;
   StunTransactionId response_id;
   stun_message_id (resp, response_id);
@@ -2510,6 +2538,10 @@ static gboolean priv_map_reply_to_relay_refresh (NiceAgent *agent, StunMessage *
       if (memcmp (refresh_id, response_id, sizeof(StunTransactionId)) == 0) {
         res = stun_usage_turn_refresh_process (resp,
             &lifetime, agent_to_turn_compatibility (cand->agent));
+
+        nice_address_copy_to_sockaddr(from, (struct sockaddr *)&server_address);
+        stun_message_log(resp, FALSE, (struct sockaddr *)&server_address);
+
         nice_debug ("Agent %p : stun_turn_refresh_process for %p res %d.",
             agent, cand, (int)res);
         if (res == STUN_USAGE_TURN_RETURN_RELAY_SUCCESS) {
@@ -2552,10 +2584,22 @@ static gboolean priv_map_reply_to_relay_refresh (NiceAgent *agent, StunMessage *
               cand->stun_resp_msg.buffer_len = sizeof(cand->stun_resp_buffer);
               priv_turn_allocate_refresh_tick_unlocked (cand);
             } else {
+              agent_signal_turn_allocation_failure(cand->agent, 
+                                                   cand->stream->id,
+                                                   cand->component->id,
+                                                   from,
+                                                   resp,
+                                                   "");
               /* case: a real unauthorized error */
               refresh_cancel (cand);
             }
           } else {
+            agent_signal_turn_allocation_failure(cand->agent, 
+                                                 cand->stream->id,
+                                                 cand->component->id,
+                                                 from,
+                                                 resp,
+                                                 "");
             /* case: STUN error, the check STUN context was freed */
               refresh_cancel (cand);
           }
@@ -3052,11 +3096,11 @@ gboolean conn_check_handle_inbound_stun (NiceAgent *agent, Stream *stream,
 
       /* step: let's try to match the response to an existing turn allocate */
       if (trans_found != TRUE)
-        trans_found = priv_map_reply_to_relay_request (agent, &req);
+        trans_found = priv_map_reply_to_relay_request (agent, &req, from);
 
       /* step: let's try to match the response to an existing turn refresh */
       if (trans_found != TRUE)
-        trans_found = priv_map_reply_to_relay_refresh (agent, &req);
+        trans_found = priv_map_reply_to_relay_refresh (agent, &req, from);
 
       /* step: let's try to match the response to an existing keepalive conncheck */
       if (trans_found != TRUE)

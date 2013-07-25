@@ -54,7 +54,9 @@
 
 
 #include <string.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <glib.h>
 
 bool stun_message_init (StunMessage *msg, StunClass c, StunMethod m,
     const StunTransactionId id)
@@ -540,7 +542,6 @@ int stun_message_validate_buffer_length (const uint8_t *msg, size_t length,
 
   if (msg[0] >> 6)
   {
-    stun_debug ("STUN error: RTP or other non-protocol packet!\n");
     return STUN_MESSAGE_BUFFER_INVALID; // RTP or other non-STUN packet
   }
 
@@ -680,4 +681,115 @@ const char *stun_strerror (StunError code)
   /* Maximum allowed error message length */
   //  assert (strlen (str) < 128);
   return str;
+}
+
+static const char *stun_classstring(StunClass class)
+{
+  static const struct 
+  {
+    StunClass  class;
+    char       phrase[32];
+  } tab[] = 
+  {
+    { STUN_REQUEST, "Request" },
+    { STUN_INDICATION, "Indication" },
+    { STUN_RESPONSE, "Response" },
+    { STUN_ERROR, "Error"}
+  };
+
+  const char *str = "Unknown";
+  size_t i;
+
+  for (i = 0; i < (sizeof (tab) / sizeof (tab[0])); i++)
+  {
+    if (tab[i].class == class)
+    {
+      str = tab[i].phrase;
+      break;
+    }
+  }
+
+  return str;
+}
+
+static const char *stun_methodstring(StunMethod method)
+{
+  static const struct 
+  {
+    StunMethod method;
+    char       phrase[32];
+  } tab[] = 
+  {
+    { STUN_BINDING, "Binding" },
+    { STUN_SHARED_SECRET, "SharedSecret" },
+    { STUN_ALLOCATE, "Allocate" },
+    { STUN_SET_ACTIVE_DST, "SetActiveDst" },
+    { STUN_REFRESH, "Refresh" },
+    { STUN_SEND, "Send" },
+    { STUN_CONNECT, "Connect" },
+    { STUN_OLD_SET_ACTIVE_DST, "OldSetActiveDst" },
+    { STUN_IND_SEND, "IndSend" },
+    { STUN_IND_DATA, "IndData" },
+    { STUN_IND_CONNECT_STATUS, "IndConnectStatus" },
+    { STUN_CREATEPERMISSION, "CreatePermission" },
+    { STUN_CHANNELBIND, "ChannelBind" }
+  };
+
+  const char *str = "Unknown method";
+  size_t i;
+
+  for (i = 0; i < (sizeof (tab) / sizeof (tab[0])); i++)
+  {
+    if (tab[i].method == method)
+    {
+      str = tab[i].phrase;
+      break;
+    }
+  }
+
+  return str;
+
+}
+
+static char *stun_hexstr(const void* data, size_t len)
+{
+  size_t i;
+
+  gchar *buffer = g_new(char, len*2+1);
+  
+  for (i = 0; i < len; i++)
+    sprintf(&buffer[i*2], "%02x", ((const unsigned char *)data)[i]);
+  buffer[len*2] = '\0';
+
+  return buffer;
+}
+
+char *stun_message_to_string (const StunMessage* msg)
+{
+  StunMethod method = stun_message_get_method (msg);
+  StunClass class = stun_message_get_class (msg);
+  StunTransactionId id;
+
+  char* errorstr = NULL;
+  char* messagestr = NULL;
+  char* idstr = NULL;
+
+  int code = -1;
+
+  stun_message_id(msg, id);
+  idstr = stun_hexstr(&id, sizeof(id));
+  messagestr = stun_hexstr(msg->buffer, MIN(msg->buffer_len, stun_message_length(msg)));
+
+  if (class == STUN_ERROR && (stun_message_find_error (msg, &code) == STUN_MESSAGE_RETURN_SUCCESS)) {
+    errorstr = g_strdup_printf("Code=\"%d (%s)\"", code, stun_strerror(code));
+  }
+
+  char *out = g_strdup_printf("Class=\"%s\" %s Id=\"%s\" Method=\"%s\" Message=\"%s\"", stun_classstring(class), errorstr ? errorstr : "",
+                              idstr, stun_methodstring(method), messagestr);
+
+  if (errorstr) g_free(errorstr);
+  if (messagestr) g_free(messagestr);
+  if (idstr) g_free(idstr);
+
+  return out;
 }

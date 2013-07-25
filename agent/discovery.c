@@ -176,11 +176,15 @@ void refresh_free_item (gpointer data, gpointer user_data)
 
   if (buffer_len > 0) {
     StunTransactionId id;
+    struct sockaddr_storage server_address;
 
     /* forget the transaction since we don't care about the result and
      * we don't implement retransmissions/timeout */
     stun_message_id (&cand->stun_message, id);
     stun_agent_forget_transaction (&cand->stun_agent, id);
+
+    nice_address_copy_to_sockaddr(&cand->server, (struct sockaddr *)&server_address);
+    stun_message_log(&cand->stun_message, TRUE, (struct sockaddr *)&server_address);
 
     /* send the refresh twice since we won't do retransmissions */
     nice_socket_send (cand->nicesock, &cand->server,
@@ -898,9 +902,16 @@ static gboolean priv_discovery_tick_unlocked (gpointer pointer)
             cand->msn_turn_username = username;
             cand->msn_turn_password = password;
           }
+
+          if (buffer_len > 0) {
+            struct sockaddr_storage server_address;
+            nice_address_copy_to_sockaddr(&cand->server, (struct sockaddr *)&server_address);
+            stun_message_log(&cand->stun_message, TRUE, (struct sockaddr *)&server_address);
+          }
+
         }
 
-	if (buffer_len > 0) {
+        if (buffer_len > 0) {
           if (nice_socket_is_reliable (cand->nicesock)) {
             stun_timer_start_reliable (&cand->timer,
                 STUN_TIMER_DEFAULT_RELIABLE_TIMEOUT);
@@ -954,6 +965,12 @@ static gboolean priv_discovery_tick_unlocked (gpointer pointer)
               cand->done = TRUE;
               cand->stun_message.buffer = NULL;
               cand->stun_message.buffer_len = 0;
+              agent_signal_turn_allocation_failure(cand->agent,
+                                                   cand->stream->id, 
+                                                   cand->component->id,
+                                                   &cand->server,
+                                                   NULL,
+                                                   "Discovery timed out, aborting.");
               nice_debug ("Agent %p : bind discovery timed out, aborting discovery item.", agent);
               break;
             }

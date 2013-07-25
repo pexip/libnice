@@ -38,11 +38,16 @@
 #define STUN_DEBUG_H
 
 #include <glib.h>
+#include "stunmessage.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+/**
+ * stun_message_log
+ */
+void stun_message_log(StunMessage* msg, gboolean transmit, struct sockaddr* src);
 
 /**
  * stun_debug_enable:

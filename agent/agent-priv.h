@@ -155,6 +155,14 @@ void agent_signal_component_state_change (
   guint component_id,
   NiceComponentState state);
 
+void agent_signal_turn_allocation_failure (
+  NiceAgent *agent,
+  guint stream_id,
+  guint component_id,
+  const NiceAddress* relay_addr,
+  const StunMessage* response,
+  const char *reason);
+
 void agent_signal_new_candidate (
   NiceAgent *agent,
   NiceCandidate *candidate);
