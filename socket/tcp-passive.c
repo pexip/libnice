@@ -51,21 +51,28 @@
 #include <unistd.h>
 #endif
 
+#define MAX_BUFFER_SIZE 65536
+
 typedef struct {
-  GMainContext *context;
+  GMainContext       *context;
+  SocketRecvCallback  recv_cb;
+  gpointer            userdata;
+  GDestroyNotify      destroy_notify;
+  GSList             *established_sockets;             /**< list of NiceSocket objs */
+  GSList             *gsources;            /**< list of GSource objs */
 } TcpPassivePriv;
 
 
 static void socket_close (NiceSocket *sock);
-static gint socket_recv (NiceSocket *sock, NiceAddress *from,
-    guint len, gchar *buf);
 static gint socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf);
+static gint socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf);
 static gboolean socket_is_reliable (NiceSocket *sock);
+static void tcp_passive_established_socket_recv_cb (NiceSocket* socket, NiceAddress* from, gchar* buf, gint len, gpointer *userdata);
 
 
 NiceSocket *
-nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr)
+nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr, SocketRecvCallback cb, gpointer userdata, GDestroyNotify destroy_notify)
 {
   struct sockaddr_storage name;
   NiceSocket *sock;
@@ -135,7 +142,9 @@ nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr)
 
   sock->priv = priv = g_slice_new0 (TcpPassivePriv);
   priv->context = g_main_context_ref (ctx);
-
+  priv->recv_cb = cb;
+  priv->userdata = userdata;
+  priv->destroy_notify = destroy_notify;
   sock->type = NICE_SOCKET_TYPE_TCP_PASSIVE;
   sock->fileno = gsock;
   sock->send = socket_send;
@@ -143,6 +152,7 @@ nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr)
   sock->is_reliable = socket_is_reliable;
   sock->close = socket_close;
 
+  nice_debug("Socket %X got callback %X", sock, priv->recv_cb);
   return sock;
 }
 
@@ -150,30 +160,79 @@ static void
 socket_close (NiceSocket *sock)
 {
   TcpPassivePriv *priv = sock->priv;
+  GSList *i;
 
   if (priv->context)
     g_main_context_unref (priv->context);
 
+  if (priv->userdata && priv->destroy_notify)
+    (priv->destroy_notify)(priv->userdata);
+
+  for (i = priv->established_sockets; i; i = i->next) {
+    NiceSocket *socket = i->data;
+    nice_socket_free (socket);
+  }
+
+  g_slist_free (priv->established_sockets);
   g_slice_free (TcpPassivePriv, sock->priv);
 }
 
 static gint
 socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
 {
-  return -1;
+  TcpPassivePriv *priv = sock->priv;
+
+  /*
+   * Accept new connection, TODO: dos prevention, reconnects etc 
+   */
+  NiceSocket* new_socket = nice_tcp_passive_socket_accept (sock);
+  if (!new_socket) {
+    nice_debug ("tcp-pass: Failed to accept new connection");
+    return -1;
+  }
+  nice_debug ("tcp-pass: Accepted OK, got new established connection");
+  
+  priv->established_sockets = g_slist_append (priv->established_sockets, new_socket);
+  return 0;
 }
 
 static gint
 socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf)
 {
-  return -1;
+  TcpPassivePriv *priv = sock->priv;
+  GSList *i;
+
+  for (i = priv->established_sockets; i; i = i->next) {
+    NiceSocket *socket = i->data;
+    gint sent_len = nice_socket_send(socket, to, len, buf);
+    if (sent_len != 0)
+    {
+      nice_debug("tcp-pass: Sent on socket, sent %d", sent_len);
+      return sent_len;
+    }
+  }
+  return 0;
 }
 
 static gboolean
 socket_is_reliable (NiceSocket *sock)
 {
   return TRUE;
+}
+
+void tcp_passive_established_socket_recv_cb (NiceSocket* socket, NiceAddress* from, gchar* buf, gint len, gpointer *userdata)
+{
+  NiceSocket* listening_socket = (NiceSocket *)userdata;
+  TcpPassivePriv *priv = listening_socket->priv;
+
+  if (priv->recv_cb) {
+    nice_debug("tcp-pass: sending up %d bytes", len);
+    
+    (priv->recv_cb) (listening_socket, from, buf, len, priv->userdata);
+  } else {
+    nice_debug("tcp-pass: no callback configured!!");
+  }
 }
 
 NiceSocket *
@@ -188,8 +247,11 @@ nice_tcp_passive_socket_accept (NiceSocket *socket)
   gsock = g_socket_accept (socket->fileno, NULL, NULL);
 
   if (gsock == NULL) {
+    nice_debug("tcp-pass: Accept failed");
     return NULL;
   }
+
+  nice_debug("tcp-pass: Accepted, creating established socket");
 
   /* GSocket: All socket file descriptors are set to be close-on-exec. */
   g_socket_set_blocking (gsock, false);
@@ -206,5 +268,6 @@ nice_tcp_passive_socket_accept (NiceSocket *socket)
   nice_address_set_from_sockaddr (&remote_addr, (struct sockaddr *)&name);
 
   return nice_tcp_established_socket_new (gsock,
-            &socket->addr, &remote_addr, priv->context);
+                                          &socket->addr, &remote_addr, priv->context, 
+                                          tcp_passive_established_socket_recv_cb, (gpointer)socket, NULL);
 }

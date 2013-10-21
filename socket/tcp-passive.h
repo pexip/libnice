@@ -42,8 +42,10 @@
 
 G_BEGIN_DECLS
 
+typedef void (*SocketRecvCallback)(NiceSocket* socket, NiceAddress* from, gchar* buf, gint len, gpointer *userdata);
 
-NiceSocket * nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr);
+NiceSocket * nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr, 
+                                          SocketRecvCallback cb, gpointer userdata, GDestroyNotify destroy_notify);
 NiceSocket * nice_tcp_passive_socket_accept (NiceSocket *socket);
 
 

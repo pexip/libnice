@@ -1872,7 +1872,7 @@ nice_agent_gather_candidates (
           nice_debug ("Agent %p: Trying to create host candidate on port %d", agent, current_port);
           nice_address_set_port (addr, current_port);
           host_candidate = discovery_add_local_host_candidate (agent, stream->id,
-              n + 1, addr);
+                                                               n + 1, addr, NICE_CANDIDATE_TRANSPORT_UDP);
           if (current_port > 0)
             current_port++;
           if (current_port == 0 || current_port > component->max_port)
@@ -1929,6 +1929,36 @@ nice_agent_gather_candidates (
           }
         }
       }
+
+      if (agent->use_ice_tcp) {
+        current_port = component->min_port;
+
+        host_candidate = NULL;
+        while (host_candidate == NULL) {
+          nice_debug ("Agent %p: Trying to create TCP host candidate on port %d", agent, current_port);
+          nice_address_set_port (addr, current_port);
+          host_candidate = discovery_add_local_host_candidate (agent, stream->id,
+                                                               n + 1, addr, NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE);
+          if (current_port > 0)
+            current_port++;
+          if (current_port == 0 || current_port > component->max_port)
+            break;
+        }
+        nice_address_set_port (addr, 0);
+
+        if (!host_candidate) {
+          gchar ip[NICE_ADDRESS_STRING_LEN];
+          nice_address_to_string (addr, ip);
+          nice_debug ("Agent %p: Unable to add local host candidate %s for s%d:%d"
+              ". Invalid interface?", agent, ip, stream->id, component->id);
+          ret = FALSE;
+          goto error;
+        }
+      }
+      
+      /*
+       * TODO: stun/turn etc for TCP
+       */
     }
   }
 
@@ -2634,7 +2664,6 @@ io_ctx_new (
   ctx->component = component;
   ctx->socket = socket;
   ctx->source = source;
-
   return ctx;
 }
 
@@ -2645,6 +2674,75 @@ io_ctx_free (IOCtx *ctx)
   g_slice_free (IOCtx, ctx);
 }
 
+/*
+ * Callback from non gsocket based NiceSockets when data 
+ * received.
+ */
+void nice_agent_socket_recv_cb (NiceSocket* socket, NiceAddress* from, gchar* buf, gint len, gpointer *userdata)
+{
+  TcpUserData *ctx = (TcpUserData *)userdata;
+  NiceAgent *agent = ctx->agent;
+  Stream *stream = ctx->stream;
+  Component *component = ctx->component;
+  gboolean has_padding = _nice_should_have_padding(agent->compatibility);
+  GList *item;
+  gboolean is_stun = TRUE;
+
+#ifndef NDEBUG
+  if (len > 0) {
+    gchar tmpbuf[INET6_ADDRSTRLEN];
+    nice_address_to_string (from, tmpbuf);
+    nice_debug ("Agent %p : Packet received on local socket %u from [%s]:%u (%u octets).", agent,
+        g_socket_get_fd (socket->fileno), tmpbuf, nice_address_get_port (from), len);
+  }
+#endif
+
+  for (item = component->turn_servers; item; item = g_list_next (item)) {
+    TurnServer *turn = item->data;
+    if (nice_address_equal (from, &turn->server)) {
+      GSList * i = NULL;
+      has_padding = _nice_should_have_padding(agent->turn_compatibility);
+
+#ifndef NDEBUG
+      nice_debug ("Agent %p : Packet received from TURN server candidate.",
+          agent);
+#endif
+      for (i = component->local_candidates; i; i = i->next) {
+        NiceCandidate *cand = i->data;
+        if (cand->type == NICE_CANDIDATE_TYPE_RELAYED &&
+            cand->stream_id == stream->id &&
+            cand->component_id == component->id) {
+          len = nice_turn_socket_parse_recv (cand->sockptr, &socket,
+              from, len, buf, from, buf, len);
+        }
+      }
+      break;
+    }
+  }
+
+  agent->media_after_tick = TRUE;
+
+  if (stun_message_validate_buffer_length ((uint8_t *) buf, (size_t) len, has_padding) != len) {
+    is_stun = FALSE;
+    nice_debug("STUN message failed to validate");
+  } 
+
+  if (!is_stun || !conn_check_handle_inbound_stun (agent, stream, component, socket,
+                                                   from, buf, len)) {
+    nice_debug("Unhandled stun message, passing to client");
+    /* unhandled STUN, pass to client */
+    if (component->g_source_io_cb) {
+      gpointer cdata = component->data;
+      gint sid = stream->id;
+      gint cid = component->id;
+      NiceAgentRecvFunc callback = component->g_source_io_cb;
+      callback (agent, sid, cid, len, buf, cdata);
+    }
+  } else {
+    nice_debug("Handled STUN message!!");
+  }
+}
+                      
 static gboolean
 nice_agent_g_source_cb (
   GSocket *gsocket,
@@ -2655,6 +2753,7 @@ nice_agent_g_source_cb (
   NiceAgent *agent = ctx->agent;
   Stream *stream = ctx->stream;
   Component *component = ctx->component;
+
   gchar buf[MAX_BUFFER_SIZE];
   gint len;
 

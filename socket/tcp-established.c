@@ -50,12 +50,20 @@
 #include <unistd.h>
 #endif
 
+#define MAX_BUFFER_SIZE 65535
+
 typedef struct {
-  NiceAddress remote_addr;
-  GQueue send_queue;
-  GMainContext *context;
-  GSource *io_source;
-  gboolean error;
+  NiceAddress         remote_addr;
+  GQueue              send_queue;
+  GMainContext       *context;
+  GSource            *read_source;
+  GSource            *write_source;
+  gboolean            error;
+  SocketRecvCallback  recv_cb;
+  gpointer            userdata;
+  GDestroyNotify      destroy_notify;
+  gchar               recv_buff[MAX_BUFFER_SIZE];
+  guint               recv_offset;
 } TcpEstablishedPriv;
 
 struct to_be_sent {
@@ -73,15 +81,18 @@ static gboolean socket_is_reliable (NiceSocket *sock);
 
 
 static void add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len,
-    gboolean head);
+                            gboolean head);
 static void free_to_be_sent (struct to_be_sent *tbs);
 static gboolean socket_send_more (GSocket *gsocket, GIOCondition condition,
-    gpointer data);
+                                  gpointer data);
+static gboolean socket_recv_more (GSocket *gsocket, GIOCondition condition,
+                                  gpointer data);
 
 
 NiceSocket *
 nice_tcp_established_socket_new (GSocket *gsock,
-    NiceAddress *local_addr, NiceAddress *remote_addr, GMainContext *ctx)
+                                 NiceAddress *local_addr, NiceAddress *remote_addr, GMainContext *ctx,
+                                 SocketRecvCallback cb, gpointer userdata, GDestroyNotify destroy_notify)
 {
   NiceSocket *sock;
   TcpEstablishedPriv *priv;
@@ -93,6 +104,10 @@ nice_tcp_established_socket_new (GSocket *gsock,
 
   priv->context = g_main_context_ref (ctx);
   priv->remote_addr = *remote_addr;
+  priv->recv_cb = cb;
+  priv->userdata = userdata;
+  priv->destroy_notify = destroy_notify;
+  priv->recv_offset = 0;
 
   sock->type = NICE_SOCKET_TYPE_TCP_ESTABLISHED;
   sock->fileno = gsock;
@@ -102,6 +117,9 @@ nice_tcp_established_socket_new (GSocket *gsock,
   sock->is_reliable = socket_is_reliable;
   sock->close = socket_close;
 
+  priv->read_source = g_socket_create_source(sock->fileno, G_IO_IN | G_IO_ERR, NULL);
+  g_source_set_callback (priv->read_source, (GSourceFunc) socket_recv_more, sock, NULL);
+  g_source_attach (priv->read_source, priv->context);
   return sock;
 }
 
@@ -115,12 +133,19 @@ socket_close (NiceSocket *sock)
     g_object_unref (sock->fileno);
     sock->fileno = NULL;
   }
-  if (priv->io_source) {
-    g_source_destroy (priv->io_source);
-    g_source_unref (priv->io_source);
+  if (priv->read_source) {
+    g_source_destroy (priv->read_source);
+    g_source_unref (priv->read_source);
+  }
+  if (priv->write_source) {
+    g_source_destroy (priv->write_source);
+    g_source_unref (priv->write_source);
   }
   g_queue_foreach (&priv->send_queue, (GFunc) free_to_be_sent, NULL);
   g_queue_clear (&priv->send_queue);
+
+  if (priv->userdata && priv->destroy_notify)
+    (priv->destroy_notify)(priv->userdata);
 
   if (priv->context)
     g_main_context_unref (priv->context);
@@ -168,28 +193,43 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
   TcpEstablishedPriv *priv = sock->priv;
   int ret;
   GError *gerr = NULL;
+  gchar buff[MAX_BUFFER_SIZE];
 
-  /* Don't try to access the socket if it had an error, otherwise we risk a
-     crash with SIGPIPE (Broken pipe) */
-  if (priv->error)
-    return -1;
+  if (nice_address_equal (to, &priv->remote_addr)) {
+    nice_debug("tcp-est: Sending on tcp-established %d", len);
+    
+    /* Don't try to access the socket if it had an error, otherwise we risk a
+       crash with SIGPIPE (Broken pipe) */
+    if (priv->error)
+      return -1;
+    
+    buff[0] = (len >> 8);
+    buff[1] = (len & 0xFF);
+    memcpy (&buff[2], buf, len);
+    len += 2;
 
-  /* First try to send the data, don't send it later if it can be sent now
-     this way we avoid allocating memory on every send */
-  if (g_socket_is_connected (sock->fileno) &&
-      g_queue_is_empty (&priv->send_queue)) {
-      ret = g_socket_send (sock->fileno, buf, len, NULL, &gerr);
+    /* First try to send the data, don't send it later if it can be sent now
+       this way we avoid allocating memory on every send */
+    if (g_socket_is_connected (sock->fileno) &&
+        g_queue_is_empty (&priv->send_queue)) {
+      ret = g_socket_send (sock->fileno, buff, len, NULL, &gerr);
       if (ret < 0 &&
-          g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK))
+          g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK)) {
+        add_to_be_sent (sock, buff, len, FALSE);
         ret = 0;
+      }
       if (gerr)
         g_error_free (gerr);
+      /* TODO: handle partial sends here */
       return ret;
+    } else {
+      add_to_be_sent (sock, buff, len, FALSE);
+      return len;
+    }
   } else {
-    add_to_be_sent (sock, buf, len, FALSE);
-    return len;
+    nice_debug ("tcp-est: not for us to send");
+    return 0;
   }
-
 }
 
 static gboolean
@@ -198,14 +238,73 @@ socket_is_reliable (NiceSocket *sock)
   return TRUE;
 }
 
+static void
+parse_rfc4571(NiceSocket* sock, NiceAddress* from)
+{
+  TcpEstablishedPriv *priv = sock->priv;
+  gboolean done = FALSE;
+
+  while (!done) {
+    if (priv->recv_offset > 2) {
+      gchar *data = priv->recv_buff;
+      guint16 packet_length = data[0] << 8 | data[1];
+      if ( packet_length + 2 <= priv->recv_offset) {
+        /* 
+         * Have complete packet, deliver it
+         */
+        if (priv->recv_cb) {
+          nice_debug("socket_recv_more: received %d bytes, delivering", packet_length);
+          
+          (priv->recv_cb)(sock, from, &data[2], packet_length, priv->userdata);
+        }
+        
+        /*
+         * More data after current packet 
+         */
+        memmove(&priv->recv_buff[0], &priv->recv_buff[packet_length + 2], 
+                priv->recv_offset - packet_length + 2);
+        priv->recv_offset = priv->recv_offset - packet_length - 2;
+      } else {
+        done = TRUE;
+      }
+    } else {
+      done = TRUE;
+    }
+  }
+}
 
 /*
- * Returns:
- * -1 = error
- * 0 = have more to send
- * 1 = sent everything
+ * Returns FALSE if the source should be destroyed.
  */
+static gboolean
+socket_recv_more (
+  GSocket *gsocket,
+  GIOCondition condition,
+  gpointer data)
+{
+  gint len;
+  NiceSocket* sock = (NiceSocket *)data;
+  TcpEstablishedPriv *priv = sock->priv;
+  NiceAddress from;
+  
+  len = socket_recv (sock, &from, MAX_BUFFER_SIZE-priv->recv_offset, &priv->recv_buff[priv->recv_offset]);
+  if (len > 0) {
+    priv->recv_offset += len;
+    parse_rfc4571(sock, &from);
+  } else if (len < 0) {
+    nice_debug("socket_recv_more: error from socket %d", len);
+    g_source_destroy (priv->read_source);
+    g_source_unref (priv->read_source);
+    priv->read_source = NULL;
+    priv->error = TRUE;
+    return FALSE;
+  }
+  return TRUE;
+}
 
+/*
+ * Returns FALSE if the source should be destroyed.
+ */
 static gboolean
 socket_send_more (
   GSocket *gsocket,
@@ -217,12 +316,9 @@ socket_send_more (
   struct to_be_sent *tbs = NULL;
   GError *gerr = NULL;
 
-  agent_lock ();
-
   if (g_source_is_destroyed (g_main_current_source ())) {
-    nice_debug ("Source was destroyed. "
+    nice_debug ("tcp-est: Source was destroyed. "
         "Avoided race condition in tcp-established.c:socket_send_more");
-    agent_unlock ();
     return FALSE;
   }
 
@@ -259,15 +355,12 @@ socket_send_more (
   }
 
   if (g_queue_is_empty (&priv->send_queue)) {
-    g_source_destroy (priv->io_source);
-    g_source_unref (priv->io_source);
-    priv->io_source = NULL;
-
-    agent_unlock ();
+    g_source_destroy (priv->write_source);
+    g_source_unref (priv->write_source);
+    priv->write_source = NULL;
     return FALSE;
   }
 
-  agent_unlock ();
   return TRUE;
 }
 
@@ -289,11 +382,11 @@ add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len, gboolean head)
   else
     g_queue_push_tail (&priv->send_queue, tbs);
 
-  if (priv->io_source == NULL) {
-    priv->io_source = g_socket_create_source(sock->fileno, G_IO_OUT, NULL);
-    g_source_set_callback (priv->io_source, (GSourceFunc) socket_send_more,
-        sock, NULL);
-    g_source_attach (priv->io_source, priv->context);
+  if (priv->write_source == NULL) {
+    priv->write_source = g_socket_create_source(sock->fileno, G_IO_OUT, NULL);
+    g_source_set_callback (priv->write_source, (GSourceFunc) socket_send_more,
+                           sock, NULL);
+    g_source_attach (priv->write_source, priv->context);
   }
 }
 

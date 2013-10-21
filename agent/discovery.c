@@ -259,7 +259,8 @@ static gboolean priv_add_local_candidate_pruned (NiceAgent *agent, guint stream_
     NiceCandidate *c = i->data;
 
     if (nice_address_equal (&c->base_addr, &candidate->base_addr) &&
-	nice_address_equal (&c->addr, &candidate->addr)) {
+        nice_address_equal (&c->addr, &candidate->addr) &&
+        c->transport == candidate->transport) {
       nice_debug ("Candidate %p (component-id %u) redundant, ignoring.", candidate, component->id);
       return FALSE;
     }
@@ -452,13 +453,15 @@ NiceCandidate *discovery_add_local_host_candidate (
   NiceAgent *agent,
   guint stream_id,
   guint component_id,
-  NiceAddress *address)
+  NiceAddress *address,
+  NiceCandidateTransport transport)
 {
   NiceCandidate *candidate;
   Component *component;
   Stream *stream;
-  NiceSocket *udp_socket = NULL;
-
+  NiceSocket *socket = NULL;
+  TcpUserData* userdata = NULL;
+ 
   if (!agent_find_component (agent, stream_id, component_id, &stream, &component))
     return NULL;
 
@@ -467,6 +470,7 @@ NiceCandidate *discovery_add_local_host_candidate (
   candidate->component_id = component_id;
   candidate->addr = *address;
   candidate->base_addr = *address;
+  candidate->transport = transport;
   if (agent->compatibility == NICE_COMPATIBILITY_GOOGLE) {
     candidate->priority = nice_candidate_jingle_priority (candidate);
   } else if (agent->compatibility == NICE_COMPATIBILITY_MSN ||
@@ -481,30 +485,50 @@ NiceCandidate *discovery_add_local_host_candidate (
 
   /* note: candidate username and password are left NULL as stream
      level ufrag/password are used */
-  udp_socket = nice_udp_bsd_socket_new (address);
-  if (!udp_socket)
+  switch (transport) {
+  case NICE_CANDIDATE_TRANSPORT_UDP:
+    socket = nice_udp_bsd_socket_new (address);
+    break;
+
+  case NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE:
+    userdata = g_new (TcpUserData, 1);
+    userdata->agent = agent;
+    userdata->stream = stream;
+    userdata->component = component;
+    socket = nice_tcp_passive_socket_new (agent->main_context, address, nice_agent_socket_recv_cb, (gpointer)userdata, g_free);
+    break;
+
+  case NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE:
+  case NICE_CANDIDATE_TRANSPORT_TCP_SO:
+    /*
+     * TODO:
+     */
+    break;
+  }
+
+  if (!socket)
     goto errors;
-
-
-  _priv_set_socket_tos (agent, udp_socket, stream->tos);
+    
+  _priv_set_socket_tos (agent, socket, stream->tos);
   agent_attach_stream_component_socket (agent, stream,
-      component, udp_socket);
-
-  candidate->sockptr = udp_socket;
-  candidate->addr = udp_socket->addr;
-  candidate->base_addr = udp_socket->addr;
-
+                                        component, socket);
+  
+  candidate->sockptr = socket;
+  candidate->addr = socket->addr;
+  candidate->base_addr = socket->addr;
+  
   if (!priv_add_local_candidate_pruned (agent, stream_id, component, candidate))
     goto errors;
-
-  component->sockets = g_slist_append (component->sockets, udp_socket);
-
+  
+  component->sockets = g_slist_append (component->sockets, socket);
   return candidate;
 
 errors:
   nice_candidate_free (candidate);
-  if (udp_socket)
-    nice_socket_free (udp_socket);
+  if (socket)
+    nice_socket_free (socket);
+  if (userdata)
+    g_free (userdata);
   return NULL;
 }
 

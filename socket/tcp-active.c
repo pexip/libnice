@@ -217,5 +217,5 @@ nice_tcp_active_socket_connect (NiceSocket *socket, NiceAddress *addr)
   nice_address_set_from_sockaddr (&local_addr, (struct sockaddr *)&name);
 
   return nice_tcp_established_socket_new (gsock,
-            &local_addr, addr, active_priv->context);
+                                          &local_addr, addr, active_priv->context, NULL, NULL, NULL);
 }
