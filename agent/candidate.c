@@ -155,6 +155,9 @@ guint32
 nice_candidate_ice_priority (const NiceCandidate *candidate)
 {
   guint8 type_preference = 0;
+  guint other_preference = 8191;
+  guint direction_preference = 0;
+  guint local_preference = 0;
 
   switch (candidate->type)
     {
@@ -168,8 +171,43 @@ nice_candidate_ice_priority (const NiceCandidate *candidate)
       type_preference = NICE_CANDIDATE_TYPE_PREF_RELAYED; break;
     }
 
+  
+  switch (candidate->transport) {
+  case NICE_CANDIDATE_TRANSPORT_UDP:
+    direction_preference = 7; /* Always most preferred */
+    break;
+
+  case NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE:
+    if (candidate->type == NICE_CANDIDATE_TYPE_HOST ||
+        candidate->type == NICE_CANDIDATE_TYPE_RELAYED) {
+      direction_preference = 6;
+    } else {
+      direction_preference = 4;
+    }
+    break;
+
+  case NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE:
+    if (candidate->type == NICE_CANDIDATE_TYPE_HOST ||
+        candidate->type == NICE_CANDIDATE_TYPE_RELAYED) {
+      direction_preference = 4;
+    } else {
+      direction_preference = 2;
+    }
+    break;
+
+  case NICE_CANDIDATE_TRANSPORT_TCP_SO:
+    if (candidate->type == NICE_CANDIDATE_TYPE_HOST ||
+        candidate->type == NICE_CANDIDATE_TYPE_RELAYED) {
+      direction_preference = 2;
+    } else {
+      direction_preference = 6;
+    }
+    break;
+  }
+  local_preference = (2 << 13) * direction_preference + other_preference;
+
   /* return _candidate_ice_priority (type_preference, 1, candidate->component_id); */
-  return nice_candidate_ice_priority_full (type_preference, 1, candidate->component_id);
+  return nice_candidate_ice_priority_full (type_preference, local_preference, candidate->component_id);
 }
 
 /*
