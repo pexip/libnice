@@ -774,6 +774,9 @@ nice_agent_get_property (
           g_value_set_uint (value, NICE_COMPATIBILITY_RFC6544);
         else
           g_value_set_uint (value, NICE_COMPATIBILITY_RFC5245);
+      } else if (agent->compatibility == NICE_COMPATIBILITY_OC2007R2 && 
+                 agent->use_ice_tcp) {
+        g_value_set_uint (value, NICE_COMPATIBILITY_OC2007R2_TCP);
       } else {
         g_value_set_uint (value, agent->compatibility);
       }
@@ -906,6 +909,15 @@ nice_agent_set_property (
             STUN_AGENT_USAGE_NO_ALIGNED_ATTRIBUTES);
       } else if (agent->compatibility == NICE_COMPATIBILITY_OC2007R2) {
         agent->use_ice_udp = TRUE;
+        stun_agent_init (&agent->stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
+            STUN_COMPATIBILITY_WLM2009,
+            STUN_AGENT_USAGE_SHORT_TERM_CREDENTIALS |
+            STUN_AGENT_USAGE_USE_FINGERPRINT |
+            STUN_AGENT_USAGE_NO_ALIGNED_ATTRIBUTES);
+      } else if (agent->compatibility == NICE_COMPATIBILITY_OC2007R2_TCP) {
+        agent->compatibility = NICE_COMPATIBILITY_OC2007R2;
+        agent->use_ice_udp = FALSE;
+        agent->use_ice_tcp = TRUE;
         stun_agent_init (&agent->stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
             STUN_COMPATIBILITY_WLM2009,
             STUN_AGENT_USAGE_SHORT_TERM_CREDENTIALS |
