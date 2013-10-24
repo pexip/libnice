@@ -1302,6 +1302,26 @@ static void priv_add_new_check_pair (NiceAgent *agent, guint stream_id, Componen
   }
 }
 
+static gboolean priv_compatible_transport(NiceCandidate *local, NiceCandidate *remote)
+{
+  gboolean res = FALSE;
+
+  if (local->transport == NICE_CANDIDATE_TRANSPORT_UDP &&
+      remote->transport == NICE_CANDIDATE_TRANSPORT_UDP) {
+    res = TRUE;
+  } else if (local->transport == NICE_CANDIDATE_TRANSPORT_TCP_SO &&
+             remote->transport == NICE_CANDIDATE_TRANSPORT_TCP_SO) {
+    res = TRUE;
+  } else if (local->transport == NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE &&
+             remote->transport == NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE) {
+    res = TRUE;
+  } else if (local->transport == NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE &&
+             remote->transport == NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE) {
+    res = TRUE;
+  }
+  return res;
+}
+
 static gboolean priv_conn_check_add_for_candidate_pair (NiceAgent *agent, guint stream_id, Component *component, NiceCandidate *local, NiceCandidate *remote)
 {
   gboolean ret = FALSE;
@@ -1315,7 +1335,7 @@ static gboolean priv_conn_check_add_for_candidate_pair (NiceAgent *agent, guint 
   }
 
   /* note: match pairs only if transport and address family are the same */
-  if (local->transport == remote->transport &&
+  if (priv_compatible_transport(local, remote) &&
      local->addr.s.addr.sa_family == remote->addr.s.addr.sa_family) {
 
     priv_add_new_check_pair (agent, stream_id, component, local, remote, NICE_CHECK_FROZEN, FALSE);
