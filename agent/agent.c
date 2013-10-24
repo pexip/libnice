@@ -2162,9 +2162,9 @@ static gboolean priv_add_remote_candidate (
       gchar tmpbuf[INET6_ADDRSTRLEN];
       nice_address_to_string (addr, tmpbuf);
       nice_debug ("Agent %p : Updating existing remote candidate with addr [%s]:%u"
-          " for s%d/c%d. U/P '%s'/'%s' prio: %u", agent, tmpbuf,
+          " for s%d/c%d. U/P '%s'/'%s' prio: %u type:%d transport:%d", agent, tmpbuf,
           nice_address_get_port (addr), stream_id, component_id,
-          username, password, priority);
+                  username, password, priority, type, transport);
     }
     /* case 1: an existing candidate, update the attributes */
     candidate->type = type;
@@ -2214,9 +2214,9 @@ static gboolean priv_add_remote_candidate (
       if(addr)
         nice_address_to_string (addr, tmpbuf);
       nice_debug ("Agent %p : Adding remote candidate with addr [%s]:%u"
-          " for s%d/c%d. U/P '%s'/'%s' prio: %u", agent, tmpbuf,
+          " for s%d/c%d. U/P '%s'/'%s' prio: %u type:%d transport:%d", agent, tmpbuf,
           addr? nice_address_get_port (addr) : 0, stream_id, component_id,
-          username, password, priority);
+                  username, password, priority, type, transport);
     }
 
     if (base_addr)
