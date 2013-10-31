@@ -65,7 +65,7 @@ typedef struct {
 static void socket_close (NiceSocket *sock);
 static gint socket_recv (NiceSocket *sock, NiceAddress *from,
     guint len, gchar *buf);
-static gboolean socket_send (NiceSocket *sock, const NiceAddress *to,
+static gint socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf);
 static gboolean socket_is_reliable (NiceSocket *sock);
 
@@ -80,6 +80,7 @@ nice_tcp_turn_socket_new (NiceSocket *base_socket,
   priv->compatibility = compatibility;
   priv->base_socket = base_socket;
 
+  sock->type = NICE_SOCKET_TYPE_TCP_TURN;
   sock->fileno = priv->base_socket->fileno;
   sock->addr = priv->base_socket->addr;
   sock->send = socket_send;
@@ -178,7 +179,7 @@ socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
   return 0;
 }
 
-static gboolean
+static gint
 socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf)
 {

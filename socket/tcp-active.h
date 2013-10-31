@@ -3,7 +3,6 @@
  *
  * (C) 2008-2009 Collabora Ltd.
  *  Contact: Youness Alaoui
- * (C) 2008-2009 Nokia Corporation. All rights reserved.
  *
  * The contents of this file are subject to the Mozilla Public License Version
  * 1.1 (the "License"); you may not use this file except in compliance with
@@ -33,41 +32,20 @@
  * not delete the provisions above, a recipient may use your version of this
  * file under either the MPL or the LGPL.
  */
-#ifdef HAVE_CONFIG_H
-# include "config.h"
-#endif
 
-
-#include <glib.h>
+#ifndef _TCP_ACTIVE_H
+#define _TCP_ACTIVE_H
 
 #include "socket.h"
 
+G_BEGIN_DECLS
 
-gint
-nice_socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
-{
-  return sock->recv (sock, from, len, buf);
-}
 
-gint
-nice_socket_send (NiceSocket *sock, const NiceAddress *to,
-    guint len, const gchar *buf)
-{
-  return sock->send (sock, to, len, buf);
-}
+NiceSocket * nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr);
+NiceSocket * nice_tcp_active_socket_connect (NiceSocket *socket, NiceAddress *addr);
 
-gboolean
-nice_socket_is_reliable (NiceSocket *sock)
-{
-  return sock->is_reliable (sock);
-}
 
-void
-nice_socket_free (NiceSocket *sock)
-{
-  if (sock) {
-    sock->close (sock);
-    g_slice_free (NiceSocket,sock);
-  }
-}
+G_END_DECLS
+
+#endif /* _TCP_ACTIVE_H */
 

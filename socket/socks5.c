@@ -78,7 +78,7 @@ struct to_be_sent {
 static void socket_close (NiceSocket *sock);
 static gint socket_recv (NiceSocket *sock, NiceAddress *from,
     guint len, gchar *buf);
-static gboolean socket_send (NiceSocket *sock, const NiceAddress *to,
+static gint socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf);
 static gboolean socket_is_reliable (NiceSocket *sock);
 
@@ -103,6 +103,7 @@ nice_socks5_socket_new (NiceSocket *base_socket,
     priv->username = g_strdup (username);
     priv->password = g_strdup (password);
 
+    sock->type = NICE_SOCKET_TYPE_SOCKS5;
     sock->fileno = priv->base_socket->fileno;
     sock->addr = priv->base_socket->addr;
     sock->send = socket_send;
@@ -392,13 +393,13 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
     if (priv->base_socket)
       return nice_socket_send (priv->base_socket, to, len, buf);
     else
-      return FALSE;
+      return 0;
   } else if (priv->state == SOCKS_STATE_ERROR) {
-    return FALSE;
+    return -1;
   } else {
     add_to_be_sent (sock, to, buf, len);
   }
-  return TRUE;
+  return len;
 }
 
 

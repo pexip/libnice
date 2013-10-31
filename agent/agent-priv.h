@@ -123,6 +123,8 @@ struct _NiceAgent
 #endif
   gchar *software_attribute;       /* SOFTWARE attribute */
   gboolean reliable;               /* property: reliable */
+  gboolean use_ice_udp;            /* To use ICE-UDP in reliable mode */
+  gboolean use_ice_tcp;            /* To use ICE-TCP in non-reliabale mode*/
   /* XXX: add pointer to internal data struct for ABI-safe extensions */
 };
 
@@ -146,8 +148,8 @@ void agent_signal_new_selected_pair (
   NiceAgent *agent,
   guint stream_id,
   guint component_id,
-  const gchar *local_foundation,
-  const gchar *remote_foundation);
+  NiceCandidate *lcandidate,
+  NiceCandidate *rcandidate);
 
 void agent_signal_component_state_change (
   NiceAgent *agent,

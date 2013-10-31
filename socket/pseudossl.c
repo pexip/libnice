@@ -91,7 +91,7 @@ static const gchar SSL_CLIENT_HANDSHAKE[] = {
 static void socket_close (NiceSocket *sock);
 static gint socket_recv (NiceSocket *sock, NiceAddress *from,
     guint len, gchar *buf);
-static gboolean socket_send (NiceSocket *sock, const NiceAddress *to,
+static gint socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf);
 static gboolean socket_is_reliable (NiceSocket *sock);
 
@@ -110,6 +110,7 @@ nice_pseudossl_socket_new (NiceSocket *base_socket)
   priv->handshaken = FALSE;
   priv->base_socket = base_socket;
 
+  sock->type = NICE_SOCKET_TYPE_PSEUDOSSL;
   sock->fileno = priv->base_socket->fileno;
   sock->addr = priv->base_socket->addr;
   sock->send = socket_send;
@@ -178,7 +179,7 @@ socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
   return 0;
 }
 
-static gboolean
+static gint
 socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf)
 {
@@ -188,11 +189,11 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
     if (priv->base_socket)
       return nice_socket_send (priv->base_socket, to, len, buf);
     else
-      return FALSE;
+      return 0;
   } else {
     add_to_be_sent (sock, to, buf, len);
   }
-  return TRUE;
+  return len;
 }
 
 

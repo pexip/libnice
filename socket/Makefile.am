@@ -35,6 +35,14 @@ libsocket_la_SOURCES = \
 	turn.h \
 	turn.c \
 	tcp-turn.h \
-	tcp-turn.c
+	tcp-turn.c \
+	tcp-active.c \
+	tcp-active.h \
+	tcp-passive.c \
+	tcp-passive.h \
+	tcp-so.c \
+	tcp-so.h \
+	tcp-established.c \
+	tcp-established.h
 
 

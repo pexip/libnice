@@ -1,7 +1,7 @@
 /*
  * This file is part of the Nice GLib ICE library.
  *
- * (C) 2008-2009 Collabora Ltd.
+ * (C) 2008-2012 Collabora Ltd.
  *  Contact: Youness Alaoui
  * (C) 2008-2009 Nokia Corporation. All rights reserved.
  *
@@ -22,6 +22,7 @@
  *
  * Contributors:
  *   Youness Alaoui, Collabora Ltd.
+ *   George Kiagiadakis, Collabora Ltd.
  *
  * Alternatively, the contents of this file may be used under the terms of the
  * the GNU Lesser General Public License Version 2.1 (the "LGPL"), in which
@@ -33,41 +34,20 @@
  * not delete the provisions above, a recipient may use your version of this
  * file under either the MPL or the LGPL.
  */
-#ifdef HAVE_CONFIG_H
-# include "config.h"
-#endif
 
-
-#include <glib.h>
+#ifndef _TCP_PASSIVE_H
+#define _TCP_PASSIVE_H
 
 #include "socket.h"
 
+G_BEGIN_DECLS
 
-gint
-nice_socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
-{
-  return sock->recv (sock, from, len, buf);
-}
 
-gint
-nice_socket_send (NiceSocket *sock, const NiceAddress *to,
-    guint len, const gchar *buf)
-{
-  return sock->send (sock, to, len, buf);
-}
+NiceSocket * nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr);
+NiceSocket * nice_tcp_passive_socket_accept (NiceSocket *socket);
 
-gboolean
-nice_socket_is_reliable (NiceSocket *sock)
-{
-  return sock->is_reliable (sock);
-}
 
-void
-nice_socket_free (NiceSocket *sock)
-{
-  if (sock) {
-    sock->close (sock);
-    g_slice_free (NiceSocket,sock);
-  }
-}
+G_END_DECLS
+
+#endif /* _TCP_PASSIVE_H */
 

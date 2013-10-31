@@ -21,6 +21,7 @@ AM_CFLAGS = \
 COMMON_LDADD = $(top_builddir)/agent/libagent.la $(top_builddir)/socket/libsocket.la $(GLIB_LIBS) $(GUPNP_LIBS)
 
 check_PROGRAMS = \
+	test-tcp \
 	test-pseudotcp \
 	test-bsd \
 	test \
@@ -40,6 +41,8 @@ dist_check_SCRIPTS = \
 	test-pseudotcp-random.sh
 
 TESTS = $(check_PROGRAMS) $(dist_check_SCRIPTS)
+
+test_tcp_LDADD = $(COMMON_LDADD)
 
 test_pseudotcp_LDADD = $(COMMON_LDADD)
 

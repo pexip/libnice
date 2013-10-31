@@ -53,14 +53,28 @@
 G_BEGIN_DECLS
 
 typedef struct _NiceSocket NiceSocket;
+typedef enum {
+  NICE_SOCKET_TYPE_UDP_BSD,
+  NICE_SOCKET_TYPE_TCP_BSD,
+  NICE_SOCKET_TYPE_TCP_ACTIVE,
+  NICE_SOCKET_TYPE_TCP_PASSIVE,
+  NICE_SOCKET_TYPE_TCP_ESTABLISHED,
+  NICE_SOCKET_TYPE_TCP_SO,
+  NICE_SOCKET_TYPE_PSEUDOSSL,
+  NICE_SOCKET_TYPE_HTTP,
+  NICE_SOCKET_TYPE_SOCKS5,
+  NICE_SOCKET_TYPE_TURN,
+  NICE_SOCKET_TYPE_TCP_TURN
+} NiceSocketType;
 
 struct _NiceSocket
 {
   NiceAddress addr;
+  NiceSocketType type;
   GSocket *fileno;
   gint (*recv) (NiceSocket *sock, NiceAddress *from, guint len,
       gchar *buf);
-  gboolean (*send) (NiceSocket *sock, const NiceAddress *to, guint len,
+  gint (*send) (NiceSocket *sock, const NiceAddress *to, guint len,
       const gchar *buf);
   gboolean (*is_reliable) (NiceSocket *sock);
   void (*close) (NiceSocket *sock);
@@ -71,7 +85,7 @@ G_GNUC_WARN_UNUSED_RESULT
 gint
 nice_socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf);
 
-gboolean
+gint
 nice_socket_send (NiceSocket *sock, const NiceAddress *to,
   guint len, const gchar *buf);
 
@@ -84,6 +98,8 @@ nice_socket_free (NiceSocket *sock);
 
 #include "udp-bsd.h"
 #include "tcp-bsd.h"
+#include "tcp-active.h"
+#include "tcp-passive.h"
 #include "pseudossl.h"
 #include "socks5.h"
 #include "http.h"

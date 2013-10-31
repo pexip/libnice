@@ -116,7 +116,7 @@ typedef struct {
 static void socket_close (NiceSocket *sock);
 static gint socket_recv (NiceSocket *sock, NiceAddress *from,
     guint len, gchar *buf);
-static gboolean socket_send (NiceSocket *sock, const NiceAddress *to,
+static gint socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf);
 static gboolean socket_is_reliable (NiceSocket *sock);
 
@@ -228,6 +228,8 @@ nice_turn_socket_new (GMainContext *ctx, NiceAddress *addr,
           (GEqualFunc) nice_address_equal,
           (GDestroyNotify) nice_address_free,
           priv_send_data_queue_destroy);
+
+  sock->type = NICE_SOCKET_TYPE_TURN;
   sock->addr = *addr;
   sock->fileno = base_socket->fileno;
   sock->send = socket_send;
@@ -235,6 +237,7 @@ nice_turn_socket_new (GMainContext *ctx, NiceAddress *addr,
   sock->is_reliable = socket_is_reliable;
   sock->close = socket_close;
   sock->priv = (void *) priv;
+
   return sock;
 }
 
@@ -482,7 +485,7 @@ socket_dequeue_all_data (TurnPriv *priv, const NiceAddress *to)
 }
 
 
-static gboolean
+static gint
 socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf)
 {
@@ -593,7 +596,7 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
       /* enque data */
       nice_debug ("enqueuing data");
       socket_enqueue_data(priv, to, msg_len, (gchar *)buffer);
-      return TRUE;
+      return len;
     } else {
       return nice_socket_send (priv->base_socket, &priv->server_addr,
           msg_len, (gchar *)buffer);

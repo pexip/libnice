@@ -1,7 +1,7 @@
 /*
  * This file is part of the Nice GLib ICE library.
  *
- * (C) 2008-2009 Collabora Ltd.
+ * (C) 2008-2012 Collabora Ltd.
  *  Contact: Youness Alaoui
  * (C) 2008-2009 Nokia Corporation. All rights reserved.
  *
@@ -22,6 +22,7 @@
  *
  * Contributors:
  *   Youness Alaoui, Collabora Ltd.
+ *   George Kiagiadakis, Collabora Ltd.
  *
  * Alternatively, the contents of this file may be used under the terms of the
  * the GNU Lesser General Public License Version 2.1 (the "LGPL"), in which
@@ -34,15 +35,11 @@
  * file under either the MPL or the LGPL.
  */
 
-/*
- * Implementation of TCP relay socket interface using TCP Berkeley sockets. (See
- * http://en.wikipedia.org/wiki/Berkeley_sockets.)
- */
 #ifdef HAVE_CONFIG_H
 # include "config.h"
 #endif
 
-#include "tcp-bsd.h"
+#include "tcp-established.h"
 #include "agent-priv.h"
 
 #include <string.h>
@@ -54,20 +51,18 @@
 #endif
 
 typedef struct {
-  NiceAddress server_addr;
+  NiceAddress remote_addr;
   GQueue send_queue;
   GMainContext *context;
   GSource *io_source;
   gboolean error;
-} TcpPriv;
+} TcpEstablishedPriv;
 
 struct to_be_sent {
   guint length;
   gchar *buf;
   gboolean can_drop;
 };
-
-#define MAX_QUEUE_LENGTH 20
 
 static void socket_close (NiceSocket *sock);
 static gint socket_recv (NiceSocket *sock, NiceAddress *from,
@@ -83,92 +78,25 @@ static void free_to_be_sent (struct to_be_sent *tbs);
 static gboolean socket_send_more (GSocket *gsocket, GIOCondition condition,
     gpointer data);
 
-NiceSocket *
-nice_tcp_bsd_socket_new (GMainContext *ctx, NiceAddress *addr)
-{
-  struct sockaddr_storage name;
-  NiceSocket *sock;
-  TcpPriv *priv;
-  GSocket *gsock = NULL;
-  GError *gerr = NULL;
-  gboolean gret = FALSE;
-  GSocketAddress *gaddr;
 
-  if (addr == NULL) {
-    /* We can't connect a tcp socket with no destination address */
-    return NULL;
-  }
+NiceSocket *
+nice_tcp_established_socket_new (GSocket *gsock,
+    NiceAddress *local_addr, NiceAddress *remote_addr, GMainContext *ctx)
+{
+  NiceSocket *sock;
+  TcpEstablishedPriv *priv;
+
+  g_return_val_if_fail (G_IS_SOCKET (gsock), NULL);
 
   sock = g_slice_new0 (NiceSocket);
-
-  nice_address_copy_to_sockaddr (addr, (struct sockaddr *)&name);
-
-  if (name.ss_family == AF_UNSPEC || name.ss_family == AF_INET) {
-    gsock = g_socket_new (G_SOCKET_FAMILY_IPV4, G_SOCKET_TYPE_STREAM,
-        G_SOCKET_PROTOCOL_TCP, NULL);
-
-    name.ss_family = AF_INET;
-#ifdef HAVE_SA_LEN
-    name.ss_len = sizeof (struct sockaddr_in);
-#endif
-  } else if (name.ss_family == AF_INET6) {
-    gsock = g_socket_new (G_SOCKET_FAMILY_IPV6, G_SOCKET_TYPE_STREAM,
-        G_SOCKET_PROTOCOL_TCP, NULL);
-    name.ss_family = AF_INET6;
-#ifdef HAVE_SA_LEN
-    name.ss_len = sizeof (struct sockaddr_in6);
-#endif
-  }
-
-  if (gsock == NULL) {
-    g_slice_free (NiceSocket, sock);
-    return NULL;
-  }
-
-  gaddr = g_socket_address_new_from_native (&name, sizeof (name));
-  if (gaddr == NULL) {
-    g_object_unref (gsock);
-    g_slice_free (NiceSocket, sock);
-    return NULL;
-  }
-
-  /* GSocket: All socket file descriptors are set to be close-on-exec. */
-  g_socket_set_blocking (gsock, false);
-
-  gret = g_socket_connect (gsock, gaddr, NULL, &gerr);
-  g_object_unref (gaddr);
-
-  if (gret == FALSE) {
-    if (g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_PENDING) == FALSE) {
-      g_error_free (gerr);
-      g_socket_close (gsock, NULL);
-      g_object_unref (gsock);
-      g_slice_free (NiceSocket, sock);
-      return NULL;
-    }
-    g_error_free (gerr);
-  }
-
-  gaddr = g_socket_get_local_address (gsock, NULL);
-  if (gaddr == NULL ||
-      !g_socket_address_to_native (gaddr, &name, sizeof (name), NULL)) {
-    g_slice_free (NiceSocket, sock);
-    g_socket_close (gsock, NULL);
-    g_object_unref (gsock);
-    return NULL;
-  }
-  g_object_unref (gaddr);
-
-  nice_address_set_from_sockaddr (&sock->addr, (struct sockaddr *)&name);
-
-  sock->priv = priv = g_slice_new0 (TcpPriv);
+  sock->priv = priv = g_slice_new0 (TcpEstablishedPriv);
 
   priv->context = g_main_context_ref (ctx);
-  priv->server_addr = *addr;
-  priv->error = FALSE;
+  priv->remote_addr = *remote_addr;
 
-  sock->type = NICE_SOCKET_TYPE_TCP_BSD;
+  sock->type = NICE_SOCKET_TYPE_TCP_ESTABLISHED;
   sock->fileno = gsock;
+  sock->addr = *local_addr;
   sock->send = socket_send;
   sock->recv = socket_recv;
   sock->is_reliable = socket_is_reliable;
@@ -177,11 +105,10 @@ nice_tcp_bsd_socket_new (GMainContext *ctx, NiceAddress *addr)
   return sock;
 }
 
-
 static void
 socket_close (NiceSocket *sock)
 {
-  TcpPriv *priv = sock->priv;
+  TcpEstablishedPriv *priv = sock->priv;
 
   if (sock->fileno) {
     g_socket_close (sock->fileno, NULL);
@@ -198,13 +125,13 @@ socket_close (NiceSocket *sock)
   if (priv->context)
     g_main_context_unref (priv->context);
 
-  g_slice_free(TcpPriv, sock->priv);
+  g_slice_free(TcpEstablishedPriv, sock->priv);
 }
 
 static gint
 socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
 {
-  TcpPriv *priv = sock->priv;
+  TcpEstablishedPriv *priv = sock->priv;
   int ret;
   GError *gerr = NULL;
 
@@ -230,18 +157,15 @@ socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
   }
 
   if (from)
-    *from = priv->server_addr;
+    *from = priv->remote_addr;
   return ret;
 }
 
-/* Data sent to this function must be a single entity because buffers can be
- * dropped if the bandwidth isn't fast enough. So do not send a message in
- * multiple chunks. */
 static gint
 socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf)
 {
-  TcpPriv *priv = sock->priv;
+  TcpEstablishedPriv *priv = sock->priv;
   int ret;
   GError *gerr = NULL;
 
@@ -252,41 +176,20 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
 
   /* First try to send the data, don't send it later if it can be sent now
      this way we avoid allocating memory on every send */
-  if (g_queue_is_empty (&priv->send_queue)) {
-    ret = g_socket_send (sock->fileno, buf, len, NULL, &gerr);
-    if (ret < 0) {
-      if(g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK)
-         || g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_FAILED)) {
-        add_to_be_sent (sock, buf, len, FALSE);
+  if (g_socket_is_connected (sock->fileno) &&
+      g_queue_is_empty (&priv->send_queue)) {
+      ret = g_socket_send (sock->fileno, buf, len, NULL, &gerr);
+      if (ret < 0 &&
+          g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK))
+        ret = 0;
+      if (gerr)
         g_error_free (gerr);
-        return len;
-      } else {
-        g_error_free (gerr);
-        return -1;
-      }
-    } else if ((guint)ret < len) {
-      add_to_be_sent (sock, buf + ret, len - ret, TRUE);
-      return len;
-    }
+      return ret;
   } else {
-    if (g_queue_get_length(&priv->send_queue) >= MAX_QUEUE_LENGTH) {
-      int peek_idx = 0;
-      struct to_be_sent *tbs = NULL;
-      while ((tbs = g_queue_peek_nth (&priv->send_queue, peek_idx)) != NULL) {
-        if (tbs->can_drop) {
-          tbs = g_queue_pop_nth (&priv->send_queue, peek_idx);
-          g_free (tbs->buf);
-          g_slice_free (struct to_be_sent, tbs);
-          break;
-        } else {
-          peek_idx++;
-        }
-      }
-    }
     add_to_be_sent (sock, buf, len, FALSE);
+    return len;
   }
 
-  return len;
 }
 
 static gboolean
@@ -310,7 +213,7 @@ socket_send_more (
   gpointer data)
 {
   NiceSocket *sock = (NiceSocket *) data;
-  TcpPriv *priv = sock->priv;
+  TcpEstablishedPriv *priv = sock->priv;
   struct to_be_sent *tbs = NULL;
   GError *gerr = NULL;
 
@@ -318,7 +221,7 @@ socket_send_more (
 
   if (g_source_is_destroyed (g_main_current_source ())) {
     nice_debug ("Source was destroyed. "
-        "Avoided race condition in tcp-bsd.c:socket_send_more");
+        "Avoided race condition in tcp-established.c:socket_send_more");
     agent_unlock ();
     return FALSE;
   }
@@ -342,7 +245,8 @@ socket_send_more (
         g_error_free (gerr);
         break;
       }
-      g_error_free (gerr);
+      if (gerr)
+        g_error_free (gerr);
     } else if (ret < (int) tbs->length) {
       add_to_be_sent (sock, tbs->buf + ret, tbs->length - ret, TRUE);
       g_free (tbs->buf);
@@ -367,11 +271,10 @@ socket_send_more (
   return TRUE;
 }
 
-
 static void
 add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len, gboolean head)
 {
-  TcpPriv *priv = sock->priv;
+  TcpEstablishedPriv *priv = sock->priv;
   struct to_be_sent *tbs = NULL;
 
   if (len <= 0)
@@ -394,12 +297,9 @@ add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len, gboolean head)
   }
 }
 
-
-
 static void
 free_to_be_sent (struct to_be_sent *tbs)
 {
   g_free (tbs->buf);
   g_slice_free (struct to_be_sent, tbs);
 }
-

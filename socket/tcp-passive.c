@@ -1,10 +1,9 @@
 /*
  * This file is part of the Nice GLib ICE library.
  *
- * (C) 2006-2009 Collabora Ltd.
+ * (C) 2008-2012 Collabora Ltd.
  *  Contact: Youness Alaoui
- * (C) 2006-2009 Nokia Corporation. All rights reserved.
- *  Contact: Kai Vehmanen
+ * (C) 2008-2009 Nokia Corporation. All rights reserved.
  *
  * The contents of this file are subject to the Mozilla Public License Version
  * 1.1 (the "License"); you may not use this file except in compliance with
@@ -22,8 +21,8 @@
  * Corporation. All Rights Reserved.
  *
  * Contributors:
- *   Dafydd Harries, Collabora Ltd.
  *   Youness Alaoui, Collabora Ltd.
+ *   George Kiagiadakis, Collabora Ltd.
  *
  * Alternatively, the contents of this file may be used under the terms of the
  * the GNU Lesser General Public License Version 2.1 (the "LGPL"), in which
@@ -36,24 +35,25 @@
  * file under either the MPL or the LGPL.
  */
 
-/*
- * Implementation of UDP socket interface using Berkeley sockets. (See
- * http://en.wikipedia.org/wiki/Berkeley_sockets.)
- */
 #ifdef HAVE_CONFIG_H
 # include "config.h"
 #endif
 
+#include "tcp-passive.h"
+#include "tcp-established.h"
+#include "agent-priv.h"
 
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
 
-#include "udp-bsd.h"
-
 #ifndef G_OS_WIN32
 #include <unistd.h>
 #endif
+
+typedef struct {
+  GMainContext *context;
+} TcpPassivePriv;
 
 
 static void socket_close (NiceSocket *sock);
@@ -63,39 +63,40 @@ static gint socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf);
 static gboolean socket_is_reliable (NiceSocket *sock);
 
-struct UdpBsdSocketPrivate
-{
-  NiceAddress niceaddr;
-  GSocketAddress *gaddr;
-};
 
 NiceSocket *
-nice_udp_bsd_socket_new (NiceAddress *addr)
+nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr)
 {
   struct sockaddr_storage name;
-  NiceSocket *sock = g_slice_new0 (NiceSocket);
+  NiceSocket *sock;
+  TcpPassivePriv *priv;
   GSocket *gsock = NULL;
   gboolean gret = FALSE;
   GSocketAddress *gaddr;
-  struct UdpBsdSocketPrivate *priv;
 
-  if (addr != NULL) {
-    nice_address_copy_to_sockaddr(addr, (struct sockaddr *)&name);
-  } else {
-    memset (&name, 0, sizeof (name));
-    name.ss_family = AF_UNSPEC;
+  if (addr == NULL) {
+    /* We can't connect a tcp socket with no destination address */
+    return NULL;
+  }
+  nice_address_copy_to_sockaddr (addr, (struct sockaddr *)&name);
+
+  gaddr = g_socket_address_new_from_native (&name, sizeof (name));
+
+  if (gaddr == NULL) {
+    return NULL;
   }
 
   if (name.ss_family == AF_UNSPEC || name.ss_family == AF_INET) {
-    gsock = g_socket_new (G_SOCKET_FAMILY_IPV4, G_SOCKET_TYPE_DATAGRAM,
-        G_SOCKET_PROTOCOL_UDP, NULL);
+    gsock = g_socket_new (G_SOCKET_FAMILY_IPV4, G_SOCKET_TYPE_STREAM,
+        G_SOCKET_PROTOCOL_TCP, NULL);
+
     name.ss_family = AF_INET;
 #ifdef HAVE_SA_LEN
     name.ss_len = sizeof (struct sockaddr_in);
 #endif
   } else if (name.ss_family == AF_INET6) {
-    gsock = g_socket_new (G_SOCKET_FAMILY_IPV6, G_SOCKET_TYPE_DATAGRAM,
-        G_SOCKET_PROTOCOL_UDP, NULL);
+    gsock = g_socket_new (G_SOCKET_FAMILY_IPV6, G_SOCKET_TYPE_STREAM,
+        G_SOCKET_PROTOCOL_TCP, NULL);
     name.ss_family = AF_INET6;
 #ifdef HAVE_SA_LEN
     name.ss_len = sizeof (struct sockaddr_in6);
@@ -103,20 +104,17 @@ nice_udp_bsd_socket_new (NiceAddress *addr)
   }
 
   if (gsock == NULL) {
-    g_slice_free (NiceSocket, sock);
     return NULL;
   }
 
   /* GSocket: All socket file descriptors are set to be close-on-exec. */
   g_socket_set_blocking (gsock, false);
-  gaddr = g_socket_address_new_from_native (&name, sizeof (name));
-  if (gaddr != NULL) {
-    gret = g_socket_bind (gsock, gaddr, FALSE, NULL);
-    g_object_unref (gaddr);
-  }
+
+  gret = g_socket_bind (gsock, gaddr, FALSE, NULL) &&
+      g_socket_listen (gsock, NULL);
+  g_object_unref (gaddr);
 
   if (gret == FALSE) {
-    g_slice_free (NiceSocket, sock);
     g_socket_close (gsock, NULL);
     g_object_unref (gsock);
     return NULL;
@@ -124,21 +122,21 @@ nice_udp_bsd_socket_new (NiceAddress *addr)
 
   gaddr = g_socket_get_local_address (gsock, NULL);
   if (gaddr == NULL ||
-      !g_socket_address_to_native (gaddr, &name, sizeof(name), NULL)) {
-    g_slice_free (NiceSocket, sock);
+      !g_socket_address_to_native (gaddr, &name, sizeof (name), NULL)) {
     g_socket_close (gsock, NULL);
     g_object_unref (gsock);
     return NULL;
   }
-
   g_object_unref (gaddr);
+
+  sock = g_slice_new0 (NiceSocket);
 
   nice_address_set_from_sockaddr (&sock->addr, (struct sockaddr *)&name);
 
-  priv = sock->priv = g_slice_new0 (struct UdpBsdSocketPrivate);
-  nice_address_init (&priv->niceaddr);
+  sock->priv = priv = g_slice_new0 (TcpPassivePriv);
+  priv->context = g_main_context_ref (ctx);
 
-  sock->type = NICE_SOCKET_TYPE_UDP_BSD;
+  sock->type = NICE_SOCKET_TYPE_TCP_PASSIVE;
   sock->fileno = gsock;
   sock->send = socket_send;
   sock->recv = socket_recv;
@@ -151,76 +149,62 @@ nice_udp_bsd_socket_new (NiceAddress *addr)
 static void
 socket_close (NiceSocket *sock)
 {
-  struct UdpBsdSocketPrivate *priv = sock->priv;
+  TcpPassivePriv *priv = sock->priv;
 
-  if (priv->gaddr)
-    g_object_unref (priv->gaddr);
-  g_slice_free (struct UdpBsdSocketPrivate, sock->priv);
+  if (priv->context)
+    g_main_context_unref (priv->context);
 
-  if (sock->fileno) {
-    g_socket_close (sock->fileno, NULL);
-    g_object_unref (sock->fileno);
-    sock->fileno = NULL;
-  }
+  g_slice_free (TcpPassivePriv, sock->priv);
 }
 
 static gint
 socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
 {
-  GSocketAddress *gaddr = NULL;
-  GError *gerr = NULL;
-  gint recvd;
-
-  recvd = g_socket_receive_from (sock->fileno, &gaddr, buf, len, NULL, &gerr);
-
-  if (recvd < 0) {
-    if (g_error_matches(gerr, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK)
-        || g_error_matches(gerr, G_IO_ERROR, G_IO_ERROR_FAILED))
-      recvd = 0;
-
-    g_error_free (gerr);
-  }
-
-  if (recvd > 0 && from != NULL && gaddr != NULL) {
-    struct sockaddr_storage sa;
-
-    g_socket_address_to_native (gaddr, &sa, sizeof (sa), NULL);
-    nice_address_set_from_sockaddr (from, (struct sockaddr *)&sa);
-  }
-
-  if (gaddr != NULL)
-    g_object_unref (gaddr);
-
-  return recvd;
+  return -1;
 }
 
 static gint
 socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf)
 {
-  struct UdpBsdSocketPrivate *priv = sock->priv;
-
-  if (!nice_address_is_valid (&priv->niceaddr) ||
-      !nice_address_equal (&priv->niceaddr, to)) {
-    struct sockaddr_storage sa;
-    GSocketAddress *gaddr;
-
-    if (priv->gaddr)
-      g_object_unref (priv->gaddr);
-    nice_address_copy_to_sockaddr (to, (struct sockaddr *)&sa);
-    gaddr = g_socket_address_new_from_native (&sa, sizeof(sa));
-    if (gaddr == NULL)
-      return -1;
-    priv->gaddr = gaddr;
-    priv->niceaddr = *to;
-  }
-
-  return g_socket_send_to (sock->fileno, priv->gaddr, buf, len, NULL, NULL);
+  return -1;
 }
 
 static gboolean
 socket_is_reliable (NiceSocket *sock)
 {
-  return FALSE;
+  return TRUE;
 }
 
+NiceSocket *
+nice_tcp_passive_socket_accept (NiceSocket *socket)
+{
+  struct sockaddr_storage name;
+  TcpPassivePriv *priv = socket->priv;
+  GSocket *gsock = NULL;
+  GSocketAddress *gaddr;
+  NiceAddress remote_addr;
+
+  gsock = g_socket_accept (socket->fileno, NULL, NULL);
+
+  if (gsock == NULL) {
+    return NULL;
+  }
+
+  /* GSocket: All socket file descriptors are set to be close-on-exec. */
+  g_socket_set_blocking (gsock, false);
+
+  gaddr = g_socket_get_remote_address (gsock, NULL);
+  if (gaddr == NULL ||
+      !g_socket_address_to_native (gaddr, &name, sizeof (name), NULL)) {
+    g_socket_close (gsock, NULL);
+    g_object_unref (gsock);
+    return NULL;
+  }
+  g_object_unref (gaddr);
+
+  nice_address_set_from_sockaddr (&remote_addr, (struct sockaddr *)&name);
+
+  return nice_tcp_established_socket_new (gsock,
+            &socket->addr, &remote_addr, priv->context);
+}
