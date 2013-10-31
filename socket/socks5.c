@@ -110,6 +110,7 @@ nice_socks5_socket_new (NiceSocket *base_socket,
     sock->recv = socket_recv;
     sock->is_reliable = socket_is_reliable;
     sock->close = socket_close;
+    sock->attach = NULL;
 
     /* Send SOCKS5 handshake */
     {

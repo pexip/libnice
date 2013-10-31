@@ -44,7 +44,7 @@ G_BEGIN_DECLS
 
 
 NiceSocket *nice_tcp_established_socket_new (GSocket *gsock,
-                                             NiceAddress *local_addr, NiceAddress *remote_addr, GMainContext *ctx,
+                                             NiceAddress *local_addr, const NiceAddress *remote_addr, GMainContext *ctx,
                                              SocketRecvCallback cb, gpointer userdata, GDestroyNotify destroy_notify);
 
 G_END_DECLS

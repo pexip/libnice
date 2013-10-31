@@ -100,6 +100,7 @@ nice_tcp_so_socket_new (GMainContext *ctx, NiceAddress *addr)
   sock->recv = socket_recv;
   sock->is_reliable = socket_is_reliable;
   sock->close = socket_close;
+  sock->attach = NULL;
 
   return sock;
 }

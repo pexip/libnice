@@ -63,6 +63,7 @@ typedef struct {
 } TcpPassivePriv;
 
 
+static void socket_attach (NiceSocket* sock, GMainContext* ctx);
 static void socket_close (NiceSocket *sock);
 static gint socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf);
@@ -117,11 +118,12 @@ nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr, SocketRecvCal
   /* GSocket: All socket file descriptors are set to be close-on-exec. */
   g_socket_set_blocking (gsock, false);
 
-  gret = g_socket_bind (gsock, gaddr, FALSE, NULL) &&
+  gret = g_socket_bind (gsock, gaddr, TRUE, NULL) &&
       g_socket_listen (gsock, NULL);
   g_object_unref (gaddr);
 
   if (gret == FALSE) {
+    nice_debug ("TCP-PASS: Failed to listen on port %d", nice_address_get_port(addr));
     g_socket_close (gsock, NULL);
     g_object_unref (gsock);
     return NULL;
@@ -151,9 +153,30 @@ nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr, SocketRecvCal
   sock->recv = socket_recv;
   sock->is_reliable = socket_is_reliable;
   sock->close = socket_close;
+  sock->attach = socket_attach;
 
-  nice_debug("Socket %X got callback %X", sock, priv->recv_cb);
+  nice_debug("Socket %X got callback %X and maincontext=%p", sock, priv->recv_cb, ctx);
   return sock;
+}
+
+static void
+socket_attach (NiceSocket* sock, GMainContext* ctx)
+{
+  TcpPassivePriv *priv = sock->priv;
+  GSList *i;
+
+  if (priv->context)
+    g_main_context_unref (priv->context);
+
+  priv->context = ctx;
+  if (priv->context) {
+    g_main_context_ref (priv->context);
+  }
+
+  for (i = priv->established_sockets; i; i = i->next) {
+    NiceSocket *socket = i->data;
+    nice_socket_attach (socket, ctx);
+  }
 }
 
 static void
@@ -173,6 +196,11 @@ socket_close (NiceSocket *sock)
     nice_socket_free (socket);
   }
 
+  if (sock->fileno) {
+    g_socket_close (sock->fileno, NULL);
+    g_object_unref (sock->fileno);
+    sock->fileno = NULL;
+  }
   g_slist_free (priv->established_sockets);
   g_slice_free (TcpPassivePriv, sock->priv);
 }

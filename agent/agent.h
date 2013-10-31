@@ -147,6 +147,7 @@ struct _NiceAgentClass
 
 
 GType nice_agent_get_type (void);
+GType nice_candidate_get_type (void);
 
 
 /**
@@ -399,6 +400,13 @@ nice_agent_set_port_range (
     guint min_port,
     guint max_port);
 
+void
+nice_agent_set_transport (
+    NiceAgent *agent,
+    guint stream_id,
+    guint component_id,
+    NiceCandidateTransport transport);
+    
 /**
  * nice_agent_set_relay_info:
  * @agent: The #NiceAgent Object

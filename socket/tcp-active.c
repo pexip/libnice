@@ -52,11 +52,16 @@
 #endif
 
 typedef struct {
-  GSocketAddress *local_addr;
-  GMainContext *context;
+  GSocketAddress     *local_addr;
+  GMainContext       *context;
+  SocketRecvCallback  recv_cb;
+  gpointer            userdata;
+  GDestroyNotify      destroy_notify;
+  GSList             *established_sockets; /**< list of NiceSocket objs */
+  GSList             *gsources;            /**< list of GSource objs */
 } TcpActivePriv;
 
-
+static void socket_attach (NiceSocket* sock, GMainContext* ctx);
 static void socket_close (NiceSocket *sock);
 static gint socket_recv (NiceSocket *sock, NiceAddress *from,
     guint len, gchar *buf);
@@ -65,8 +70,8 @@ static gint socket_send (NiceSocket *sock, const NiceAddress *to,
 static gboolean socket_is_reliable (NiceSocket *sock);
 
 
-NiceSocket *
-nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr)
+NiceSocket * nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr, 
+                                         SocketRecvCallback cb, gpointer userdata, GDestroyNotify destroy_notify)
 {
   struct sockaddr_storage name;
   NiceAddress tmp_addr;
@@ -75,18 +80,16 @@ nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr)
   GSocketAddress *gaddr;
 
   if (addr == NULL) {
-    /* We can't connect a tcp socket with no destination address */
+    /* We can't connect a tcp with no local address */
     return NULL;
   }
 
   tmp_addr = *addr;
-
   /* Make sure we don't bind to any local port */
   nice_address_set_port (&tmp_addr, 0);
   nice_address_copy_to_sockaddr (&tmp_addr, (struct sockaddr *)&name);
 
   gaddr = g_socket_address_new_from_native (&name, sizeof (name));
-
   if (gaddr == NULL) {
     return NULL;
   }
@@ -94,38 +97,74 @@ nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr)
   sock = g_slice_new0 (NiceSocket);
 
   sock->priv = priv = g_slice_new0 (TcpActivePriv);
-
-  priv->context = g_main_context_ref (ctx);
   priv->local_addr = gaddr;
-
-  sock->addr = tmp_addr;
+  priv->context = g_main_context_ref (ctx);
+  priv->recv_cb = cb;
+  priv->userdata = userdata;
+  priv->destroy_notify = destroy_notify;
 
   sock->type = NICE_SOCKET_TYPE_TCP_ACTIVE;
+  sock->addr = tmp_addr;
   sock->fileno = NULL;
   sock->send = socket_send;
   sock->recv = socket_recv;
   sock->is_reliable = socket_is_reliable;
   sock->close = socket_close;
+  sock->attach = socket_attach;
 
   return sock;
+}
+
+static void
+socket_attach (NiceSocket* sock, GMainContext* ctx)
+{
+  TcpActivePriv *priv = sock->priv;
+  GSList *i;
+
+  if (priv->context)
+    g_main_context_unref (priv->context);
+
+  priv->context = ctx;
+  if (priv->context) {
+    g_main_context_ref (priv->context);
+  }
+
+  for (i = priv->established_sockets; i; i = i->next) {
+    NiceSocket *socket = i->data;
+    nice_socket_attach (socket, ctx);
+  }
 }
 
 static void
 socket_close (NiceSocket *sock)
 {
   TcpActivePriv *priv = sock->priv;
+  GSList *i;
 
   if (priv->context)
     g_main_context_unref (priv->context);
-  if (priv->local_addr)
-    g_object_unref (priv->local_addr);
 
-  g_slice_free(TcpActivePriv, sock->priv);
+  if (priv->userdata && priv->destroy_notify)
+    (priv->destroy_notify)(priv->userdata);
+
+  for (i = priv->established_sockets; i; i = i->next) {
+    NiceSocket *socket = i->data;
+    nice_socket_free (socket);
+  }
+
+  g_object_unref (priv->local_addr);
+
+  g_slist_free (priv->established_sockets);
+  g_slice_free (TcpActivePriv, sock->priv);
 }
 
 static gint
 socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
 {
+  /* 
+   * Should never be called for an active connection, all real data arrives on
+   * established connections 
+   */
   return -1;
 }
 
@@ -133,7 +172,32 @@ static gint
 socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf)
 {
-  return -1;
+  TcpActivePriv *priv = sock->priv;
+  GSList *i;
+  gint sent_len = 0;
+
+  for (i = priv->established_sockets; i; i = i->next) {
+    NiceSocket *socket = i->data;
+    sent_len = nice_socket_send(socket, to, len, buf);
+    if (sent_len != 0)
+    {
+      nice_debug("tcp-act: Sent on socket, sent %d", sent_len);
+      return sent_len;
+    }
+  }
+
+  /*
+   * Connect new socket
+   */
+  NiceSocket* new_socket = nice_tcp_active_socket_connect (sock, to);
+  if (!new_socket) {
+    nice_debug ("tcp-act: failed to connect the new socket");
+    return -1;
+  }
+  nice_debug ("tcp-act: connected outbound socket");
+  priv->established_sockets = g_slist_append (priv->established_sockets, new_socket);
+  sent_len = nice_socket_send (new_socket, to, len, buf);
+  return sent_len;
 }
 
 
@@ -143,8 +207,23 @@ socket_is_reliable (NiceSocket *sock)
   return TRUE;
 }
 
+static
+void tcp_active_established_socket_recv_cb (NiceSocket* socket, NiceAddress* from, gchar* buf, gint len, gpointer *userdata)
+{
+  NiceSocket* listening_socket = (NiceSocket *)userdata;
+  TcpActivePriv *priv = listening_socket->priv;
+
+  if (priv->recv_cb) {
+    nice_debug("tcp-act: sending up %d bytes", len);
+    
+    (priv->recv_cb) (listening_socket, from, buf, len, priv->userdata);
+  } else {
+    nice_debug("tcp-act: no callback configured!!");
+  }
+}
+
 NiceSocket *
-nice_tcp_active_socket_connect (NiceSocket *socket, NiceAddress *addr)
+nice_tcp_active_socket_connect (NiceSocket *socket, const NiceAddress *addr)
 {
   struct sockaddr_storage name;
   TcpActivePriv *active_priv = socket->priv;
@@ -217,5 +296,6 @@ nice_tcp_active_socket_connect (NiceSocket *socket, NiceAddress *addr)
   nice_address_set_from_sockaddr (&local_addr, (struct sockaddr *)&name);
 
   return nice_tcp_established_socket_new (gsock,
-                                          &local_addr, addr, active_priv->context, NULL, NULL, NULL);
+                                          &local_addr, addr, active_priv->context, 
+                                          tcp_active_established_socket_recv_cb, (gpointer)socket, NULL);
 }

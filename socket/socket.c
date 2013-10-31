@@ -71,3 +71,11 @@ nice_socket_free (NiceSocket *sock)
   }
 }
 
+void
+nice_socket_attach (NiceSocket *sock, GMainContext* ctx)
+{
+  if (sock && sock->attach) {
+    sock->attach (sock, ctx);
+  }
+}
+

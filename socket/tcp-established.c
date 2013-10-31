@@ -69,9 +69,9 @@ typedef struct {
 struct to_be_sent {
   guint length;
   gchar *buf;
-  gboolean can_drop;
 };
 
+static void socket_attach (NiceSocket* sock, GMainContext* ctx);
 static void socket_close (NiceSocket *sock);
 static gint socket_recv (NiceSocket *sock, NiceAddress *from,
     guint len, gchar *buf);
@@ -80,8 +80,7 @@ static gint socket_send (NiceSocket *sock, const NiceAddress *to,
 static gboolean socket_is_reliable (NiceSocket *sock);
 
 
-static void add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len,
-                            gboolean head);
+static void add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len);
 static void free_to_be_sent (struct to_be_sent *tbs);
 static gboolean socket_send_more (GSocket *gsocket, GIOCondition condition,
                                   gpointer data);
@@ -91,7 +90,7 @@ static gboolean socket_recv_more (GSocket *gsocket, GIOCondition condition,
 
 NiceSocket *
 nice_tcp_established_socket_new (GSocket *gsock,
-                                 NiceAddress *local_addr, NiceAddress *remote_addr, GMainContext *ctx,
+                                 NiceAddress *local_addr, const NiceAddress *remote_addr, GMainContext *ctx,
                                  SocketRecvCallback cb, gpointer userdata, GDestroyNotify destroy_notify)
 {
   NiceSocket *sock;
@@ -116,11 +115,48 @@ nice_tcp_established_socket_new (GSocket *gsock,
   sock->recv = socket_recv;
   sock->is_reliable = socket_is_reliable;
   sock->close = socket_close;
+  sock->attach = socket_attach;
 
   priv->read_source = g_socket_create_source(sock->fileno, G_IO_IN | G_IO_ERR, NULL);
   g_source_set_callback (priv->read_source, (GSourceFunc) socket_recv_more, sock, NULL);
   g_source_attach (priv->read_source, priv->context);
   return sock;
+}
+
+static void
+socket_attach (NiceSocket* sock, GMainContext* ctx)
+{
+  TcpEstablishedPriv *priv = sock->priv;
+  gboolean write_pending = FALSE;
+
+  if (priv->context)
+    g_main_context_unref (priv->context);
+
+  if (priv->read_source) {
+    g_source_destroy (priv->read_source);
+    g_source_unref (priv->read_source);
+  }
+
+  if (priv->write_source) {
+    write_pending = TRUE;
+    g_source_destroy (priv->write_source);
+    g_source_unref (priv->write_source);
+  }
+
+  priv->context = ctx;
+  if (priv->context) {
+    g_main_context_ref (priv->context);
+
+    priv->read_source = g_socket_create_source(sock->fileno, G_IO_IN | G_IO_ERR, NULL);
+    g_source_set_callback (priv->read_source, (GSourceFunc) socket_recv_more, sock, NULL);
+    g_source_attach (priv->read_source, priv->context);
+    if (write_pending) {
+        priv->write_source = g_socket_create_source(sock->fileno, G_IO_OUT, NULL);
+        g_source_set_callback (priv->write_source, (GSourceFunc) socket_send_more,
+                               sock, NULL);
+        g_source_attach (priv->write_source, priv->context);
+    }
+  }
 }
 
 static void
@@ -213,17 +249,21 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
     if (g_socket_is_connected (sock->fileno) &&
         g_queue_is_empty (&priv->send_queue)) {
       ret = g_socket_send (sock->fileno, buff, len, NULL, &gerr);
-      if (ret < 0 &&
-          g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK)) {
-        add_to_be_sent (sock, buff, len, FALSE);
-        ret = 0;
+      if (ret < 0) {
+        if (g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK)) {
+            add_to_be_sent (sock, buff, len);
+            ret = len;
+        }
+      } else if ((guint)ret < len)  {
+          add_to_be_sent (sock, buff + ret, len - ret);
+          ret = len;
       }
       if (gerr)
-        g_error_free (gerr);
-      /* TODO: handle partial sends here */
+          g_error_free (gerr);
+
       return ret;
     } else {
-      add_to_be_sent (sock, buff, len, FALSE);
+      add_to_be_sent (sock, buff, len);
       return len;
     }
   } else {
@@ -247,7 +287,7 @@ parse_rfc4571(NiceSocket* sock, NiceAddress* from)
   while (!done) {
     if (priv->recv_offset > 2) {
       gchar *data = priv->recv_buff;
-      guint16 packet_length = data[0] << 8 | data[1];
+      guint packet_length = data[0] << 8 | data[1];
       if ( packet_length + 2 <= priv->recv_offset) {
         /* 
          * Have complete packet, deliver it
@@ -316,9 +356,12 @@ socket_send_more (
   struct to_be_sent *tbs = NULL;
   GError *gerr = NULL;
 
+  agent_lock();
+
   if (g_source_is_destroyed (g_main_current_source ())) {
     nice_debug ("tcp-est: Source was destroyed. "
         "Avoided race condition in tcp-established.c:socket_send_more");
+    agent_unlock();
     return FALSE;
   }
 
@@ -335,7 +378,7 @@ socket_send_more (
     if (ret < 0) {
       if(gerr != NULL &&
           g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK)) {
-        add_to_be_sent (sock, tbs->buf, tbs->length, TRUE);
+        add_to_be_sent (sock, tbs->buf, tbs->length);
         g_free (tbs->buf);
         g_slice_free (struct to_be_sent, tbs);
         g_error_free (gerr);
@@ -344,7 +387,7 @@ socket_send_more (
       if (gerr)
         g_error_free (gerr);
     } else if (ret < (int) tbs->length) {
-      add_to_be_sent (sock, tbs->buf + ret, tbs->length - ret, TRUE);
+      add_to_be_sent (sock, tbs->buf + ret, tbs->length - ret);
       g_free (tbs->buf);
       g_slice_free (struct to_be_sent, tbs);
       break;
@@ -358,14 +401,16 @@ socket_send_more (
     g_source_destroy (priv->write_source);
     g_source_unref (priv->write_source);
     priv->write_source = NULL;
+    agent_unlock();
     return FALSE;
   }
 
+  agent_unlock();
   return TRUE;
 }
 
 static void
-add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len, gboolean head)
+add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len)
 {
   TcpEstablishedPriv *priv = sock->priv;
   struct to_be_sent *tbs = NULL;
@@ -373,14 +418,13 @@ add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len, gboolean head)
   if (len <= 0)
     return;
 
+  agent_lock();
+
   tbs = g_slice_new0 (struct to_be_sent);
   tbs->buf = g_memdup (buf, len);
   tbs->length = len;
-  tbs->can_drop = !head;
-  if (head)
-    g_queue_push_head (&priv->send_queue, tbs);
-  else
-    g_queue_push_tail (&priv->send_queue, tbs);
+
+  g_queue_push_tail (&priv->send_queue, tbs);
 
   if (priv->write_source == NULL) {
     priv->write_source = g_socket_create_source(sock->fileno, G_IO_OUT, NULL);
@@ -388,6 +432,7 @@ add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len, gboolean head)
                            sock, NULL);
     g_source_attach (priv->write_source, priv->context);
   }
+  agent_unlock();
 }
 
 static void

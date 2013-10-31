@@ -144,6 +144,7 @@ nice_udp_bsd_socket_new (NiceAddress *addr)
   sock->recv = socket_recv;
   sock->is_reliable = socket_is_reliable;
   sock->close = socket_close;
+  sock->attach = NULL;
 
   return sock;
 }

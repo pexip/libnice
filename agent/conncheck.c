@@ -590,10 +590,10 @@ static gboolean priv_conn_keepalive_tick_unlocked (NiceAgent *agent)
 
           nice_address_to_string (&p->remote->addr, tmpbuf);
           nice_debug ("Agent %p : Keepalive STUN-CC REQ to '%s:%u', "
-              "socket=%u (c-id:%u), username='%s' (%d), "
+              "(c-id:%u), username='%s' (%d), "
               "password='%s' (%d), priority=%u.", agent,
               tmpbuf, nice_address_get_port (&p->remote->addr),
-              g_socket_get_fd(((NiceSocket *)p->local->sockptr)->fileno), component->id,
+              component->id,
               uname, uname_len, password, password_len, priority);
 
           if (uname_len > 0) {
@@ -1694,10 +1694,9 @@ int conn_check_send (NiceAgent *agent, CandidateCheckPair *pair)
   {
     gchar tmpbuf[INET6_ADDRSTRLEN];
     nice_address_to_string (&pair->remote->addr, tmpbuf);
-    nice_debug ("Agent %p : STUN-CC REQ to '%s:%u', socket=%u, pair=%s (c-id:%u), tie=%llu, username='%s' (%d), password='%s' (%d), priority=%u.", agent,
+    nice_debug ("Agent %p : STUN-CC REQ to '%s:%u', pair=%s (c-id:%u), tie=%llu, username='%s' (%d), password='%s' (%d), priority=%u.", agent,
 	     tmpbuf,
-             nice_address_get_port (&pair->remote->addr),
-             g_socket_get_fd(((NiceSocket *)pair->local->sockptr)->fileno),
+             nice_address_get_port (&pair->remote->addr),             
 	     pair->foundation, pair->component_id,
 	     (unsigned long long)agent->tie_breaker,
         uname, uname_len, password, password_len, priority);
@@ -1932,7 +1931,7 @@ static void priv_reply_to_conn_check (NiceAgent *agent, Stream *stream, Componen
     nice_debug ("Agent %p : STUN-CC RESP to '%s:%u', socket=%u, len=%u, cand=%p (c-id:%u), use-cand=%d.", agent,
 	     tmpbuf,
 	     nice_address_get_port (toaddr),
-	     g_socket_get_fd(socket->fileno),
+       socket->fileno ? g_socket_get_fd(socket->fileno) : 0,
 	     (unsigned)rbuf_len,
 	     rcand, component->id,
 	     (int)use_candidate);
@@ -2796,7 +2795,7 @@ gboolean conn_check_handle_inbound_stun (NiceAgent *agent, Stream *stream,
    */
   StunAgent* stunagent = NULL;
 
-  if (stun_get_type(buf) != STUN_BINDING) {
+  if (stun_get_type((uint8_t *)buf) != STUN_BINDING) {
     for (i = agent->discovery_list; i; i = i->next)
     {
       CandidateDiscovery *d = i->data;

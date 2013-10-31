@@ -78,6 +78,8 @@ struct _NiceSocket
       const gchar *buf);
   gboolean (*is_reliable) (NiceSocket *sock);
   void (*close) (NiceSocket *sock);
+    void (*attach) (NiceSocket *sock, GMainContext* ctx);
+
   void *priv;
 };
 
@@ -92,6 +94,8 @@ nice_socket_send (NiceSocket *sock, const NiceAddress *to,
 gboolean
 nice_socket_is_reliable (NiceSocket *sock);
 
+void
+nice_socket_attach (NiceSocket *sock, GMainContext* ctx);
 
 void
 nice_socket_free (NiceSocket *sock);

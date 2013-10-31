@@ -117,6 +117,7 @@ nice_pseudossl_socket_new (NiceSocket *base_socket)
   sock->recv = socket_recv;
   sock->is_reliable = socket_is_reliable;
   sock->close = socket_close;
+  sock->attach = NULL;
 
   /* We send 'to' NULL because it will always be to an already connected
    * TCP base socket, which ignores the destination */

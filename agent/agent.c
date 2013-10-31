@@ -1866,7 +1866,7 @@ nice_agent_gather_candidates (
 
       current_port = component->min_port;
 
-      if (agent->use_ice_udp) {
+      if (agent->use_ice_udp && component->transport == NICE_CANDIDATE_TRANSPORT_UDP) {
         host_candidate = NULL;
         while (host_candidate == NULL) {
           nice_debug ("Agent %p: Trying to create host candidate on port %d", agent, current_port);
@@ -1930,7 +1930,8 @@ nice_agent_gather_candidates (
         }
       }
 
-      if (agent->use_ice_tcp) {
+      if (agent->use_ice_tcp && (component->transport == NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE ||
+                                 component->transport == NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE)) {
         current_port = component->min_port;
 
         host_candidate = NULL;
@@ -1938,7 +1939,7 @@ nice_agent_gather_candidates (
           nice_debug ("Agent %p: Trying to create TCP host candidate on port %d", agent, current_port);
           nice_address_set_port (addr, current_port);
           host_candidate = discovery_add_local_host_candidate (agent, stream->id,
-                                                               n + 1, addr, NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE);
+                                                               n + 1, addr, component->transport);
           if (current_port > 0)
             current_port++;
           if (current_port == 0 || current_port > component->max_port)
@@ -2099,6 +2100,24 @@ nice_agent_set_port_range (NiceAgent *agent, guint stream_id, guint component_id
   if (agent_find_component (agent, stream_id, component_id, NULL, &component)) {
     component->min_port = min_port;
     component->max_port = max_port;
+  }
+
+  agent_unlock();
+}
+
+NICEAPI_EXPORT void
+nice_agent_set_transport (
+    NiceAgent *agent,
+    guint stream_id,
+    guint component_id,
+    NiceCandidateTransport transport)
+{
+  Component *component;
+
+  agent_lock();
+
+  if (agent_find_component (agent, stream_id, component_id, NULL, &component)) {
+    component->transport = transport;
   }
 
   agent_unlock();
@@ -2388,7 +2407,7 @@ _nice_agent_recv (
     gchar tmpbuf[INET6_ADDRSTRLEN];
     nice_address_to_string (&from, tmpbuf);
     nice_debug ("Agent %p : Packet received on local socket %u from [%s]:%u (%u octets).", agent,
-        g_socket_get_fd (socket->fileno), tmpbuf, nice_address_get_port (&from), len);
+                socket->fileno ? g_socket_get_fd (socket->fileno) : 0, tmpbuf, nice_address_get_port (&from), len);
   }
 #endif
 
@@ -2688,12 +2707,14 @@ void nice_agent_socket_recv_cb (NiceSocket* socket, NiceAddress* from, gchar* bu
   GList *item;
   gboolean is_stun = TRUE;
 
+  agent_lock();
+
 #ifndef NDEBUG
   if (len > 0) {
     gchar tmpbuf[INET6_ADDRSTRLEN];
     nice_address_to_string (from, tmpbuf);
     nice_debug ("Agent %p : Packet received on local socket %u from [%s]:%u (%u octets).", agent,
-        g_socket_get_fd (socket->fileno), tmpbuf, nice_address_get_port (from), len);
+                socket->fileno ? g_socket_get_fd (socket->fileno) : 0, tmpbuf, nice_address_get_port (from), len);
   }
 #endif
 
@@ -2736,10 +2757,14 @@ void nice_agent_socket_recv_cb (NiceSocket* socket, NiceAddress* from, gchar* bu
       gint sid = stream->id;
       gint cid = component->id;
       NiceAgentRecvFunc callback = component->g_source_io_cb;
+      agent_unlock();
       callback (agent, sid, cid, len, buf, cdata);
-    }
+    } else {
+      agent_unlock();
+    }    
   } else {
     nice_debug("Handled STUN message!!");
+    agent_unlock();
   }
 }
                       
@@ -2822,19 +2847,25 @@ agent_attach_stream_component_socket (NiceAgent *agent,
   GSource *source;
   IOCtx *ctx;
 
+  nice_socket_attach (socket, component->ctx);
+
   if (!component->ctx)
     return;
 
-  /* note: without G_IO_ERR the glib mainloop goes into
-   *       busyloop if errors are encountered */
-  source = g_socket_create_source(socket->fileno, G_IO_IN | G_IO_ERR, NULL);
-
-  ctx = io_ctx_new (agent, stream, component, socket, source);
-  g_source_set_callback (source, (GSourceFunc) nice_agent_g_source_cb,
-      ctx, (GDestroyNotify) io_ctx_free);
-  nice_debug ("Agent %p : Attach source %p (stream %u).", agent, source, stream->id);
-  g_source_attach (source, component->ctx);
-  component->gsources = g_slist_append (component->gsources, source);
+  if (socket->fileno) {
+    /* note: without G_IO_ERR the glib mainloop goes into
+     *       busyloop if errors are encountered */
+    source = g_socket_create_source(socket->fileno, G_IO_IN | G_IO_ERR, NULL);
+    
+    ctx = io_ctx_new (agent, stream, component, socket, source);
+    g_source_set_callback (source, (GSourceFunc) nice_agent_g_source_cb,
+                           ctx, (GDestroyNotify) io_ctx_free);
+    nice_debug ("Agent %p : Attach source %p (stream %u). ctx %p", agent, source, stream->id, component->ctx);
+    g_source_attach (source, component->ctx);
+    component->gsources = g_slist_append (component->gsources, source);
+  } else {
+    nice_debug ("Agent %p : Source has no fileno (stream %u)", agent, stream->id);
+  }
 }
 
 
@@ -3037,13 +3068,15 @@ nice_agent_set_selected_remote_candidate (
 void
 _priv_set_socket_tos (NiceAgent *agent, NiceSocket *sock, gint tos)
 {
-  if (setsockopt (g_socket_get_fd (sock->fileno), IPPROTO_IP,
+  if (sock->fileno && 
+      setsockopt (g_socket_get_fd (sock->fileno), IPPROTO_IP,
           IP_TOS, (const char *) &tos, sizeof (tos)) < 0) {
     nice_debug ("Agent %p: Could not set socket ToS", agent,
         g_strerror (errno));
   }
 #ifdef IPV6_TCLASS
-  if (setsockopt (g_socket_get_fd (sock->fileno), IPPROTO_IPV6,
+  if (sock->fileno && 
+      setsockopt (g_socket_get_fd (sock->fileno), IPPROTO_IPV6,
           IPV6_TCLASS, (const char *) &tos, sizeof (tos)) < 0) {
     nice_debug ("Agent %p: Could not set IPV6 socket ToS", agent,
         g_strerror (errno));
