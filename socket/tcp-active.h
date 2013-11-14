@@ -40,8 +40,6 @@
 
 G_BEGIN_DECLS
 
-typedef void (*SocketRecvCallback)(NiceSocket* socket, NiceAddress* from, gchar* buf, gint len, gpointer *userdata);
-
 NiceSocket * nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr, 
                                          SocketRecvCallback cb, gpointer userdata, GDestroyNotify destroy_notify);
 NiceSocket * nice_tcp_active_socket_connect (NiceSocket *socket, const NiceAddress *addr);
