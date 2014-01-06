@@ -1557,7 +1557,8 @@ priv_add_new_candidate_discovery_turn (NiceAgent *agent,
     stun_agent_init (&cdisco->stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
         STUN_COMPATIBILITY_RFC5389,
         STUN_AGENT_USAGE_ADD_SOFTWARE |
-        STUN_AGENT_USAGE_LONG_TERM_CREDENTIALS);
+        STUN_AGENT_USAGE_LONG_TERM_CREDENTIALS |
+        STUN_AGENT_USAGE_NO_INDICATION_AUTH);
   }
   stun_agent_set_software (&cdisco->stun_agent, agent->software_attribute);
 

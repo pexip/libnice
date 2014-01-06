@@ -179,7 +179,8 @@ nice_turn_socket_new (GMainContext *ctx, NiceAddress *addr,
       compatibility == NICE_TURN_SOCKET_COMPATIBILITY_RFC5766) {
     stun_agent_init (&priv->agent, STUN_ALL_KNOWN_ATTRIBUTES,
         STUN_COMPATIBILITY_RFC5389,
-        STUN_AGENT_USAGE_LONG_TERM_CREDENTIALS);
+        STUN_AGENT_USAGE_LONG_TERM_CREDENTIALS | 
+        STUN_AGENT_USAGE_NO_INDICATION_AUTH);
   } else if (compatibility == NICE_TURN_SOCKET_COMPATIBILITY_MSN) {
     stun_agent_init (&priv->agent, STUN_ALL_KNOWN_ATTRIBUTES,
         STUN_COMPATIBILITY_RFC3489,
