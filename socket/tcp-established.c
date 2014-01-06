@@ -62,7 +62,7 @@ typedef struct {
   SocketRecvCallback  recv_cb;
   gpointer            userdata;
   GDestroyNotify      destroy_notify;
-  guint8              recv_buff[MAX_BUFFER_SIZE];
+  gchar               recv_buff[MAX_BUFFER_SIZE];
   guint               recv_offset;
 } TcpEstablishedPriv;
 
@@ -286,10 +286,8 @@ parse_rfc4571(NiceSocket* sock, NiceAddress* from)
 
   while (!done) {
     if (priv->recv_offset > 2) {
-      guint8 *data = priv->recv_buff;
+      gchar *data = priv->recv_buff;
       guint packet_length = data[0] << 8 | data[1];
-      nice_debug ("socket_recv_more: expecting %u bytes\n", packet_length);
-
       if ( packet_length + 2 <= priv->recv_offset) {
         /* 
          * Have complete packet, deliver it
