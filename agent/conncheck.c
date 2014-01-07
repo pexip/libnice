@@ -1334,9 +1334,11 @@ static gboolean priv_conn_check_add_for_candidate_pair (NiceAgent *agent, guint 
     return FALSE;
   }
 
-  /* note: match pairs only if transport and address family are the same */
+  /* note: match pairs only if transport and address family are the same 
+   Also as per RFC 6544 prune any checks for which the local candidate is TCP passive */
   if (priv_compatible_transport(local, remote) &&
-     local->addr.s.addr.sa_family == remote->addr.s.addr.sa_family) {
+      local->addr.s.addr.sa_family == remote->addr.s.addr.sa_family &&
+      local->transport != NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE) {
 
     priv_add_new_check_pair (agent, stream_id, component, local, remote, NICE_CHECK_FROZEN, FALSE);
     ret = TRUE;
@@ -1841,7 +1843,7 @@ static gboolean priv_schedule_triggered_check (NiceAgent *agent, Stream *stream,
 	    p->state == NICE_CHECK_FROZEN)
 	  priv_conn_check_initiate (agent, p);
         else if (p->state == NICE_CHECK_IN_PROGRESS) {
-	  /* XXX: according to ICE 7.2.1.4 "Triggered Checks" (ID-19),
+          /* XXX: according to ICE 7.2.1.4 "Triggered Checks" (ID-19),
 	   * we should cancel the existing one, instead we reset our timer, so
 	   * we'll resend the exiting transactions faster if needed...? :P
 	   */
@@ -1893,7 +1895,11 @@ static gboolean priv_schedule_triggered_check (NiceAgent *agent, Stream *stream,
 
   if (i) {
     nice_debug ("Agent %p : Adding a triggered check to conn.check list (local=%p).", agent, local);
-    priv_add_new_check_pair (agent, stream->id, component, local, remote_cand, NICE_CHECK_WAITING, use_candidate);
+    if (local->transport != NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE) {
+      priv_add_new_check_pair (agent, stream->id, component, local, remote_cand, NICE_CHECK_WAITING, use_candidate);
+    } else {
+      priv_add_new_check_pair (agent, stream->id, component, local, remote_cand, NICE_CHECK_DISCOVERED, use_candidate);
+    }
     return TRUE;
   }
   else {
