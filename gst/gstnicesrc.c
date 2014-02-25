@@ -41,6 +41,7 @@
 #include <string.h>
 
 #include "gstnicesrc.h"
+#include <gst/netbuffer/gstnetbuffer.h>
 
 GST_DEBUG_CATEGORY_STATIC (nicesrc_debug);
 #define GST_CAT_DEFAULT nicesrc_debug
@@ -190,10 +191,13 @@ gst_nice_src_read_callback (NiceAgent *agent,
     guint component_id,
     guint len,
     gchar *buf,
-    gpointer data)
+    gpointer data,
+    const NiceAddress *from,
+    const NiceAddress *to)
 {
   GstBaseSrc *basesrc = GST_BASE_SRC (data);
   GstNiceSrc *nicesrc = GST_NICE_SRC (basesrc);
+  GstNetBuffer *netbuffer = NULL;
   GstBuffer *buffer = NULL;
 
   GST_LOG_OBJECT (agent, "Got buffer, getting out of the main loop");
@@ -202,8 +206,37 @@ gst_nice_src_read_callback (NiceAgent *agent,
   buffer = gst_buffer_new_allocate (NULL, len, NULL);
   gst_buffer_fill (buffer, 0, buf, len);
 #else
-  buffer = gst_buffer_new_and_alloc (len);
-  memcpy (GST_BUFFER_DATA (buffer), buf, len);
+  if (from != NULL && to != NULL) {
+    netbuffer = gst_netbuffer_new();
+
+    GST_BUFFER_DATA(netbuffer) = g_memdup(buf, len);
+    GST_BUFFER_MALLOCDATA(netbuffer) = GST_BUFFER_DATA(netbuffer);
+    GST_BUFFER_SIZE(netbuffer) = len;
+
+    switch (from->s.addr.sa_family) {
+    case AF_INET:
+      {
+        gst_netaddress_set_ip4_address (&netbuffer->from, from->s.ip4.sin_addr.s_addr, from->s.ip4.sin_port);
+        gst_netaddress_set_ip4_address (&netbuffer->to, to->s.ip4.sin_addr.s_addr, to->s.ip4.sin_port);
+      }
+      break;
+    case AF_INET6:
+      {
+        gst_netaddress_set_ip6_address (&netbuffer->from, (guint *)(&from->s.ip6.sin6_addr), from->s.ip6.sin6_port);
+        gst_netaddress_set_ip6_address (&netbuffer->to, (guint *)(&to->s.ip6.sin6_addr), to->s.ip6.sin6_port);
+      }
+      break;
+    default:
+      GST_ERROR_OBJECT (nicesrc, "Unknown address family");
+      break;
+    }
+
+
+    buffer = GST_BUFFER_CAST(netbuffer);
+  } else {
+    buffer = gst_buffer_new_and_alloc (len);
+    memcpy (GST_BUFFER_DATA (buffer), buf, len);
+  }
 #endif
   g_queue_push_tail (nicesrc->outbufs, buffer);
 
