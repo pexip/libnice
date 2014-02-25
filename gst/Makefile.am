@@ -50,7 +50,7 @@ libgstnice010_la_SOURCES = \
 	gstnice.h \
 	gstnice.c
 
-libgstnice010_la_LIBADD = $(COMMON_LIBADD) $(GST010_LIBS) -lgstnetbuffer-0.10
+libgstnice010_la_LIBADD = $(COMMON_LIBADD) $(GST010_LIBS)
 
 libgstnice010_la_LDFLAGS = -module -avoid-version
 endif

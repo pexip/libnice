@@ -5,4 +5,4 @@ bld(features="autotools", name="libnice",
     install_from_autotools_pkg=['lib/libnice.so*',
                                 'lib/python2.7/site-packages/libnice.so'],
     depends_on='gstreamer gst-python',
-    autotools_source='autogen.sh common.mk configure.ac Makefile.am m4/as-check-python-headers.m4 gst/Makefile.am')
+    autotools_source='autogen.sh common.mk configure.ac Makefile.am m4/as-check-python-headers.m4')

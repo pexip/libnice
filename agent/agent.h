@@ -291,7 +291,7 @@ typedef enum
  */
 typedef void (*NiceAgentRecvFunc) (
   NiceAgent *agent, guint stream_id, guint component_id, guint len,
-  gchar *buf, gpointer user_data, const NiceAddress *from, const NiceAddress *to);
+  gchar *buf, gpointer user_data);
 
 
 /**
