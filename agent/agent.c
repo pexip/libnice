@@ -1111,7 +1111,7 @@ pseudo_tcp_socket_readable (PseudoTcpSocket *sock, gpointer user_data)
       NiceAgentRecvFunc callback = component->g_source_io_cb;
       /* Unlock the agent before calling the callback */
       agent_unlock();
-      callback (agent, sid, cid, len, buf, data);
+      callback (agent, sid, cid, len, buf, data, NULL, NULL);
       agent_lock();
       if (sock == NULL) {
         nice_debug ("PseudoTCP socket got destroyed in readable callback!");
@@ -2391,14 +2391,14 @@ _nice_agent_recv (
   Component *component,
   NiceSocket *socket,
   guint buf_len,
-  gchar *buf)
+  gchar *buf,
+  NiceAddress *from)
 {
-  NiceAddress from;
   gint len;
   GList *item;
   gboolean has_padding = _nice_should_have_padding(agent->compatibility);
 
-  len = nice_socket_recv (socket, &from,  buf_len, buf);
+  len = nice_socket_recv (socket, from,  buf_len, buf);
 
   if (len <= 0)
     return len;
@@ -2406,9 +2406,9 @@ _nice_agent_recv (
 #ifndef NDEBUG
   if (len > 0) {
     gchar tmpbuf[INET6_ADDRSTRLEN];
-    nice_address_to_string (&from, tmpbuf);
+    nice_address_to_string (from, tmpbuf);
     nice_debug ("Agent %p : Packet received on local socket %u from [%s]:%u (%u octets).", agent,
-                socket->fileno ? g_socket_get_fd (socket->fileno) : 0, tmpbuf, nice_address_get_port (&from), len);
+                socket->fileno ? g_socket_get_fd (socket->fileno) : 0, tmpbuf, nice_address_get_port (from), len);
   }
 #endif
 
@@ -2422,7 +2422,7 @@ _nice_agent_recv (
 
   for (item = component->turn_servers; item; item = g_list_next (item)) {
     TurnServer *turn = item->data;
-    if (nice_address_equal (&from, &turn->server)) {
+    if (nice_address_equal (from, &turn->server)) {
       GSList * i = NULL;
       has_padding = _nice_should_have_padding(agent->turn_compatibility);
 
@@ -2436,7 +2436,7 @@ _nice_agent_recv (
             cand->stream_id == stream->id &&
             cand->component_id == component->id) {
           len = nice_turn_socket_parse_recv (cand->sockptr, &socket,
-              &from, len, buf, &from, buf, len);
+              from, len, buf, from, buf, len);
         }
       }
       break;
@@ -2451,7 +2451,7 @@ _nice_agent_recv (
 
 
   if (conn_check_handle_inbound_stun (agent, stream, component, socket,
-          &from, buf, len))
+          from, buf, len))
     /* handled STUN message*/
     return 0;
 
@@ -2759,7 +2759,7 @@ void nice_agent_socket_recv_cb (NiceSocket* socket, NiceAddress* from, gchar* bu
       gint cid = component->id;
       NiceAgentRecvFunc callback = component->g_source_io_cb;
       agent_unlock();
-      callback (agent, sid, cid, len, buf, cdata);
+      callback (agent, sid, cid, len, buf, cdata, from, &socket->addr);
     } else {
       agent_unlock();
     }    
@@ -2779,7 +2779,7 @@ nice_agent_g_source_cb (
   NiceAgent *agent = ctx->agent;
   Stream *stream = ctx->stream;
   Component *component = ctx->component;
-
+  NiceAddress from;
   gchar buf[MAX_BUFFER_SIZE];
   gint len;
 
@@ -2791,7 +2791,7 @@ nice_agent_g_source_cb (
   }
 
   len = _nice_agent_recv (agent, stream, component, ctx->socket,
-			  MAX_BUFFER_SIZE, buf);
+			  MAX_BUFFER_SIZE, buf, &from);
 
   if (len > 0 && component->tcp) {
     g_object_add_weak_pointer (G_OBJECT (agent), (gpointer *)&agent);
@@ -2811,7 +2811,7 @@ nice_agent_g_source_cb (
     NiceAgentRecvFunc callback = component->g_source_io_cb;
     /* Unlock the agent before calling the callback */
     agent_unlock();
-    callback (agent, sid, cid, len, buf, data);
+    callback (agent, sid, cid, len, buf, data, &from, &ctx->socket->addr);
     goto done;
   } else if (len < 0) {
     GSource *source = ctx->source;

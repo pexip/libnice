@@ -21,7 +21,6 @@ ignore nice_candidate_ice_priority
 ignore nice_candidate_ice_priority_full
 ignore nice_candidate_msn_priority
 ignore nice_candidate_jingle_priority
-ignore nice_agent_get_remote_candidates
 ignore nice_agent_attach_recv
 ignore nice_agent_new_reliable
 %%
@@ -241,6 +240,34 @@ _wrap_nice_agent_get_local_candidates(PyGObject *self, PyObject *args)
   }
 
   candidates = nice_agent_get_local_candidates(agent, stream_id, component_id);
+  result = PyList_New(0);
+  for (item = candidates; item; item = g_slist_next (item))
+  {
+    NiceCandidate *candidate = item->data;
+	PyList_Append(result, pyg_boxed_new(nice_candidate_get_type(), item->data, TRUE, TRUE));
+  }
+
+  Py_END_ALLOW_THREADS
+  return result;
+}
+%%
+override nice_agent_get_remote_candidates
+static PyObject *
+_wrap_nice_agent_get_remote_candidates(PyGObject *self, PyObject *args)
+{
+  guint stream_id, component_id;
+  GSList *candidates, *item;
+  NiceAgent* agent = (NiceAgent *)(self->obj);
+  PyObject *result = NULL;
+
+  Py_BEGIN_ALLOW_THREADS
+
+  if (!PyArg_ParseTuple(args, "II", &stream_id, &component_id))
+  {
+    return NULL;
+  }
+
+  candidates = nice_agent_get_remote_candidates(agent, stream_id, component_id);
   result = PyList_New(0);
   for (item = candidates; item; item = g_slist_next (item))
   {
