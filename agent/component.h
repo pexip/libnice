@@ -125,7 +125,9 @@ struct _Component
   gboolean tcp_readable;
   guint min_port;
   guint max_port;
-  NiceCandidateTransport transport;
+  gboolean enable_udp;
+  gboolean enable_tcp_passive;
+  gboolean enable_tcp_active;
 };
 
 Component *

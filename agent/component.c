@@ -63,7 +63,9 @@ component_new (guint id)
   component->state = NICE_COMPONENT_STATE_DISCONNECTED;
   component->restart_candidate = NULL;
   component->tcp = NULL;
-  component->transport = NICE_CANDIDATE_TRANSPORT_UDP;
+  component->enable_udp = FALSE;
+  component->enable_tcp_passive = FALSE;
+  component->enable_tcp_active = FALSE;
   return component;
 }
 

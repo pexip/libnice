@@ -1867,7 +1867,7 @@ nice_agent_gather_candidates (
 
       current_port = component->min_port;
 
-      if (agent->use_ice_udp && component->transport == NICE_CANDIDATE_TRANSPORT_UDP) {
+      if (agent->use_ice_udp && component->enable_udp) {
         host_candidate = NULL;
         while (host_candidate == NULL) {
           nice_debug ("Agent %p: Trying to create host candidate on port %d", agent, current_port);
@@ -1931,16 +1931,15 @@ nice_agent_gather_candidates (
         }
       }
 
-      if (agent->use_ice_tcp && (component->transport == NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE ||
-                                 component->transport == NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE)) {
+      if (agent->use_ice_tcp && component->enable_tcp_passive) {
         current_port = component->min_port;
 
         host_candidate = NULL;
         while (host_candidate == NULL) {
-          nice_debug ("Agent %p: Trying to create TCP host candidate on port %d", agent, current_port);
+          nice_debug ("Agent %p: Trying to create TCP-PASSIVE host candidate on port %d", agent, current_port);
           nice_address_set_port (addr, current_port);
           host_candidate = discovery_add_local_host_candidate (agent, stream->id,
-                                                               n + 1, addr, component->transport);
+                                                               n + 1, addr, NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE);
           if (current_port > 0)
             current_port++;
           if (current_port == 0 || current_port > component->max_port)
@@ -1951,7 +1950,33 @@ nice_agent_gather_candidates (
         if (!host_candidate) {
           gchar ip[NICE_ADDRESS_STRING_LEN];
           nice_address_to_string (addr, ip);
-          nice_debug ("Agent %p: Unable to add local host candidate %s for s%d:%d"
+          nice_debug ("Agent %p: Unable to add local TCP-PASSIVE host candidate %s for s%d:%d"
+              ". Invalid interface?", agent, ip, stream->id, component->id);
+          ret = FALSE;
+          goto error;
+        }
+      }
+      
+      if (agent->use_ice_tcp && component->enable_tcp_active) {
+        current_port = component->min_port;
+
+        host_candidate = NULL;
+        while (host_candidate == NULL) {
+          nice_debug ("Agent %p: Trying to create TCP-ACTIVE host candidate on port %d", agent, current_port);
+          nice_address_set_port (addr, current_port);
+          host_candidate = discovery_add_local_host_candidate (agent, stream->id,
+                                                               n + 1, addr, NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE);
+          if (current_port > 0)
+            current_port++;
+          if (current_port == 0 || current_port > component->max_port)
+            break;
+        }
+        nice_address_set_port (addr, 0);
+
+        if (!host_candidate) {
+          gchar ip[NICE_ADDRESS_STRING_LEN];
+          nice_address_to_string (addr, ip);
+          nice_debug ("Agent %p: Unable to add local TCP-ACTIVE host candidate %s for s%d:%d"
               ". Invalid interface?", agent, ip, stream->id, component->id);
           ret = FALSE;
           goto error;
@@ -2118,7 +2143,24 @@ nice_agent_set_transport (
   agent_lock();
 
   if (agent_find_component (agent, stream_id, component_id, NULL, &component)) {
-    component->transport = transport;
+    switch (transport) {
+    case NICE_CANDIDATE_TRANSPORT_UDP:
+      component->enable_udp = TRUE;
+      break;
+
+    case NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE:
+      component->enable_tcp_active = TRUE;
+      break;
+
+    case NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE:
+      component->enable_tcp_passive = TRUE;
+      break;
+
+    case NICE_CANDIDATE_TRANSPORT_TCP_SO:
+      component->enable_tcp_active = TRUE;
+      component->enable_tcp_passive = TRUE;
+      break;
+    }
   }
 
   agent_unlock();

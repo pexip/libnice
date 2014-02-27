@@ -136,6 +136,17 @@
   )
 )
 
+(define-method set_transport
+  (of-object "NiceAgent")
+  (c-name "nice_agent_set_transport")
+  (return-type "none")
+  (parameters
+    '("guint" "stream_id")
+    '("guint" "component_id")
+    '("NiceCandidateTransport" "transport")
+  )
+)
+
 (define-method set_relay_info
   (of-object "NiceAgent")
   (c-name "nice_agent_set_relay_info")
