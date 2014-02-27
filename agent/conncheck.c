@@ -1793,10 +1793,13 @@ static guint priv_prune_pending_checks (Stream *stream, guint component_id)
         nice_debug ("Agent XXX : pair %p state CANCELED", p);
       }
 
-      /* note: a SHOULD level req. in ICE 8.1.2. "Updating States" (ID-19) */
+      /* note: a SHOULD level req. in ICE 8.1.2. "Updating States" (ID-19) 
+         (For TCP candidates we must always be doing regular nomination so 
+         all in-progress checks should be cancelled) */
       if (p->state == NICE_CHECK_IN_PROGRESS) {
         if (highest_nominated_priority != 0 &&
-            p->priority < highest_nominated_priority) {
+            (p->priority < highest_nominated_priority ||
+             p->local->transport != NICE_CANDIDATE_TRANSPORT_UDP)) {
           p->stun_message.buffer = NULL;
           p->stun_message.buffer_len = 0;
           p->state = NICE_CHECK_CANCELLED;
