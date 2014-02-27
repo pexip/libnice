@@ -231,8 +231,12 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
   GError *gerr = NULL;
   gchar buff[MAX_BUFFER_SIZE];
 
+  gchar to_string[NICE_ADDRESS_STRING_LEN];
+
+  nice_address_to_string (to, to_string);
+
   if (nice_address_equal (to, &priv->remote_addr)) {
-    nice_debug("tcp-est: Sending on tcp-established %d", len);
+    nice_debug("tcp-est: Sending on tcp-established to %s len=%d", to_string, len);
     
     /* Don't try to access the socket if it had an error, otherwise we risk a
        crash with SIGPIPE (Broken pipe) */
@@ -263,11 +267,12 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
 
       return ret;
     } else {
+      nice_debug ("tcp-est: not connected to %s, queueing", to_string);
       add_to_be_sent (sock, buff, len);
       return len;
     }
   } else {
-    nice_debug ("tcp-est: not for us to send");
+    nice_debug ("tcp-est: not for us to send to=%s", to_string);
     return 0;
   }
 }
@@ -297,7 +302,7 @@ parse_rfc4571(NiceSocket* sock, NiceAddress* from)
         if (priv->recv_cb) {
           nice_debug("socket_recv_more: received %d bytes, delivering", packet_length);
           
-          (priv->recv_cb)(sock, from, &data[2], packet_length, priv->userdata);
+          (priv->recv_cb)(sock, from, (gchar *)&data[2], packet_length, priv->userdata);
         }
         
         /*
@@ -329,7 +334,7 @@ socket_recv_more (
   TcpEstablishedPriv *priv = sock->priv;
   NiceAddress from;
   
-  len = socket_recv (sock, &from, MAX_BUFFER_SIZE-priv->recv_offset, &priv->recv_buff[priv->recv_offset]);
+  len = socket_recv (sock, &from, MAX_BUFFER_SIZE-priv->recv_offset, (gchar *)&priv->recv_buff[priv->recv_offset]);
   if (len > 0) {
     priv->recv_offset += len;
     parse_rfc4571(sock, &from);

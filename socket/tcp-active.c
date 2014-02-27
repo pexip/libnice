@@ -175,14 +175,25 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
   TcpActivePriv *priv = sock->priv;
   GSList *i;
   gint sent_len = 0;
+  gchar to_string[NICE_ADDRESS_STRING_LEN];
+
+  nice_address_to_string (to, to_string);
 
   for (i = priv->established_sockets; i; i = i->next) {
     NiceSocket *socket = i->data;
     sent_len = nice_socket_send(socket, to, len, buf);
-    if (sent_len != 0)
+    if (sent_len > 0)
     {
-      nice_debug("tcp-act: Sent on socket, sent %d", sent_len);
+      nice_debug("tcp-act: Sent on socket, sent %d to %s", sent_len, to_string);
       return sent_len;
+    } else if (sent_len < 0) {
+      /* 
+       * Correct socket but failed 
+       */
+      nice_debug("tcp-act: Failed to send to %s, destroying socket", to_string);
+      nice_socket_free (socket);
+      priv->established_sockets = g_slist_remove(priv->established_sockets, socket);
+      break;
     }
   }
 
@@ -191,10 +202,10 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
    */
   NiceSocket* new_socket = nice_tcp_active_socket_connect (sock, to);
   if (!new_socket) {
-    nice_debug ("tcp-act: failed to connect the new socket");
+    nice_debug ("tcp-act: failed to connect the new socket to %s", to_string);
     return -1;
   }
-  nice_debug ("tcp-act: connected outbound socket");
+  nice_debug ("tcp-act: connected outbound socket to %s", to_string);
   priv->established_sockets = g_slist_append (priv->established_sockets, new_socket);
   sent_len = nice_socket_send (new_socket, to, len, buf);
   return sent_len;
