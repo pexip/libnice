@@ -276,10 +276,16 @@ static gboolean priv_add_local_candidate_pruned (NiceAgent *agent, guint stream_
 static guint priv_highest_remote_foundation (Component *component)
 {
   GSList *i;
-  guint highest = 1;
+  guint highest;
   gchar foundation[NICE_CANDIDATE_MAX_FOUNDATION];
 
-  for (highest = 1;; highest++) {
+  /*
+   * We are trying to find an unused foundation from the remote candidates. 
+   * Starting at 1 was not sensible when we were creating remote candidates 
+   * before receiving an answer as it would immediately causes a clash with
+   * the foundation values supplied by the remote.
+   */
+  for (highest = 100;; highest++) {
     gboolean taken = FALSE;
 
     g_snprintf (foundation, NICE_CANDIDATE_MAX_FOUNDATION, "%u", highest);

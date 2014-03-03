@@ -2178,42 +2178,61 @@ static gboolean priv_add_remote_candidate (
   /* step: check whether the candidate already exists */
   candidate = component_find_remote_candidate(component, addr, transport);
   if (candidate) {
-    {
-      gchar tmpbuf[INET6_ADDRSTRLEN];
-      nice_address_to_string (addr, tmpbuf);
-      nice_debug ("Agent %p : Updating existing remote candidate with addr [%s]:%u"
-          " for s%d/c%d. U/P '%s'/'%s' prio: %u type:%d transport:%d", agent, tmpbuf,
-          nice_address_get_port (addr), stream_id, component_id,
-                  username, password, priority, type, transport);
-    }
-    /* case 1: an existing candidate, update the attributes */
-    candidate->type = type;
-    if (base_addr)
-      candidate->base_addr = *base_addr;
-    candidate->priority = priority;
-    if (foundation)
-      g_strlcpy(candidate->foundation, foundation,
-          NICE_CANDIDATE_MAX_FOUNDATION);
-    /* note: username and password must remain the same during
-     *       a session; see sect 9.1.2 in ICE ID-19 */
+    /* case 1: an existing candidate, update the attributes if we need to */
+    if (candidate->type != type ||
+	(base_addr && nice_address_is_valid(&candidate->base_addr) && !nice_address_equal(&candidate->base_addr, base_addr)) ||
+	candidate->priority != priority ||
+	(foundation && g_strcmp0(candidate->foundation, foundation) != 0) ||
+	(username && g_strcmp0(candidate->username, username) != 0) ||
+	(password && g_strcmp0(candidate->password, password) != 0))
+      {
+	{
+	  gchar tmpbuf[INET6_ADDRSTRLEN];
+	  nice_address_to_string (addr, tmpbuf);
+	  nice_debug ("Agent %p : Updating existing remote candidate with addr [%s]:%u"
+		      " for s%d/c%d. U/P '%s'/'%s' prio: %u type:%d transport:%d", agent, tmpbuf,
+		      nice_address_get_port (addr), stream_id, component_id,
+		      username, password, priority, type, transport);
+	}
 
-    /* note: however, the user/pass in ID-19 is global, if the user/pass
-     * are set in the candidate here, it means they need to be updated...
-     * this is essential to overcome a race condition where we might receive
-     * a valid binding request from a valid candidate that wasn't yet added to
-     * our list of candidates.. this 'update' will make the peer-rflx a
-     * server-rflx/host candidate again and restore that user/pass it needed
-     * to have in the first place */
-    if (username) {
-      g_free (candidate->username);
-      candidate->username = g_strdup (username);
-    }
-    if (password) {
-      g_free (candidate->password);
-      candidate->password = g_strdup (password);
-    }
-    if (conn_check_add_for_candidate (agent, stream_id, component, candidate) < 0)
-      goto errors;
+	candidate->type = type;
+	if (base_addr)
+	  candidate->base_addr = *base_addr;
+	candidate->priority = priority;
+	if (foundation)
+	  g_strlcpy(candidate->foundation, foundation,
+		    NICE_CANDIDATE_MAX_FOUNDATION);
+	/* note: username and password must remain the same during
+	 *       a session; see sect 9.1.2 in ICE ID-19 */
+
+	/* note: however, the user/pass in ID-19 is global, if the user/pass
+	 * are set in the candidate here, it means they need to be updated...
+	 * this is essential to overcome a race condition where we might receive
+	 * a valid binding request from a valid candidate that wasn't yet added to
+	 * our list of candidates.. this 'update' will make the peer-rflx a
+	 * server-rflx/host candidate again and restore that user/pass it needed
+	 * to have in the first place */
+	if (username) {
+	  g_free (candidate->username);
+	  candidate->username = g_strdup (username);
+	}
+	if (password) {
+	  g_free (candidate->password);
+	  candidate->password = g_strdup (password);
+	}
+	if (conn_check_add_for_candidate (agent, stream_id, component, candidate) < 0)
+	  goto errors;
+      }
+      else {
+	{
+	  gchar tmpbuf[INET6_ADDRSTRLEN];
+	  nice_address_to_string (addr, tmpbuf);
+	  nice_debug ("Agent %p : Not updating existing remote candidate with addr [%s]:%u"
+		      " for s%d/c%d. U/P '%s'/'%s' prio: %u type:%d transport:%d", agent, tmpbuf,
+		      nice_address_get_port (addr), stream_id, component_id,
+		      username, password, priority, type, transport);
+	}
+      }
   }
   else {
     /* case 2: add a new candidate */

@@ -2107,13 +2107,23 @@ static CandidateCheckPair *priv_process_response_check_for_peer_reflexive(NiceAg
 					      sockptr,
 					      local_candidate,
 					      remote_candidate);
-    p->state = NICE_CHECK_FAILED;
-    nice_debug ("Agent %p : pair %p state FAILED", agent, p);
+    /*
+     * This used to set the state of the pair to NICE_CHECK_FAILED. This was 
+     * a bad idea since a pair can be re-activated that state and subsequently
+     * become falsely selected even though in this situation it can never work.
+     * RFC5245 says that the pair that generated the peer reflexive candidate should
+     * be set to succeeded and the newly created pair should be added to the valid list.
+     * libnice currently has no separate valid list and uses NICE_CHECK_SUCCEEDED to
+     * indicate validity which is wrong. Changing this to NICE_CHECK_CANCELLED prevents
+     * re-animation without requiring major surgery on the library this close to release.
+     */
+    p->state = NICE_CHECK_CANCELLED;
+    nice_debug ("Agent %p : pair %p state CANCELLED", agent, p);
 
     /* step: add a new discovered pair (see ICE 7.1.2.2.2
 	       "Constructing a Valid Pair" (ID-19)) */
     new_pair = priv_add_peer_reflexive_pair (agent, stream->id, component->id, cand, p);
-    nice_debug ("Agent %p : conncheck %p FAILED, %p DISCOVERED.", agent, p, new_pair);
+    nice_debug ("Agent %p : conncheck %p CANCELLED, %p DISCOVERED.", agent, p, new_pair);
   }
 
   return new_pair;
