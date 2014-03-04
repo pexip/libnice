@@ -1227,16 +1227,17 @@ static void priv_update_check_list_state_for_ready (NiceAgent *agent, Stream *st
     }
   }
 
+  nice_debug ("Agent %p : conn.check list status: %u nominated, %u succeeded, c-id %u.", agent, nominated, succeeded, component->id);
   if (nominated > 0) {
     /* Only go to READY if no checks are left in progress. If there are
      * any that are kept, then this function will be called again when the
      * conncheck tick timer finishes them all */
     if (priv_prune_pending_checks (stream, component->id) == 0) {
+      nice_debug ("Agent %p: signaling s/c %d/%d as ready", stream->id, component->id);
       agent_signal_component_state_change (agent, stream->id,
           component->id, NICE_COMPONENT_STATE_READY);
     }
   }
-  nice_debug ("Agent %p : conn.check list status: %u nominated, %u succeeded, c-id %u.", agent, nominated, succeeded, component->id);
 }
 
 /*
@@ -2314,7 +2315,8 @@ static gboolean priv_map_reply_to_discovery_request (NiceAgent *agent, StunMessa
               d->stream->id,
               d->component->id,
               &niceaddr,
-              d->nicesock);
+              d->conncheck_nicesock,
+              d->transport);
 
           d->stun_message.buffer = NULL;
           d->stun_message.buffer_len = 0;
@@ -2448,7 +2450,8 @@ static gboolean priv_map_reply_to_relay_request (NiceAgent *agent, StunMessage *
                 d->stream->id,
                 d->component->id,
                 &niceaddr,
-                d->nicesock);
+                d->nicesock,
+                d->transport);
           }
 
           nice_address_set_from_sockaddr (&niceaddr,
@@ -2848,10 +2851,21 @@ gboolean conn_check_handle_inbound_stun (NiceAgent *agent, Stream *stream,
       }
     }
   } else {
-    gchar tmpbuf[INET6_ADDRSTRLEN];
-    nice_address_to_string (from, tmpbuf);
-    nice_debug ("Agent %p: inbound STUN BINDING request for %u/%u (stream/component) from [%s]:%u (%u octets) not checking against discovery/refresh agents:",
-                agent, stream->id, component->id, tmpbuf, nice_address_get_port (from), len);
+    for (i = agent->discovery_list; i; i = i->next)
+    {
+      CandidateDiscovery *d = i->data;
+      if (d->type == NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE &&
+          d->stream == stream && d->component == component &&
+          d->nicesock == socket)
+      {
+        gchar tmpbuf[INET6_ADDRSTRLEN];
+        nice_address_to_string (from, tmpbuf);
+        nice_debug ("Agent %p: inbound STUN packet for %u/%u (stream/component) from [%s]:%u (%u octets) using stun server agent:",
+                    agent, stream->id, component->id, tmpbuf, nice_address_get_port (from), len);
+        stunagent = &d->stun_agent;
+        break;
+      }
+    }
   }
   
   if (stunagent == NULL) {

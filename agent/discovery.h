@@ -64,6 +64,8 @@ typedef struct
   StunMessage stun_message;
   uint8_t stun_resp_buffer[STUN_MAX_MESSAGE_SIZE];
   StunMessage stun_resp_msg;
+  NiceCandidateTransport transport;
+  NiceSocket* conncheck_nicesock;
 } CandidateDiscovery;
 
 typedef struct
@@ -121,7 +123,8 @@ discovery_add_server_reflexive_candidate (
   guint stream_id,
   guint component_id,
   NiceAddress *address,
-  NiceSocket *base_socket);
+  NiceSocket *base_socket,
+  NiceCandidateTransport transport);
 
 NiceCandidate* 
 discovery_add_peer_reflexive_candidate (

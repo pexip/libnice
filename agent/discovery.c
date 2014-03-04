@@ -524,10 +524,14 @@ NiceCandidate *discovery_add_local_host_candidate (
   _priv_set_socket_tos (agent, socket, stream->tos);
   agent_attach_stream_component_socket (agent, stream,
                                         component, socket);
-  
+
   candidate->sockptr = socket;
-  candidate->addr = socket->addr;
-  candidate->base_addr = socket->addr;
+  if (transport != NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE) {
+    candidate->addr = socket->addr;
+    candidate->base_addr = socket->addr;
+  } else {
+    candidate->addr = candidate->base_addr = *address;
+  }
   
   if (!priv_add_local_candidate_pruned (agent, stream_id, component, candidate))
     goto errors;
@@ -556,7 +560,8 @@ discovery_add_server_reflexive_candidate (
   guint stream_id,
   guint component_id,
   NiceAddress *address,
-  NiceSocket *base_socket)
+  NiceSocket *base_socket,
+  NiceCandidateTransport transport)
 {
   NiceCandidate *candidate;
   Component *component;
@@ -567,6 +572,7 @@ discovery_add_server_reflexive_candidate (
     return NULL;
 
   candidate = nice_candidate_new (NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE);
+  candidate->transport = transport;
 
   if (agent->compatibility == NICE_COMPATIBILITY_GOOGLE) {
     candidate->priority = nice_candidate_jingle_priority (candidate);

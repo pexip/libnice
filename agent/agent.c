@@ -1424,7 +1424,9 @@ agent_candidate_pair_priority (NiceAgent *agent, NiceCandidate *local, NiceCandi
 static void
 priv_add_new_candidate_discovery_stun (NiceAgent *agent,
     NiceSocket *socket, NiceAddress server,
-    Stream *stream, guint component_id)
+    Stream *stream, guint component_id,
+    NiceCandidateTransport transport,
+    NiceSocket *conncheck_nicesock)
 {
   CandidateDiscovery *cdisco;
 
@@ -1434,19 +1436,21 @@ priv_add_new_candidate_discovery_stun (NiceAgent *agent,
   cdisco = g_slice_new0 (CandidateDiscovery);
 
   cdisco->type = NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE;
+  cdisco->transport = transport;
   cdisco->nicesock = socket;
+  cdisco->conncheck_nicesock = conncheck_nicesock;
   cdisco->server = server;
   cdisco->stream = stream;
   cdisco->component = stream_find_component_by_id (stream, component_id);
   cdisco->agent = agent;
   stun_agent_init (&cdisco->stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
-      STUN_COMPATIBILITY_RFC3489,
-      (agent->compatibility == NICE_COMPATIBILITY_OC2007 ||
-       agent->compatibility == NICE_COMPATIBILITY_OC2007R2) ?
+      STUN_COMPATIBILITY_RFC5389,
+      (agent->turn_compatibility == NICE_COMPATIBILITY_OC2007 ||
+       agent->turn_compatibility == NICE_COMPATIBILITY_OC2007R2) ?
         STUN_AGENT_USAGE_NO_ALIGNED_ATTRIBUTES : 0);
 
-  nice_debug ("Agent %p : Adding new srv-rflx candidate discovery %p\n",
-      agent, cdisco);
+  nice_debug ("Agent %p : Adding new srv-rflx candidate discovery %p compatibility = %d\n",
+              agent, cdisco, agent->turn_compatibility);
 
   agent->discovery_list = g_slist_append (agent->discovery_list, cdisco);
   ++agent->discovery_unsched_items;
@@ -1717,7 +1721,8 @@ static void _upnp_mapped_external_port (GUPnPSimpleIgd *self, gchar *proto,
               stream->id,
               component->id,
               &externaddr,
-              local_candidate->sockptr);
+              local_candidate->sockptr,
+              NICE_CANDIDATE_TRANSPORT_UDP);
           goto end;
         }
       }
@@ -1867,7 +1872,7 @@ nice_agent_gather_candidates (
 
       current_port = component->min_port;
 
-      if (agent->use_ice_udp && component->enable_udp) {
+      if (component->enable_udp) {
         host_candidate = NULL;
         while (host_candidate == NULL) {
           nice_debug ("Agent %p: Trying to create host candidate on port %d", agent, current_port);
@@ -1912,7 +1917,9 @@ nice_agent_gather_candidates (
                 host_candidate->sockptr,
                 stun_server,
                 stream,
-                n + 1);
+                n + 1,
+                NICE_CANDIDATE_TRANSPORT_UDP,
+                host_candidate->sockptr);
           }
         }
 
@@ -1931,7 +1938,7 @@ nice_agent_gather_candidates (
         }
       }
 
-      if (agent->use_ice_tcp && component->enable_tcp_passive) {
+      if (component->enable_tcp_passive) {
         current_port = component->min_port;
 
         host_candidate = NULL;
@@ -1957,7 +1964,7 @@ nice_agent_gather_candidates (
         }
       }
       
-      if (agent->use_ice_tcp && component->enable_tcp_active) {
+      if (component->enable_tcp_active) {
         current_port = component->min_port;
 
         host_candidate = NULL;
@@ -1971,7 +1978,6 @@ nice_agent_gather_candidates (
           if (current_port == 0 || current_port > component->max_port)
             break;
         }
-        nice_address_set_port (addr, 0);
 
         if (!host_candidate) {
           gchar ip[NICE_ADDRESS_STRING_LEN];
@@ -1981,11 +1987,45 @@ nice_agent_gather_candidates (
           ret = FALSE;
           goto error;
         }
+
+        if (agent->full_mode &&
+            agent->stun_server_ip) {
+          /*
+           * RDP Traversal
+           * Use UDP stun to discover our server reflexive address and then advertise
+           * a server reflexive TCP active candidate that should be able to connect
+           * to the remote relay TCP passive candidate
+           */
+          NiceAddress stun_server;
+          if (nice_address_set_from_string (&stun_server, agent->stun_server_ip)) {
+            NiceSocket* sockptr = nice_udp_bsd_socket_new (addr);
+            char local_address_string[NICE_ADDRESS_STRING_LEN];
+            char stun_address_string[NICE_ADDRESS_STRING_LEN];
+
+            agent_attach_stream_component_socket (agent, stream, component, sockptr);
+
+            component->sockets = g_slist_append (component->sockets, sockptr);
+            nice_address_set_port (&stun_server, agent->stun_server_port);
+
+            nice_address_to_string (addr, local_address_string);
+            nice_address_to_string (&stun_server, stun_address_string);
+
+            nice_debug ("Created local UDP socket for STUN request s/c %d/%d, local-address=%s:%d, stun-address=%s:%d result=%p\n",
+                        stream->id, component->id, local_address_string, nice_address_get_port(addr),
+                        stun_address_string, nice_address_get_port(&stun_server), sockptr);
+
+            priv_add_new_candidate_discovery_stun (agent,
+                sockptr,
+                stun_server,
+                stream,
+                n + 1,
+                NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE,
+                host_candidate->sockptr);
+          }
+        }
+        nice_address_set_port (addr, 0);
+
       }
-      
-      /*
-       * TODO: stun/turn etc for TCP
-       */
     }
   }
 
@@ -2458,6 +2498,7 @@ _nice_agent_recv (
   gint len;
   GList *item;
   gboolean has_padding = _nice_should_have_padding(agent->compatibility);
+  NiceAddress stun_server;
 
   len = nice_socket_recv (socket, from,  buf_len, buf);
 
@@ -2481,26 +2522,33 @@ _nice_agent_recv (
       return 0;
     }
 
-  for (item = component->turn_servers; item; item = g_list_next (item)) {
-    TurnServer *turn = item->data;
-    if (nice_address_equal (from, &turn->server)) {
-      GSList * i = NULL;
+  if (agent->stun_server_ip && nice_address_set_from_string (&stun_server, agent->stun_server_ip)) {
+    nice_address_set_port (&stun_server, agent->stun_server_port);
+    if (nice_address_equal (from, &stun_server)) {
       has_padding = _nice_should_have_padding(agent->turn_compatibility);
+    }
+  } else {
+    for (item = component->turn_servers; item; item = g_list_next (item)) {
+      TurnServer *turn = item->data;
+      if (nice_address_equal (from, &turn->server)) {
+        GSList * i = NULL;
+        has_padding = _nice_should_have_padding(agent->turn_compatibility);
 
 #ifndef NDEBUG
-      nice_debug ("Agent %p : Packet received from TURN server candidate.",
-          agent);
+        nice_debug ("Agent %p : Packet received from TURN server candidate.",
+                    agent);
 #endif
-      for (i = component->local_candidates; i; i = i->next) {
-        NiceCandidate *cand = i->data;
-        if (cand->type == NICE_CANDIDATE_TYPE_RELAYED &&
-            cand->stream_id == stream->id &&
-            cand->component_id == component->id) {
-          len = nice_turn_socket_parse_recv (cand->sockptr, &socket,
-              from, len, buf, from, buf, len);
+        for (i = component->local_candidates; i; i = i->next) {
+          NiceCandidate *cand = i->data;
+          if (cand->type == NICE_CANDIDATE_TYPE_RELAYED &&
+              cand->stream_id == stream->id &&
+              cand->component_id == component->id) {
+            len = nice_turn_socket_parse_recv (cand->sockptr, &socket,
+                                               from, len, buf, from, buf, len);
+          }
         }
+        break;
       }
-      break;
     }
   }
 
@@ -2768,6 +2816,7 @@ void nice_agent_socket_recv_cb (NiceSocket* socket, NiceAddress* from, gchar* bu
   gboolean has_padding = _nice_should_have_padding(agent->compatibility);
   GList *item;
   gboolean is_stun = TRUE;
+  NiceAddress stun_server;
 
   agent_lock();
 
@@ -2780,26 +2829,33 @@ void nice_agent_socket_recv_cb (NiceSocket* socket, NiceAddress* from, gchar* bu
   }
 #endif
 
-  for (item = component->turn_servers; item; item = g_list_next (item)) {
-    TurnServer *turn = item->data;
-    if (nice_address_equal (from, &turn->server)) {
-      GSList * i = NULL;
+  if (agent->stun_server_ip && nice_address_set_from_string (&stun_server, agent->stun_server_ip)) {
+    nice_address_set_port (&stun_server, agent->stun_server_port);
+    if (nice_address_equal (from, &stun_server)) {
       has_padding = _nice_should_have_padding(agent->turn_compatibility);
+    }
+  } else {
+    for (item = component->turn_servers; item; item = g_list_next (item)) {
+      TurnServer *turn = item->data;
+      if (nice_address_equal (from, &turn->server)) {
+        GSList * i = NULL;
+        has_padding = _nice_should_have_padding(agent->turn_compatibility);
 
 #ifndef NDEBUG
-      nice_debug ("Agent %p : Packet received from TURN server candidate.",
-          agent);
+        nice_debug ("Agent %p : Packet received from TURN server candidate.",
+                    agent);
 #endif
-      for (i = component->local_candidates; i; i = i->next) {
-        NiceCandidate *cand = i->data;
-        if (cand->type == NICE_CANDIDATE_TYPE_RELAYED &&
-            cand->stream_id == stream->id &&
-            cand->component_id == component->id) {
-          len = nice_turn_socket_parse_recv (cand->sockptr, &socket,
-              from, len, buf, from, buf, len);
+        for (i = component->local_candidates; i; i = i->next) {
+          NiceCandidate *cand = i->data;
+          if (cand->type == NICE_CANDIDATE_TYPE_RELAYED &&
+              cand->stream_id == stream->id &&
+              cand->component_id == component->id) {
+            len = nice_turn_socket_parse_recv (cand->sockptr, &socket,
+                                               from, len, buf, from, buf, len);
+          }
         }
+        break;
       }
-      break;
     }
   }
 
