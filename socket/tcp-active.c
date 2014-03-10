@@ -281,7 +281,7 @@ nice_tcp_active_socket_connect (NiceSocket *socket, const NiceAddress *addr)
   /* GSocket: All socket file descriptors are set to be close-on-exec. */
   g_socket_set_blocking (gsock, false);
 
-  gret = g_socket_bind (gsock, active_priv->local_addr, FALSE, NULL) &&
+  gret = g_socket_bind (gsock, active_priv->local_addr, TRUE, NULL) &&
       g_socket_connect (gsock, gaddr, NULL, &gerr);
   g_object_unref (gaddr);
 
