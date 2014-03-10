@@ -143,7 +143,7 @@ nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr, SocketRecvCal
   nice_address_set_from_sockaddr (&sock->addr, (struct sockaddr *)&name);
 
   sock->priv = priv = g_slice_new0 (TcpPassivePriv);
-  priv->context = g_main_context_ref (ctx);
+  priv->context = ctx ? g_main_context_ref (ctx) : NULL;
   priv->recv_cb = cb;
   priv->userdata = userdata;
   priv->destroy_notify = destroy_notify;

@@ -98,7 +98,7 @@ NiceSocket * nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr,
 
   sock->priv = priv = g_slice_new0 (TcpActivePriv);
   priv->local_addr = gaddr;
-  priv->context = g_main_context_ref (ctx);
+  priv->context = ctx ? g_main_context_ref (ctx) : NULL;
   priv->recv_cb = cb;
   priv->userdata = userdata;
   priv->destroy_notify = destroy_notify;
