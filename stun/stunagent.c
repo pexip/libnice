@@ -47,6 +47,16 @@
 #include <string.h>
 #include <stdlib.h>
 
+#define STUN_MAX_TRANSACTION_STR_LENGTH 33
+
+static void transaction_id_to_str (StunTransactionId msg_id, char* buff)
+{
+  int i;
+  for (i = 0; i < STUN_MESSAGE_TRANS_ID_LEN; i++)
+  {
+    sprintf(&buff[i*2], "%02X", msg_id[i]);
+  }
+}
 
 static bool stun_agent_is_unknown (StunAgent *agent, uint16_t type);
 static unsigned stun_agent_find_unknowns (StunAgent *agent,
@@ -116,6 +126,7 @@ StunValidationStatus stun_agent_validate (StunAgent *agent, StunMessage *msg,
   int ignore_credentials = 0;
   uint8_t long_term_key[16];
   bool long_term_key_valid = FALSE;
+  char tmpbuf[STUN_MAX_TRANSACTION_STR_LENGTH];
 
   len = stun_message_validate_buffer_length (buffer, buffer_len,
        !(agent->usage_flags & STUN_AGENT_USAGE_NO_ALIGNED_ATTRIBUTES));
@@ -167,7 +178,17 @@ StunValidationStatus stun_agent_validate (StunAgent *agent, StunMessage *msg,
   if (stun_message_get_class (msg) == STUN_RESPONSE ||
       stun_message_get_class (msg) == STUN_ERROR) {
     stun_message_id (msg, msg_id);
+    transaction_id_to_str (msg_id, tmpbuf);
+    stun_debug ("Received response: method=%d transaction id %s", stun_message_get_method (msg), tmpbuf);
+
     for (sent_id_idx = 0; sent_id_idx < STUN_AGENT_MAX_SAVED_IDS; sent_id_idx++) {
+
+      if (agent->sent_ids[sent_id_idx].valid) {
+        transaction_id_to_str (agent->sent_ids[sent_id_idx].id, tmpbuf);
+        stun_debug ("Checking sent msg idx:%d valid=%d method=%d transaction-id:%s", sent_id_idx, agent->sent_ids[sent_id_idx].valid,
+                    agent->sent_ids[sent_id_idx].method, tmpbuf);
+      }
+
       if (agent->sent_ids[sent_id_idx].valid == TRUE &&
           agent->sent_ids[sent_id_idx].method == stun_message_get_method (msg) &&
           memcmp (msg_id, agent->sent_ids[sent_id_idx].id,
@@ -282,15 +303,6 @@ StunValidationStatus stun_agent_validate (StunAgent *agent, StunMessage *msg,
               hash - msg->buffer, sha, key, key_len, FALSE);
         }
       }
-
-      stun_debug (" Message HMAC-SHA1 fingerprint:");
-      stun_debug ("\nkey     : ");
-      stun_debug_bytes (key, key_len);
-      stun_debug ("\n  expected: ");
-      stun_debug_bytes (sha, sizeof (sha));
-      stun_debug ("\n  received: ");
-      stun_debug_bytes (hash, sizeof (sha));
-      stun_debug ("\n");
 
       if (memcmp (sha, hash, sizeof (sha)))  {
         stun_debug ("STUN auth error: SHA1 fingerprint mismatch!\n");
@@ -599,13 +611,6 @@ size_t stun_agent_finish_message (StunAgent *agent, StunMessage *msg,
               stun_message_length (msg) - 20, ptr, key, key_len, FALSE);
         }
       }
-
-      stun_debug (" Message HMAC-SHA1 message integrity:"
-          "\n  key     : ");
-      stun_debug_bytes (key, key_len);
-      stun_debug ("\n  sent    : ");
-      stun_debug_bytes (ptr, 20);
-      stun_debug ("\n");
     }
   }
 
@@ -689,7 +694,9 @@ stun_agent_find_unknowns (StunAgent *agent, const StunMessage * msg,
     offset += STUN_ATTRIBUTE_VALUE_POS + alen;
   }
 
-  stun_debug ("STUN unknown: %u mandatory attribute(s)!\n", count);
+  if (count > 0) {
+    stun_debug ("STUN unknown: %u mandatory attribute(s)!\n", count);
+  }
   return count;
 }
 

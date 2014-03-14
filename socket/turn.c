@@ -597,7 +597,7 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
       }
 
       /* enque data */
-      nice_debug ("enqueuing data");
+      nice_debug ("enqueuing data to TURN server as permissions have not yet been set");
       socket_enqueue_data(priv, to, msg_len, (gchar *)buffer);
       return len;
     } else {
