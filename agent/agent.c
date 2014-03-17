@@ -147,6 +147,42 @@ static void priv_detach_stream_component (Stream *stream, Component *component);
 
 
 
+static const char* priv_state_to_string(NiceComponentState state)
+{
+  switch (state) {
+  case NICE_COMPONENT_STATE_DISCONNECTED: return "DISCONNECTED";
+  case NICE_COMPONENT_STATE_GATHERING: return "GATHERING";
+  case NICE_COMPONENT_STATE_CONNECTING: return "CONNECTING";
+  case NICE_COMPONENT_STATE_CONNECTED: return "CONNECTED";
+  case NICE_COMPONENT_STATE_READY: return "READY";
+  case NICE_COMPONENT_STATE_FAILED: return "FAILED";
+  case NICE_COMPONENT_STATE_LAST: return "LAST";
+  }
+  return "(invalid)";
+}
+
+static const char *priv_type_to_string(NiceCandidateType type)
+{
+  switch (type) {
+  case NICE_CANDIDATE_TYPE_HOST: return "host";
+  case NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE: return "srflx";
+  case NICE_CANDIDATE_TYPE_PEER_REFLEXIVE: return "prflx";
+  case NICE_CANDIDATE_TYPE_RELAYED: return "relay";
+  }
+  return "(invalid)";
+}
+
+static const char *priv_transport_to_string(NiceCandidateTransport transport)
+{
+  switch (transport) {
+  case NICE_CANDIDATE_TRANSPORT_UDP: return "udp";
+  case NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE: return "tcp-act";
+  case NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE: return "tcp-pass";
+  case NICE_CANDIDATE_TRANSPORT_TCP_SO: return "tcp-so";
+  }
+  return "(invalid)";
+}
+
 #if GLIB_CHECK_VERSION(2,31,8)
 void agent_lock (void)
 {
@@ -1355,11 +1391,11 @@ void agent_gathering_done (NiceAgent *agent)
 	{
 	  gchar tmpbuf[INET6_ADDRSTRLEN];
 	  nice_address_to_string (&local_candidate->addr, tmpbuf);
-          nice_debug ("Agent %p: gathered local candidate : [%s]:%u"
-              " for s%d/c%d. U/P '%s'/'%s'", agent,
-              tmpbuf, nice_address_get_port (&local_candidate->addr),
-              local_candidate->stream_id, local_candidate->component_id,
-              local_candidate->username, local_candidate->password);
+          nice_debug ("Agent %p: gathered local candidate : foundation:%s [%s]:%u"
+                      " for s%d/c%d. U/P '%s'/'%s'", agent, local_candidate->foundation, 
+                      tmpbuf, nice_address_get_port (&local_candidate->addr),
+                      local_candidate->stream_id, local_candidate->component_id,
+                      local_candidate->username, local_candidate->password);
 	}
         for (l = component->remote_candidates; l; l = l->next) {
           NiceCandidate *remote_candidate = l->data;
@@ -1475,8 +1511,8 @@ void agent_signal_component_state_change (NiceAgent *agent, guint stream_id, gui
     return;
 
   if (component->state != state && state < NICE_COMPONENT_STATE_LAST) {
-    nice_debug ("Agent %p : stream %u component %u STATE-CHANGE %u -> %u.", agent,
-	     stream_id, component_id, component->state, state);
+    nice_debug ("Agent %p s/c:%u/%u: signalling STATE-CHANGE %s -> %s.", agent,
+                stream_id, component_id, priv_state_to_string(component->state), priv_state_to_string(state));
 
     component->state = state;
 
@@ -2425,10 +2461,10 @@ static gboolean priv_add_remote_candidate (
       gchar tmpbuf[INET6_ADDRSTRLEN] = {0};
       if(addr)
         nice_address_to_string (addr, tmpbuf);
-      nice_debug ("Agent %p : Adding remote candidate with addr [%s]:%u"
-          " for s%d/c%d. U/P '%s'/'%s' prio: %u type:%d transport:%d", agent, tmpbuf,
-          addr? nice_address_get_port (addr) : 0, stream_id, component_id,
-                  username, password, priority, type, transport);
+      nice_debug ("Agent %p : Adding remote candidate with foundation %s addr [%s]:%u"
+                  " for s%d/c%d. U/P '%s'/'%s' prio: %u type:%s transport:%s", agent, foundation, tmpbuf,
+                  addr? nice_address_get_port (addr) : 0, stream_id, component_id,
+                  username, password, priority, priv_type_to_string(type), priv_transport_to_string(transport));
     }
 
     if (base_addr)
@@ -2626,8 +2662,8 @@ _nice_agent_recv (
         has_padding = _nice_should_have_padding(agent->turn_compatibility);
 
 #ifndef NDEBUG
-        nice_debug ("Agent %p : Packet received from TURN server candidate.",
-                    agent);
+        nice_debug ("Agent %p : Packet received from TURN server candidate, has_padding=%d",
+                    agent, has_padding);
 #endif
         for (i = component->local_candidates; i; i = i->next) {
           NiceCandidate *cand = i->data;
@@ -2645,15 +2681,17 @@ _nice_agent_recv (
 
   agent->media_after_tick = TRUE;
 
-  if (stun_message_validate_buffer_length ((uint8_t *) buf, (size_t) len, has_padding) != len)
-    /* If the retval is no 0, its not a valid stun packet, probably data */
-    return len;
-
-
-  if (conn_check_handle_inbound_stun (agent, stream, component, socket,
-          from, buf, len))
-    /* handled STUN message*/
-    return 0;
+  if (len > 0) {
+    if (stun_message_validate_buffer_length ((uint8_t *) buf, (size_t) len, has_padding) != len)
+      /* If the retval is no 0, its not a valid stun packet, probably data */
+      return len;
+    
+    
+    if (conn_check_handle_inbound_stun (agent, stream, component, socket,
+                                        from, buf, len))
+      /* handled STUN message*/
+      return 0;
+  }
 
   /* unhandled STUN, pass to client */
   return len;

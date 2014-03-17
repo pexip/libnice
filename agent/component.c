@@ -236,8 +236,8 @@ void component_update_selected_pair (Component *component, const CandidatePair *
 {
   g_assert (component);
   g_assert (pair);
-  nice_debug ("setting SELECTED PAIR for component %u: %s:%s (prio:%"
-      G_GUINT64_FORMAT ").", component->id, pair->local->foundation,
+  nice_debug ("setting SELECTED PAIR for component %u: %p(%s:%s) (prio:%"
+              G_GUINT64_FORMAT ").", component->id, pair, pair->local->foundation,
       pair->remote->foundation, pair->priority);
 
   if (component->selected_pair.keepalive.tick_source != NULL) {
