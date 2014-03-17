@@ -246,6 +246,24 @@ void refresh_cancel (CandidateRefresh *refresh)
   refresh_free_item (refresh, NULL);
 }
 
+static void priv_set_candidate_priority (NiceAgent* agent, Component* component, NiceCandidate* candidate)
+{
+  if (agent->compatibility == NICE_COMPATIBILITY_GOOGLE) {
+    candidate->priority = nice_candidate_jingle_priority (candidate);
+  } else if (agent->compatibility == NICE_COMPATIBILITY_MSN ||
+             agent->compatibility == NICE_COMPATIBILITY_OC2007)  {
+    candidate->priority = nice_candidate_msn_priority (candidate);
+  } else {
+    if (candidate->type == NICE_CANDIDATE_TYPE_HOST) {
+      candidate->priority = agent_candidate_ice_priority (agent, candidate);
+    } else {
+      guint type_pref = agent_candidate_type_preference (agent, candidate->type);
+      candidate->priority = agent_candidate_ice_priority_full
+        (type_pref, 0, component->id);
+    }
+  }
+}
+
 /*
  * Adds a new local candidate. Implements the candidate pruning
  * defined in ICE spec section 4.1.3 "Eliminating Redundant
@@ -477,15 +495,7 @@ NiceCandidate *discovery_add_local_host_candidate (
   candidate->addr = *address;
   candidate->base_addr = *address;
   candidate->transport = transport;
-  if (agent->compatibility == NICE_COMPATIBILITY_GOOGLE) {
-    candidate->priority = nice_candidate_jingle_priority (candidate);
-  } else if (agent->compatibility == NICE_COMPATIBILITY_MSN ||
-             agent->compatibility == NICE_COMPATIBILITY_OC2007)  {
-    candidate->priority = nice_candidate_msn_priority (candidate);
-  } else {
-    candidate->priority = nice_candidate_ice_priority (candidate);
-  }
-
+  priv_set_candidate_priority (agent, component, candidate);
   priv_generate_candidate_credentials (agent, candidate);
   priv_assign_foundation (agent, candidate);
 
@@ -573,16 +583,7 @@ discovery_add_server_reflexive_candidate (
 
   candidate = nice_candidate_new (NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE);
   candidate->transport = transport;
-
-  if (agent->compatibility == NICE_COMPATIBILITY_GOOGLE) {
-    candidate->priority = nice_candidate_jingle_priority (candidate);
-  } else if (agent->compatibility == NICE_COMPATIBILITY_MSN ||
-             agent->compatibility == NICE_COMPATIBILITY_OC2007)  {
-    candidate->priority = nice_candidate_msn_priority (candidate);
-  } else {
-    candidate->priority =  nice_candidate_ice_priority_full
-        (NICE_CANDIDATE_TYPE_PREF_SERVER_REFLEXIVE, 0, component_id);
-  }
+  priv_set_candidate_priority (agent, component, candidate);
   candidate->stream_id = stream_id;
   candidate->component_id = component_id;
   candidate->addr = *address;
@@ -631,16 +632,8 @@ discovery_add_relay_candidate (
     return NULL;
 
   candidate = nice_candidate_new (NICE_CANDIDATE_TYPE_RELAYED);
-
-  if (agent->compatibility == NICE_COMPATIBILITY_GOOGLE) {
-    candidate->priority = nice_candidate_jingle_priority (candidate);
-  } else if (agent->compatibility == NICE_COMPATIBILITY_MSN ||
-             agent->compatibility == NICE_COMPATIBILITY_OC2007)  {
-    candidate->priority = nice_candidate_msn_priority (candidate);
-  } else {
-    candidate->priority =  nice_candidate_ice_priority_full
-        (NICE_CANDIDATE_TYPE_PREF_RELAYED, 0, component_id);
-  }
+  candidate->transport = NICE_CANDIDATE_TRANSPORT_UDP;
+  priv_set_candidate_priority (agent, component, candidate);
   candidate->stream_id = stream_id;
   candidate->component_id = component_id;
   candidate->addr = *address;
@@ -709,15 +702,7 @@ discovery_add_peer_reflexive_candidate (
   candidate = nice_candidate_new (NICE_CANDIDATE_TYPE_PEER_REFLEXIVE);
 
   candidate->transport = NICE_CANDIDATE_TRANSPORT_UDP;
-  if (agent->compatibility == NICE_COMPATIBILITY_GOOGLE) {
-    candidate->priority = nice_candidate_jingle_priority (candidate);
-  } else if (agent->compatibility == NICE_COMPATIBILITY_MSN ||
-             agent->compatibility == NICE_COMPATIBILITY_OC2007)  {
-    candidate->priority = nice_candidate_msn_priority (candidate);
-  } else {
-    candidate->priority = nice_candidate_ice_priority_full
-        (NICE_CANDIDATE_TYPE_PREF_PEER_REFLEXIVE, 0, component_id);
-  }
+  priv_set_candidate_priority (agent, component, candidate);
   candidate->stream_id = stream_id;
   candidate->component_id = component_id;
   candidate->addr = *address;
@@ -806,14 +791,8 @@ NiceCandidate *discovery_learn_remote_peer_reflexive_candidate (
    * be 0, which is invalid... */
   if (priority != 0) {
     candidate->priority = priority;
-  } else if (agent->compatibility == NICE_COMPATIBILITY_GOOGLE) {
-    candidate->priority = nice_candidate_jingle_priority (candidate);
-  } else if (agent->compatibility == NICE_COMPATIBILITY_MSN ||
-             agent->compatibility == NICE_COMPATIBILITY_OC2007)  {
-    candidate->priority = nice_candidate_msn_priority (candidate);
   } else {
-    candidate->priority = nice_candidate_ice_priority_full
-        (NICE_CANDIDATE_TYPE_PREF_PEER_REFLEXIVE, 0, component->id);
+    priv_set_candidate_priority (agent, component, candidate);
   }
   candidate->stream_id = stream->id;
   candidate->component_id = component->id;

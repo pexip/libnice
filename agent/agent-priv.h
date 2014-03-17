@@ -189,4 +189,8 @@ NiceTurnSocketCompatibility agent_to_turn_socket_compatibility (NiceAgent *agent
 void _priv_set_socket_tos (NiceAgent *agent, NiceSocket *sock, gint tos);
 void nice_agent_socket_recv_cb (NiceSocket* socket, NiceAddress* from, gchar* buf, gint len, gpointer *userdata);
 
+guint32 agent_candidate_ice_priority_full (guint type_pref, guint local_pref, guint component_id);
+guint agent_candidate_type_preference (NiceAgent* agent, NiceCandidateType type);
+guint32 agent_candidate_ice_priority (NiceAgent* agent, const NiceCandidate *candidate);
+
 #endif /*_NICE_AGENT_PRIV_H */

@@ -575,7 +575,7 @@ static gboolean priv_conn_keepalive_tick_unlocked (NiceAgent *agent)
 	CandidatePair *p = &component->selected_pair;
 
         if (agent->compatibility == NICE_COMPATIBILITY_GOOGLE) {
-          guint32 priority = nice_candidate_ice_priority_full (
+          guint32 priority = agent_candidate_ice_priority_full (
                   NICE_CANDIDATE_TYPE_PREF_PEER_REFLEXIVE, 1,
                   p->local->component_id);
           uint8_t uname[NICE_STREAM_MAX_UNAME];
@@ -1669,12 +1669,12 @@ int conn_check_send (NiceAgent *agent, CandidateCheckPair *pair)
    *  - USE-CANDIDATE (if sent by the controlling agent)
    */
 
+  guint32 type_pref = agent_candidate_type_preference (agent, NICE_CANDIDATE_TYPE_PEER_REFLEXIVE);
   guint32 priority =
-    nice_candidate_ice_priority_full (
-      NICE_CANDIDATE_TYPE_PREF_PEER_REFLEXIVE,
-      1,
-      pair->local->component_id);
-
+    agent_candidate_ice_priority_full (type_pref,
+                                      1,
+                                      pair->local->component_id);
+  
   uint8_t uname[NICE_STREAM_MAX_UNAME];
   size_t uname_len =
       priv_create_username (agent, agent_find_stream (agent, pair->stream_id),

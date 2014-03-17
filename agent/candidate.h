@@ -65,6 +65,11 @@ G_BEGIN_DECLS
 #define NICE_CANDIDATE_TYPE_PREF_SERVER_REFLEXIVE     100
 #define NICE_CANDIDATE_TYPE_PREF_RELAYED               60
 
+#define NICE_CANDIDATE_OC2007R2_TYPE_PREF_HOST                 120
+#define NICE_CANDIDATE_OC2007R2_TYPE_PREF_PEER_REFLEXIVE       100
+#define NICE_CANDIDATE_OC2007R2_TYPE_PREF_SERVER_REFLEXIVE      60
+#define NICE_CANDIDATE_OC2007R2_TYPE_PREF_RELAYED              110
+
 /* Max foundation size '1*32ice-char' plus terminating NULL, ICE ID-19  */
 /**
  * NICE_CANDIDATE_MAX_FOUNDATION:
@@ -225,13 +230,6 @@ nice_candidate_jingle_priority (NiceCandidate *candidate);
 
 guint32
 nice_candidate_msn_priority (NiceCandidate *candidate);
-
-guint32
-nice_candidate_ice_priority_full (guint type_pref, guint local_pref,
-    guint component_id);
-
-guint32
-nice_candidate_ice_priority (const NiceCandidate *candidate);
 
 guint64
 nice_candidate_pair_priority (guint32 o_prio, guint32 a_prio);

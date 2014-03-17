@@ -171,6 +171,97 @@ void agent_unlock(void)
 
 #endif
 
+/*
+ * ICE 4.1.2.1. "Recommended Formula" (ID-19):
+ * returns number between 1 and 0x7effffff 
+ */
+guint32
+agent_candidate_ice_priority_full (
+  // must be ∈ (0, 126) (max 2^7 - 2)
+  guint type_preference,
+  // must be ∈ (0, 65535) (max 2^16 - 1)
+  guint local_preference,
+  // must be ∈ (0, 255) (max 2 ^ 8 - 1)
+  guint component_id)
+{
+  return (
+      0x1000000 * type_preference +
+      0x100 * local_preference +
+      (0x100 - component_id));
+}
+
+guint 
+agent_candidate_type_preference (NiceAgent* agent, NiceCandidateType type)
+{
+  switch (agent->compatibility) {
+  case NICE_COMPATIBILITY_OC2007R2:
+  case NICE_COMPATIBILITY_OC2007R2_TCP:
+    switch(type) {
+    case NICE_CANDIDATE_TYPE_HOST: return NICE_CANDIDATE_OC2007R2_TYPE_PREF_HOST; 
+    case NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE: return NICE_CANDIDATE_OC2007R2_TYPE_PREF_SERVER_REFLEXIVE; 
+    case NICE_CANDIDATE_TYPE_PEER_REFLEXIVE: return NICE_CANDIDATE_OC2007R2_TYPE_PREF_PEER_REFLEXIVE;
+    case NICE_CANDIDATE_TYPE_RELAYED:return NICE_CANDIDATE_OC2007R2_TYPE_PREF_RELAYED;
+    }
+    break;
+    
+  default:
+    switch(type) {
+    case NICE_CANDIDATE_TYPE_HOST: return NICE_CANDIDATE_TYPE_PREF_HOST; 
+    case NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE: return NICE_CANDIDATE_TYPE_PREF_SERVER_REFLEXIVE; 
+    case NICE_CANDIDATE_TYPE_PEER_REFLEXIVE: return NICE_CANDIDATE_TYPE_PREF_PEER_REFLEXIVE;
+    case NICE_CANDIDATE_TYPE_RELAYED:return NICE_CANDIDATE_TYPE_PREF_RELAYED;
+    }
+  }
+}
+
+guint32
+agent_candidate_ice_priority (NiceAgent *agent, const NiceCandidate *candidate)
+{
+  guint8 type_preference = 0;
+  guint other_preference = 8191;
+  guint direction_preference = 0;
+  guint local_preference = 0;
+
+  type_preference = agent_candidate_type_preference (agent, candidate->type);
+  
+  switch (candidate->transport) {
+  case NICE_CANDIDATE_TRANSPORT_UDP:
+    direction_preference = 7; /* Always most preferred */
+    break;
+
+  case NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE:
+    if (candidate->type == NICE_CANDIDATE_TYPE_HOST ||
+        candidate->type == NICE_CANDIDATE_TYPE_RELAYED) {
+      direction_preference = 6;
+    } else {
+      direction_preference = 4;
+    }
+    break;
+
+  case NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE:
+    if (candidate->type == NICE_CANDIDATE_TYPE_HOST ||
+        candidate->type == NICE_CANDIDATE_TYPE_RELAYED) {
+      direction_preference = 4;
+    } else {
+      direction_preference = 2;
+    }
+    break;
+
+  case NICE_CANDIDATE_TRANSPORT_TCP_SO:
+    if (candidate->type == NICE_CANDIDATE_TYPE_HOST ||
+        candidate->type == NICE_CANDIDATE_TYPE_RELAYED) {
+      direction_preference = 2;
+    } else {
+      direction_preference = 6;
+    }
+    break;
+  }
+  local_preference = (2 << 13) * direction_preference + other_preference;
+
+  /* return _candidate_ice_priority (type_preference, 1, candidate->component_id); */
+  return agent_candidate_ice_priority_full (type_preference, local_preference, candidate->component_id);
+}
+
 StunUsageIceCompatibility
 agent_to_ice_compatibility (NiceAgent *agent)
 {
