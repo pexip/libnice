@@ -992,26 +992,31 @@ void conn_check_remote_candidates_set(NiceAgent *agent)
       priv_preprocess_conn_check_pending_data (agent, stream, component, pair);
 
       for (k = component->incoming_checks; k; k = k->next) {
-	IncomingCheck *icheck = k->data;
-	/* sect 7.2.1.3., "Learning Peer Reflexive Candidates", has to
-	 * be handled separately */
-	for (l = component->remote_candidates; l; l = l->next) {
-	  NiceCandidate *cand = l->data;
-	  if (nice_address_equal (&icheck->from, &cand->addr)) {
-	    match = TRUE;
-	    break;
-	  }
-	}
-	if (match != TRUE) {
-	  /* note: we have gotten an incoming connectivity check from
-	   *       an address that is not a known remote candidate */
-
+        IncomingCheck *icheck = k->data;
+        /* sect 7.2.1.3., "Learning Peer Reflexive Candidates", has to
+         * be handled separately */
+        for (l = component->remote_candidates; l; l = l->next) {
+          NiceCandidate *cand = l->data;
+          if (nice_address_equal (&icheck->from, &cand->addr)) {
+            match = TRUE;
+            break;
+          }
+        }
+        if (match != TRUE) {
+          /* note: we have gotten an incoming connectivity check from
+           *       an address that is not a known remote candidate */
+          
           NiceCandidate *local_candidate = NULL;
           NiceCandidate *remote_candidate = NULL;
+          gchar tmpbuf[INET6_ADDRSTRLEN];
+          
+          nice_address_to_string (&icheck->from, tmpbuf);
 
           if (agent->compatibility == NICE_COMPATIBILITY_GOOGLE ||
               agent->compatibility == NICE_COMPATIBILITY_MSN ||
-              agent->compatibility == NICE_COMPATIBILITY_OC2007) {
+              agent->compatibility == NICE_COMPATIBILITY_OC2007 ||
+              agent->compatibility == NICE_COMPATIBILITY_OC2007R2 ||
+              agent->compatibility == NICE_COMPATIBILITY_OC2007R2_TCP) {
             /* We need to find which local candidate was used */
             uint8_t uname[NICE_STREAM_MAX_UNAME];
             guint uname_len;
@@ -1050,17 +1055,20 @@ void conn_check_remote_candidates_set(NiceAgent *agent)
             }
           }
 
-          if (agent->compatibility == NICE_COMPATIBILITY_GOOGLE &&
+          if ((agent->compatibility == NICE_COMPATIBILITY_GOOGLE ||
+               agent->compatibility == NICE_COMPATIBILITY_OC2007R2 ||
+               agent->compatibility == NICE_COMPATIBILITY_OC2007R2_TCP) &&
               local_candidate == NULL) {
             /* if we couldn't match the username, then the matching remote
              * candidate hasn't been received yet.. we must wait */
             nice_debug ("Agent %p : Username check failed. pending check has "
-                "to wait to be processed", agent);
+                        "to wait to be processed. username=%s from=%s:%u", agent, icheck->username,
+                        tmpbuf, nice_address_get_port(&icheck->from));
           } else {
             NiceCandidate *candidate;
 
-            nice_debug ("Agent %p : Discovered peer reflexive from early i-check",
-                agent);
+            nice_debug ("Agent %p : Discovered peer reflexive from early i-check. username=%s from=%s:%u",
+                        agent, icheck->username, tmpbuf, nice_address_get_port(&icheck->from));
             candidate =
                 discovery_learn_remote_peer_reflexive_candidate (agent,
                     stream,
