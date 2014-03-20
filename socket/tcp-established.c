@@ -80,7 +80,7 @@ static gint socket_send (NiceSocket *sock, const NiceAddress *to,
 static gboolean socket_is_reliable (NiceSocket *sock);
 
 
-static void add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len);
+static void add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len, gboolean add_to_head);
 static void free_to_be_sent (struct to_be_sent *tbs);
 static gboolean socket_send_more (GSocket *gsocket, GIOCondition condition,
                                   gpointer data);
@@ -255,11 +255,11 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
       ret = g_socket_send (sock->fileno, buff, len, NULL, &gerr);
       if (ret < 0) {
         if (g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK)) {
-            add_to_be_sent (sock, buff, len);
+          add_to_be_sent (sock, buff, len, FALSE);
             ret = len;
         }
       } else if ((guint)ret < len)  {
-          add_to_be_sent (sock, buff + ret, len - ret);
+        add_to_be_sent (sock, buff + ret, len - ret, FALSE);
           ret = len;
       }
       if (gerr)
@@ -268,7 +268,7 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
       return ret;
     } else {
       nice_debug ("tcp-est: not connected to %s, queueing", to_string);
-      add_to_be_sent (sock, buff, len);
+      add_to_be_sent (sock, buff, len, FALSE);
       return len;
     }
   } else {
@@ -385,7 +385,7 @@ socket_send_more (
     if (ret < 0) {
       if(gerr != NULL &&
           g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK)) {
-        add_to_be_sent (sock, tbs->buf, tbs->length);
+        add_to_be_sent (sock, tbs->buf, tbs->length, TRUE);
         g_free (tbs->buf);
         g_slice_free (struct to_be_sent, tbs);
         g_error_free (gerr);
@@ -394,7 +394,7 @@ socket_send_more (
       if (gerr)
         g_error_free (gerr);
     } else if (ret < (int) tbs->length) {
-      add_to_be_sent (sock, tbs->buf + ret, tbs->length - ret);
+      add_to_be_sent (sock, tbs->buf + ret, tbs->length - ret, TRUE);
       g_free (tbs->buf);
       g_slice_free (struct to_be_sent, tbs);
       break;
@@ -417,7 +417,7 @@ socket_send_more (
 }
 
 static void
-add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len)
+add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len, gboolean add_to_head)
 {
   TcpEstablishedPriv *priv = sock->priv;
   struct to_be_sent *tbs = NULL;
@@ -431,7 +431,11 @@ add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len)
   tbs->buf = g_memdup (buf, len);
   tbs->length = len;
 
-  g_queue_push_tail (&priv->send_queue, tbs);
+  if (add_to_head) {
+    g_queue_push_head (&priv->send_queue, tbs);
+  } else {
+    g_queue_push_tail (&priv->send_queue, tbs);
+  }
 
   if (priv->write_source == NULL) {
     priv->write_source = g_socket_create_source(sock->fileno, G_IO_OUT, NULL);

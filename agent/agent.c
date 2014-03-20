@@ -2947,16 +2947,16 @@ void nice_agent_socket_recv_cb (NiceSocket* socket, NiceAddress* from, gchar* bu
   gboolean is_stun = TRUE;
   NiceAddress stun_server;
 
-  agent_lock();
-
-#ifndef NDEBUG
-  if (len > 0) {
+  if (len <= 0) {
     gchar tmpbuf[INET6_ADDRSTRLEN];
     nice_address_to_string (from, tmpbuf);
-    nice_debug ("Agent %p : Packet received on local socket %u from [%s]:%u (%u octets).", agent,
+
+    g_log (G_LOG_DOMAIN, G_LOG_LEVEL_INFO, "Agent %p : Received invalid packet on local socket %u from [%s]:%u (%d octets).", agent,
                 socket->fileno ? g_socket_get_fd (socket->fileno) : 0, tmpbuf, nice_address_get_port (from), len);
-  }
-#endif
+    return;
+  } 
+
+  agent_lock();
 
   if (agent->stun_server_ip && nice_address_set_from_string (&stun_server, agent->stun_server_ip)) {
     nice_address_set_port (&stun_server, agent->stun_server_port);
