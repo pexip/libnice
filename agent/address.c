@@ -265,6 +265,12 @@ nice_address_to_string (const NiceAddress *addr, gchar *dst)
 NICEAPI_EXPORT gboolean
 nice_address_equal (const NiceAddress *a, const NiceAddress *b)
 {
+  return nice_address_equal_full (a, b, TRUE);
+}
+
+NICEAPI_EXPORT gboolean
+nice_address_equal_full (const NiceAddress *a, const NiceAddress *b, gboolean compare_ports)
+{
   if (a->s.addr.sa_family != b->s.addr.sa_family)
     return FALSE;
 
@@ -272,12 +278,12 @@ nice_address_equal (const NiceAddress *a, const NiceAddress *b)
     {
     case AF_INET:
       return (a->s.ip4.sin_addr.s_addr == b->s.ip4.sin_addr.s_addr)
-          && (a->s.ip4.sin_port == b->s.ip4.sin_port);
+        && (!compare_ports || (a->s.ip4.sin_port == b->s.ip4.sin_port));
 
     case AF_INET6:
       return IN6_ARE_ADDR_EQUAL (&a->s.ip6.sin6_addr, &b->s.ip6.sin6_addr)
-          && (a->s.ip6.sin6_port == b->s.ip6.sin6_port)
-          && (a->s.ip6.sin6_scope_id == b->s.ip6.sin6_scope_id);
+        && (!compare_ports || (a->s.ip6.sin6_port == b->s.ip6.sin6_port))
+        && (a->s.ip6.sin6_scope_id == b->s.ip6.sin6_scope_id);
     }
 
   g_return_val_if_reached (FALSE);

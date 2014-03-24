@@ -275,12 +275,16 @@ static gboolean priv_add_local_candidate_pruned (NiceAgent *agent, guint stream_
 
   for (i = component->local_candidates; i ; i = i->next) {
     NiceCandidate *c = i->data;
+    
+    if (c->transport == candidate->transport) {
+      /* For TCP active candidates the port number is meaningless so ignore it */
+      gboolean compare_ports = (c->transport != NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE);
 
-    if (nice_address_equal (&c->base_addr, &candidate->base_addr) &&
-        nice_address_equal (&c->addr, &candidate->addr) &&
-        c->transport == candidate->transport) {
-      nice_debug ("Candidate %p (component-id %u) redundant, ignoring.", candidate, component->id);
-      return FALSE;
+      if (nice_address_equal_full (&c->base_addr, &candidate->base_addr, compare_ports) &&
+          nice_address_equal_full (&c->addr, &candidate->addr, compare_ports)) {
+        nice_debug ("Candidate %p (component-id %u) redundant, ignoring.", candidate, component->id);
+        return FALSE;
+      }
     }
   }
 

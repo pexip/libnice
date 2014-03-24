@@ -242,6 +242,19 @@ gboolean
 nice_address_equal (const NiceAddress *a, const NiceAddress *b);
 
 /**
+ * nice_address_equal_full:
+ * @a: First #NiceAddress to compare
+ * @b: Second #NiceAddress to compare
+ * @compare_ports: controls whether ports should be taken into account when comparing
+ * 
+ * Compares two #NiceAddress structures to see if they contain the same address
+ *
+ * Returns: %TRUE if @a and @b are the same address, %FALSE if they are different
+ */
+gboolean
+nice_address_equal_full (const NiceAddress *a, const NiceAddress *b, gboolean compare_ports);
+
+/**
  * nice_address_to_string:
  * @addr: The #NiceAddress to query
  * @dst: The string to fill
