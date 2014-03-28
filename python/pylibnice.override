@@ -232,14 +232,15 @@ _wrap_nice_agent_get_local_candidates(PyGObject *self, PyObject *args)
   NiceAgent* agent = (NiceAgent *)(self->obj);
   PyObject *result = NULL;
 
-  Py_BEGIN_ALLOW_THREADS
-
   if (!PyArg_ParseTuple(args, "II", &stream_id, &component_id))
   {
     return NULL;
   }
 
+  Py_BEGIN_ALLOW_THREADS
   candidates = nice_agent_get_local_candidates(agent, stream_id, component_id);
+  Py_END_ALLOW_THREADS
+
   result = PyList_New(0);
   for (item = candidates; item; item = g_slist_next (item))
   {
@@ -247,7 +248,6 @@ _wrap_nice_agent_get_local_candidates(PyGObject *self, PyObject *args)
 	PyList_Append(result, pyg_boxed_new(nice_candidate_get_type(), item->data, TRUE, TRUE));
   }
 
-  Py_END_ALLOW_THREADS
   return result;
 }
 %%
@@ -260,14 +260,15 @@ _wrap_nice_agent_get_remote_candidates(PyGObject *self, PyObject *args)
   NiceAgent* agent = (NiceAgent *)(self->obj);
   PyObject *result = NULL;
 
-  Py_BEGIN_ALLOW_THREADS
-
   if (!PyArg_ParseTuple(args, "II", &stream_id, &component_id))
   {
     return NULL;
   }
 
+  Py_BEGIN_ALLOW_THREADS
   candidates = nice_agent_get_remote_candidates(agent, stream_id, component_id);
+  Py_END_ALLOW_THREADS
+
   result = PyList_New(0);
   for (item = candidates; item; item = g_slist_next (item))
   {
@@ -275,7 +276,6 @@ _wrap_nice_agent_get_remote_candidates(PyGObject *self, PyObject *args)
 	PyList_Append(result, pyg_boxed_new(nice_candidate_get_type(), item->data, TRUE, TRUE));
   }
 
-  Py_END_ALLOW_THREADS
   return result;
 }
 %%
@@ -287,8 +287,6 @@ _wrap_nice_agent_set_remote_candidates(PyGObject *self, PyObject *args)
   int num_candidates;
   guint stream_id, component_id;
   int added = -1;
-
-  Py_BEGIN_ALLOW_THREADS
 
   if (! PyArg_ParseTuple( args, "IIO!", &stream_id, &component_id, &PyList_Type, &list_obj))
     return NULL;
@@ -325,10 +323,11 @@ _wrap_nice_agent_set_remote_candidates(PyGObject *self, PyObject *args)
 	  candidate_list = g_slist_append(candidate_list, nice_candidate_copy( (NiceCandidate *)pyg_boxed_get(candidate, NiceCandidate*)));
 	}
 
+	Py_BEGIN_ALLOW_THREADS
 	added = nice_agent_set_remote_candidates(agent, stream_id, component_id, candidate_list);
+	Py_END_ALLOW_THREADS
   }
 
-  Py_END_ALLOW_THREADS
   return PyBool_FromLong(added > 0);
 }
 %%
@@ -341,8 +340,6 @@ _wrap_nice_agent_add_local_address(PyGObject* self, PyObject *args)
 	gboolean result = FALSE;
 	NiceAgent* agent = (NiceAgent *)(self->obj);
 
-	Py_BEGIN_ALLOW_THREADS
-
     if (! PyArg_ParseTuple( args, "(sI)", &addr, &port))
   	    return NULL;
 
@@ -350,8 +347,8 @@ _wrap_nice_agent_add_local_address(PyGObject* self, PyObject *args)
 	nice_address_set_from_string(&nice_addr, addr);
 	nice_address_set_port(&nice_addr, port);
 
+	Py_BEGIN_ALLOW_THREADS
 	result = nice_agent_add_local_address(agent, &nice_addr);
-
 	Py_END_ALLOW_THREADS
 
     return PyBool_FromLong(result);
@@ -366,13 +363,16 @@ _wrap_nice_agent_get_local_credentials(PyGObject *self, PyObject *args)
 	NiceAgent* agent = (NiceAgent *)(self->obj);
 	guint stream_id;
 	PyObject *result;
-
-	Py_BEGIN_ALLOW_THREADS
+	gboolean succeeded = FALSE;
 
     if (! PyArg_ParseTuple( args, "I", &stream_id))
   	    return NULL;
 
-	if (! nice_agent_get_local_credentials(agent, stream_id, &ufrag, &pwd))
+	Py_BEGIN_ALLOW_THREADS
+	succeeded = nice_agent_get_local_credentials(agent, stream_id, &ufrag, &pwd);
+	Py_END_ALLOW_THREADS
+
+	if (! succeeded )
 	{
 		PyErr_SetString(PyExc_RuntimeError, "Failed to retrieve local credentials");
 		return NULL;
@@ -381,8 +381,6 @@ _wrap_nice_agent_get_local_credentials(PyGObject *self, PyObject *args)
 	result = Py_BuildValue("(ss)", ufrag, pwd);
 	g_free(ufrag);
 	g_free(pwd);
-
-	Py_END_ALLOW_THREADS
 
 	return result;
 }
