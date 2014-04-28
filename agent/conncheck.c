@@ -1255,7 +1255,7 @@ static void priv_update_check_list_state_for_ready (NiceAgent *agent, Stream *st
      * any that are kept, then this function will be called again when the
      * conncheck tick timer finishes them all */
     if (priv_prune_pending_checks (stream, component->id) == 0) {
-      nice_debug ("Agent %p: signaling s/c %d/%d as ready", stream->id, component->id);
+      nice_debug ("Agent %p: signaling s/c %d/%d as ready", agent, stream->id, component->id);
       agent_signal_component_state_change (agent, stream->id,
                                            component->id, NICE_COMPONENT_STATE_READY);
     }
