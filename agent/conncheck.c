@@ -1920,10 +1920,17 @@ static gboolean priv_schedule_triggered_check (NiceAgent *agent, Stream *stream,
 
   if (i) {
     nice_debug ("Agent %p : Adding a triggered check to conn.check list (local=%p).", agent, local);
-    if (local->transport != NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE) {
-      priv_add_new_check_pair (agent, stream->id, component, local, remote_cand, NICE_CHECK_WAITING, use_candidate);
-    } else {
+    if (local->transport == NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE && 
+        !agent->controlling_mode &&
+        (agent->compatibility == NICE_COMPATIBILITY_OC2007R2 ||
+         agent->compatibility == NICE_COMPATIBILITY_OC2007R2_TCP)) {
+      /* 
+       * Lync stops responding to connectivity checks earlier than it should for TCP active candidates so 
+       * if we are TCP passive then immediately go to the dicovered state 
+       */
       priv_add_new_check_pair (agent, stream->id, component, local, remote_cand, NICE_CHECK_DISCOVERED, use_candidate);
+    } else {
+      priv_add_new_check_pair (agent, stream->id, component, local, remote_cand, NICE_CHECK_WAITING, use_candidate);
     }
     return TRUE;
   }
