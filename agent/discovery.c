@@ -679,6 +679,15 @@ errors:
   return NULL;
 }
 
+NiceCandidateTransport priv_determine_local_transport(NiceCandidateTransport remote_transport)
+{
+  switch (remote_transport) {
+  case NICE_CANDIDATE_TRANSPORT_UDP: return NICE_CANDIDATE_TRANSPORT_UDP;
+  case NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE: return NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE;
+  case NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE: return NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE;
+  }
+}
+
 /*
  * Creates a peer reflexive candidate for 'component_id' of stream
  * 'stream_id'.
@@ -705,13 +714,12 @@ discovery_add_peer_reflexive_candidate (
 
   candidate = nice_candidate_new (NICE_CANDIDATE_TYPE_PEER_REFLEXIVE);
 
-  candidate->transport = NICE_CANDIDATE_TRANSPORT_UDP;
+  candidate->transport = priv_determine_local_transport(remote->transport);
   priv_set_candidate_priority (agent, component, candidate);
   candidate->stream_id = stream_id;
   candidate->component_id = component_id;
   candidate->addr = *address;
   candidate->base_addr = base_socket->addr;
-
 
   priv_assign_foundation (agent, candidate);
 
