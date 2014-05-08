@@ -1329,6 +1329,12 @@ static void priv_add_new_check_pair (NiceAgent *agent, guint stream_id, Componen
     stream->conncheck_list =
         priv_limit_conn_check_list_size (stream->conncheck_list, agent->max_conn_checks);
   }
+
+  /* Check if the conncheck timer needs restarting now that we have a new conncheck pair */
+  if (agent->conncheck_timer_source == NULL) {
+    nice_debug ("Agent %p: restarting conncheck timer after adding new conncheck", agent);
+    conn_check_schedule_next (agent);
+  }
 }
 
 static gboolean priv_compatible_transport(NiceCandidate *local, NiceCandidate *remote)
