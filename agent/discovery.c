@@ -848,6 +848,8 @@ NiceCandidate *discovery_learn_remote_peer_reflexive_candidate (
       NiceCandidate* first_remote = component->remote_candidates->data;
       nice_debug("Agent %p: no remote when creating peer-reflexive, using first remote candidate username/password %s/%s", agent,
                  first_remote->username, first_remote->password);
+      g_free (candidate->username);
+      g_free (candidate->password);
       candidate->username = g_strdup(first_remote->username);
       candidate->password = g_strdup(first_remote->password);    
     } else {
