@@ -1475,6 +1475,9 @@ void agent_signal_new_selected_pair (NiceAgent *agent, guint stream_id, guint co
     }
   }
 
+  nice_debug("Agent %p: s/c %u/%u signalling new-selected-pair (%s:%s)", agent, stream_id, component_id,
+             lcandidate->foundation, rcandidate->foundation);
+
   lf_copy = g_strdup (lcandidate->foundation);
   rf_copy = g_strdup (rcandidate->foundation);
 
@@ -2556,7 +2559,7 @@ nice_agent_set_remote_candidates (NiceAgent *agent, guint stream_id, guint compo
   Stream *stream;
   Component *component;
 
-  nice_debug ("Agent %p: set_remote_candidates %d %d", agent, stream_id, component_id);
+  nice_debug ("Agent %p: nice_agent_set_remote_candidates s/c: %d/%d", agent, stream_id, component_id);
 
   agent_lock();
 
@@ -2590,7 +2593,8 @@ nice_agent_set_remote_candidates (NiceAgent *agent, guint stream_id, guint compo
    }
  }
 
- conn_check_remote_candidates_set(agent);
+ nice_debug("Agent %p: s/c %u/%u: added all remote candidates, checking for any pending inbound checks", agent, stream_id, component_id);
+ conn_check_remote_candidates_set(agent, stream_id, component_id);
 
  if (added > 0) {
    gboolean res = conn_check_schedule_next (agent);

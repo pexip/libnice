@@ -90,6 +90,6 @@ int conn_check_send (NiceAgent *agent, CandidateCheckPair *pair);
 gboolean conn_check_prune_stream (NiceAgent *agent, Stream *stream);
 gboolean conn_check_handle_inbound_stun (NiceAgent *agent, Stream *stream, Component *component, NiceSocket *udp_socket, const NiceAddress *from, gchar *buf, guint len);
 gint conn_check_compare (const CandidateCheckPair *a, const CandidateCheckPair *b);
-void conn_check_remote_candidates_set(NiceAgent *agent);
+void conn_check_remote_candidates_set(NiceAgent *agent, guint stream_id, guint component_id);
 
 #endif /*_NICE_CONNCHECK_H */
