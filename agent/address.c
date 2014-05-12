@@ -148,6 +148,17 @@ nice_address_set_ipv6 (NiceAddress *addr, const guchar *addr_ipv6)
   addr->s.ip6.sin6_scope_id = 0;
 }
 
+NICEAPI_EXPORT guint16
+nice_address_get_family (const NiceAddress *addr)
+{
+  return addr->s.addr.sa_family;
+}
+
+NICEAPI_EXPORT gboolean
+nice_address_is_ipv6 (const NiceAddress *addr)
+{
+  return nice_address_get_family(addr) == AF_INET6;
+}
 
 NICEAPI_EXPORT void
 nice_address_set_port (NiceAddress *addr, guint port)

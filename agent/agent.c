@@ -146,43 +146,6 @@ static gboolean priv_attach_stream_component (NiceAgent *agent,
 static void priv_detach_stream_component (Stream *stream, Component *component);
 
 
-
-static const char* priv_state_to_string(NiceComponentState state)
-{
-  switch (state) {
-  case NICE_COMPONENT_STATE_DISCONNECTED: return "DISCONNECTED";
-  case NICE_COMPONENT_STATE_GATHERING: return "GATHERING";
-  case NICE_COMPONENT_STATE_CONNECTING: return "CONNECTING";
-  case NICE_COMPONENT_STATE_CONNECTED: return "CONNECTED";
-  case NICE_COMPONENT_STATE_READY: return "READY";
-  case NICE_COMPONENT_STATE_FAILED: return "FAILED";
-  case NICE_COMPONENT_STATE_LAST: return "LAST";
-  }
-  return "(invalid)";
-}
-
-static const char *priv_type_to_string(NiceCandidateType type)
-{
-  switch (type) {
-  case NICE_CANDIDATE_TYPE_HOST: return "host";
-  case NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE: return "srflx";
-  case NICE_CANDIDATE_TYPE_PEER_REFLEXIVE: return "prflx";
-  case NICE_CANDIDATE_TYPE_RELAYED: return "relay";
-  }
-  return "(invalid)";
-}
-
-static const char *priv_transport_to_string(NiceCandidateTransport transport)
-{
-  switch (transport) {
-  case NICE_CANDIDATE_TRANSPORT_UDP: return "udp";
-  case NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE: return "tcp-act";
-  case NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE: return "tcp-pass";
-  case NICE_CANDIDATE_TRANSPORT_TCP_SO: return "tcp-so";
-  }
-  return "(invalid)";
-}
-
 #if GLIB_CHECK_VERSION(2,31,8)
 void agent_lock (void)
 {
@@ -211,8 +174,8 @@ void agent_unlock(void)
  * ICE 4.1.2.1. "Recommended Formula" (ID-19):
  * returns number between 1 and 0x7effffff 
  */
-guint32
-agent_candidate_ice_priority_full (
+static guint32
+priv_agent_candidate_ice_priority_full (
   // must be ∈ (0, 126) (max 2^7 - 2)
   guint type_preference,
   // must be ∈ (0, 65535) (max 2^16 - 1)
@@ -226,40 +189,65 @@ agent_candidate_ice_priority_full (
       (0x100 - component_id));
 }
 
-guint 
-agent_candidate_type_preference (NiceAgent* agent, NiceCandidateType type)
+static guint 
+priv_agent_candidate_type_preference (NiceAgent* agent, NiceCandidateType type, NiceCandidateTransport transport)
 {
   switch (agent->compatibility) {
   case NICE_COMPATIBILITY_OC2007R2:
-  case NICE_COMPATIBILITY_OC2007R2_TCP:
-    switch(type) {
-    case NICE_CANDIDATE_TYPE_HOST: return NICE_CANDIDATE_OC2007R2_TYPE_PREF_HOST; 
-    case NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE: return NICE_CANDIDATE_OC2007R2_TYPE_PREF_SERVER_REFLEXIVE; 
-    case NICE_CANDIDATE_TYPE_PEER_REFLEXIVE: return NICE_CANDIDATE_OC2007R2_TYPE_PREF_PEER_REFLEXIVE;
-    case NICE_CANDIDATE_TYPE_RELAYED:return NICE_CANDIDATE_OC2007R2_TYPE_PREF_RELAYED;
+    if (transport == NICE_CANDIDATE_TRANSPORT_UDP) {
+      switch(type) {
+      case NICE_CANDIDATE_TYPE_HOST: return NICE_CANDIDATE_OC2007R2_TYPE_PREF_HOST; 
+      case NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE: return NICE_CANDIDATE_OC2007R2_TYPE_PREF_SERVER_REFLEXIVE; 
+      case NICE_CANDIDATE_TYPE_PEER_REFLEXIVE: return NICE_CANDIDATE_OC2007R2_TYPE_PREF_PEER_REFLEXIVE;
+      case NICE_CANDIDATE_TYPE_RELAYED:return NICE_CANDIDATE_OC2007R2_TYPE_PREF_RELAYED;
+      }
+    } else {
+      switch(type) {
+      case NICE_CANDIDATE_TYPE_HOST: return NICE_CANDIDATE_OC2007R2_TYPE_PREF_HOST_TCP; 
+      case NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE: return NICE_CANDIDATE_OC2007R2_TYPE_PREF_SERVER_REFLEXIVE_TCP; 
+      case NICE_CANDIDATE_TYPE_PEER_REFLEXIVE: return NICE_CANDIDATE_OC2007R2_TYPE_PREF_PEER_REFLEXIVE_TCP;
+      case NICE_CANDIDATE_TYPE_RELAYED:return NICE_CANDIDATE_OC2007R2_TYPE_PREF_RELAYED_TCP;
+      }
     }
     break;
     
   default:
-    switch(type) {
-    case NICE_CANDIDATE_TYPE_HOST: return NICE_CANDIDATE_TYPE_PREF_HOST; 
-    case NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE: return NICE_CANDIDATE_TYPE_PREF_SERVER_REFLEXIVE; 
-    case NICE_CANDIDATE_TYPE_PEER_REFLEXIVE: return NICE_CANDIDATE_TYPE_PREF_PEER_REFLEXIVE;
-    case NICE_CANDIDATE_TYPE_RELAYED:return NICE_CANDIDATE_TYPE_PREF_RELAYED;
+    if (transport == NICE_CANDIDATE_TRANSPORT_UDP) {
+      switch(type) {
+      case NICE_CANDIDATE_TYPE_HOST: return NICE_CANDIDATE_TYPE_PREF_HOST; 
+      case NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE: return NICE_CANDIDATE_TYPE_PREF_SERVER_REFLEXIVE; 
+      case NICE_CANDIDATE_TYPE_PEER_REFLEXIVE: return NICE_CANDIDATE_TYPE_PREF_PEER_REFLEXIVE;
+      case NICE_CANDIDATE_TYPE_RELAYED:return NICE_CANDIDATE_TYPE_PREF_RELAYED;
+      }
+    } else {
+      switch(type) {
+      case NICE_CANDIDATE_TYPE_HOST: return NICE_CANDIDATE_TYPE_PREF_HOST_TCP; 
+      case NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE: return NICE_CANDIDATE_TYPE_PREF_SERVER_REFLEXIVE_TCP; 
+      case NICE_CANDIDATE_TYPE_PEER_REFLEXIVE: return NICE_CANDIDATE_TYPE_PREF_PEER_REFLEXIVE_TCP;
+      case NICE_CANDIDATE_TYPE_RELAYED:return NICE_CANDIDATE_TYPE_PREF_RELAYED_TCP;
+      }
     }
   }
-  return 0;
+
+  /* Not reached */
+  return NICE_CANDIDATE_TYPE_PREF_RELAYED;
 }
 
 guint32
-agent_candidate_ice_priority (NiceAgent *agent, const NiceCandidate *candidate)
+agent_candidate_ice_priority (NiceAgent *agent, const NiceCandidate *candidate, NiceCandidateType type)
 {
   guint8 type_preference = 0;
-  guint other_preference = 8191;
+  guint other_preference = 0;
   guint direction_preference = 0;
   guint local_preference = 0;
 
-  type_preference = agent_candidate_type_preference (agent, candidate->type);
+  if (nice_address_is_ipv6(&candidate->base_addr)) {
+    other_preference = 8190;
+  } else {
+    other_preference = 8191;
+  }
+
+  type_preference = priv_agent_candidate_type_preference (agent, type, candidate->transport);
   
   switch (candidate->transport) {
   case NICE_CANDIDATE_TRANSPORT_UDP:
@@ -284,19 +272,11 @@ agent_candidate_ice_priority (NiceAgent *agent, const NiceCandidate *candidate)
     }
     break;
 
-  case NICE_CANDIDATE_TRANSPORT_TCP_SO:
-    if (candidate->type == NICE_CANDIDATE_TYPE_HOST ||
-        candidate->type == NICE_CANDIDATE_TYPE_RELAYED) {
-      direction_preference = 2;
-    } else {
-      direction_preference = 6;
-    }
-    break;
   }
   local_preference = (2 << 13) * direction_preference + other_preference;
 
   /* return _candidate_ice_priority (type_preference, 1, candidate->component_id); */
-  return agent_candidate_ice_priority_full (type_preference, local_preference, candidate->component_id);
+  return priv_agent_candidate_ice_priority_full (type_preference, local_preference, candidate->component_id);
 }
 
 StunUsageIceCompatibility
@@ -902,9 +882,6 @@ nice_agent_get_property (
           g_value_set_uint (value, NICE_COMPATIBILITY_RFC6544);
         else
           g_value_set_uint (value, NICE_COMPATIBILITY_RFC5245);
-      } else if (agent->compatibility == NICE_COMPATIBILITY_OC2007R2 && 
-                 agent->use_ice_tcp) {
-        g_value_set_uint (value, NICE_COMPATIBILITY_OC2007R2_TCP);
       } else {
         g_value_set_uint (value, agent->compatibility);
       }
@@ -1037,14 +1014,6 @@ nice_agent_set_property (
             STUN_AGENT_USAGE_NO_ALIGNED_ATTRIBUTES);
       } else if (agent->compatibility == NICE_COMPATIBILITY_OC2007R2) {
         agent->use_ice_udp = TRUE;
-        stun_agent_init (&agent->stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
-            STUN_COMPATIBILITY_WLM2009,
-            STUN_AGENT_USAGE_SHORT_TERM_CREDENTIALS |
-            STUN_AGENT_USAGE_USE_FINGERPRINT |
-            STUN_AGENT_USAGE_NO_ALIGNED_ATTRIBUTES);
-      } else if (agent->compatibility == NICE_COMPATIBILITY_OC2007R2_TCP) {
-        agent->compatibility = NICE_COMPATIBILITY_OC2007R2;
-        agent->use_ice_udp = FALSE;
         agent->use_ice_tcp = TRUE;
         stun_agent_init (&agent->stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
             STUN_COMPATIBILITY_WLM2009,
@@ -1476,8 +1445,12 @@ void agent_signal_new_selected_pair (NiceAgent *agent, guint stream_id, guint co
     }
   }
 
-  nice_debug("Agent %p: s/c %u/%u signalling new-selected-pair (%s:%s)", agent, stream_id, component_id,
-             lcandidate->foundation, rcandidate->foundation);
+  nice_debug("Agent %p: s/c %u/%u signalling new-selected-pair (%s:%s) local-candidate-type=%s remote-candidate-type=%s local-transport=%s remote-transport=%s", agent, stream_id, component_id,
+             lcandidate->foundation, rcandidate->foundation,
+             candidate_type_to_string(lcandidate->type), 
+             candidate_type_to_string(rcandidate->type),
+             candidate_transport_to_string(lcandidate->transport), 
+             candidate_transport_to_string(rcandidate->transport));
 
   lf_copy = g_strdup (lcandidate->foundation);
   rf_copy = g_strdup (rcandidate->foundation);
@@ -1516,7 +1489,7 @@ void agent_signal_component_state_change (NiceAgent *agent, guint stream_id, gui
 
   if (component->state != state && state < NICE_COMPONENT_STATE_LAST) {
     nice_debug ("Agent %p s/c:%u/%u: signalling STATE-CHANGE %s -> %s.", agent,
-                stream_id, component_id, priv_state_to_string(component->state), priv_state_to_string(state));
+                stream_id, component_id, component_state_to_string(component->state), component_state_to_string(state));
 
     component->state = state;
 
@@ -1561,6 +1534,10 @@ priv_add_new_candidate_discovery_stun (NiceAgent *agent,
 {
   CandidateDiscovery *cdisco;
 
+  /* Don't try to connect to an IPv6 server from an IPv4 local interface or vice-versa */
+  if (nice_address_get_family (&server) != nice_address_get_family (&socket->addr)) 
+      return;
+
   /* note: no need to check for redundant candidates, as this is
    *       done later on in the process */
 
@@ -1594,6 +1571,10 @@ priv_add_new_candidate_discovery_turn (NiceAgent *agent,
 {
   CandidateDiscovery *cdisco;
   Component *component = stream_find_component_by_id (stream, component_id);
+
+  /* Don't try to connect to an IPv6 server from an IPv4 local interface or vice-versa */
+  if (nice_address_get_family (&turn->server) != nice_address_get_family (&socket->addr)) 
+      return;
 
   /* note: no need to check for redundant candidates, as this is
    *       done later on in the process */
@@ -1987,7 +1968,9 @@ nice_agent_gather_candidates (
   /* generate a local host candidate for each local address */
   for (i = local_addresses; i; i = i->next) {
     NiceAddress *addr = i->data;
-    NiceCandidate *host_candidate;
+    NiceCandidate *udp_host_candidate;
+    NiceCandidate *tcp_active_host_candidate;
+    NiceCandidate *tcp_passive_host_candidate;
 
 #ifdef HAVE_GUPNP
     gchar local_ip[NICE_ADDRESS_STRING_LEN];
@@ -2003,12 +1986,12 @@ nice_agent_gather_candidates (
 
       current_port = component->min_port;
 
+      udp_host_candidate = NULL;
       if (component->enable_udp) {
-        host_candidate = NULL;
-        while (host_candidate == NULL) {
+        while (udp_host_candidate == NULL) {
           nice_debug ("Agent %p: Trying to create host candidate on port %d", agent, current_port);
           nice_address_set_port (addr, current_port);
-          host_candidate = discovery_add_local_host_candidate (agent, stream->id,
+          udp_host_candidate = discovery_add_local_host_candidate (agent, stream->id,
                                                                n + 1, addr, NICE_CANDIDATE_TRANSPORT_UDP);
           if (current_port > 0)
             current_port++;
@@ -2017,7 +2000,7 @@ nice_agent_gather_candidates (
         }
         nice_address_set_port (addr, 0);
 
-        if (!host_candidate) {
+        if (!udp_host_candidate) {
           gchar ip[NICE_ADDRESS_STRING_LEN];
           nice_address_to_string (addr, ip);
           nice_debug ("Agent %p: Unable to add local host candidate %s for s%d:%d"
@@ -2028,11 +2011,11 @@ nice_agent_gather_candidates (
 
 #ifdef HAVE_GUPNP
         if (agent->upnp_enabled) {
-          NiceAddress *addr = nice_address_dup (&host_candidate->base_addr);
+          NiceAddress *addr = nice_address_dup (&udp_host_candidate->base_addr);
           nice_debug ("Agent %p: Adding UPnP port %s:%d", agent, local_ip,
-              nice_address_get_port (&host_candidate->base_addr));
+              nice_address_get_port (&udp_host_candidate->base_addr));
           gupnp_simple_igd_add_port (GUPNP_SIMPLE_IGD (agent->upnp), "UDP",
-              0, local_ip, nice_address_get_port (&host_candidate->base_addr),
+              0, local_ip, nice_address_get_port (&udp_host_candidate->base_addr),
               0, PACKAGE_STRING);
           agent->upnp_mapping = g_slist_prepend (agent->upnp_mapping, addr);
         }
@@ -2045,12 +2028,12 @@ nice_agent_gather_candidates (
             nice_address_set_port (&stun_server, agent->stun_server_port);
 
             priv_add_new_candidate_discovery_stun (agent,
-                host_candidate->sockptr,
+                udp_host_candidate->sockptr,
                 stun_server,
                 stream,
                 n + 1,
                 NICE_CANDIDATE_TRANSPORT_UDP,
-                host_candidate->sockptr);
+                udp_host_candidate->sockptr);
           }
         }
 
@@ -2061,7 +2044,7 @@ nice_agent_gather_candidates (
             TurnServer *turn = item->data;
 
             priv_add_new_candidate_discovery_turn (agent,
-                host_candidate->sockptr,
+                udp_host_candidate->sockptr,
                 turn,
                 stream,
                 n + 1);
@@ -2069,14 +2052,14 @@ nice_agent_gather_candidates (
         }
       }
 
+      tcp_passive_host_candidate = NULL;
       if (component->enable_tcp_passive) {
         current_port = component->min_port;
 
-        host_candidate = NULL;
-        while (host_candidate == NULL) {
+        while (tcp_passive_host_candidate == NULL) {
           nice_debug ("Agent %p: Trying to create TCP-PASSIVE host candidate on port %d", agent, current_port);
           nice_address_set_port (addr, current_port);
-          host_candidate = discovery_add_local_host_candidate (agent, stream->id,
+          tcp_passive_host_candidate = discovery_add_local_host_candidate (agent, stream->id,
                                                                n + 1, addr, NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE);
           if (current_port > 0)
             current_port++;
@@ -2085,7 +2068,7 @@ nice_agent_gather_candidates (
         }
         nice_address_set_port (addr, 0);
 
-        if (!host_candidate) {
+        if (!tcp_passive_host_candidate) {
           gchar ip[NICE_ADDRESS_STRING_LEN];
           nice_address_to_string (addr, ip);
           nice_debug ("Agent %p: Unable to add local TCP-PASSIVE host candidate %s for s%d:%d"
@@ -2095,14 +2078,14 @@ nice_agent_gather_candidates (
         }
       }
       
+      tcp_active_host_candidate = NULL;
       if (component->enable_tcp_active) {
         current_port = component->min_port;
 
-        host_candidate = NULL;
-        while (host_candidate == NULL) {
+        while (tcp_active_host_candidate == NULL) {
           nice_debug ("Agent %p: Trying to create TCP-ACTIVE host candidate on port %d", agent, current_port);
           nice_address_set_port (addr, current_port);
-          host_candidate = discovery_add_local_host_candidate (agent, stream->id,
+          tcp_active_host_candidate = discovery_add_local_host_candidate (agent, stream->id,
                                                                n + 1, addr, NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE);
           if (current_port > 0)
             current_port++;
@@ -2110,7 +2093,7 @@ nice_agent_gather_candidates (
             break;
         }
 
-        if (!host_candidate) {
+        if (!tcp_active_host_candidate) {
           gchar ip[NICE_ADDRESS_STRING_LEN];
           nice_address_to_string (addr, ip);
           nice_debug ("Agent %p: Unable to add local TCP-ACTIVE host candidate %s for s%d:%d"
@@ -2129,21 +2112,31 @@ nice_agent_gather_candidates (
            */
           NiceAddress stun_server;
           if (nice_address_set_from_string (&stun_server, agent->stun_server_ip)) {
-            NiceSocket* sockptr = nice_udp_bsd_socket_new (addr);
+            NiceSocket* sockptr;
             char local_address_string[NICE_ADDRESS_STRING_LEN];
             char stun_address_string[NICE_ADDRESS_STRING_LEN];
 
-            agent_attach_stream_component_socket (agent, stream, component, sockptr);
-
-            component->sockets = g_slist_append (component->sockets, sockptr);
             nice_address_set_port (&stun_server, agent->stun_server_port);
 
-            nice_address_to_string (addr, local_address_string);
-            nice_address_to_string (&stun_server, stun_address_string);
+            if (udp_host_candidate) {
+              sockptr = udp_host_candidate->sockptr;
+            } else {
+              /*
+               * UDP not enabled for this stream, create a local UDP socket
+               * for talking to the STUN server
+               */
+              sockptr = nice_udp_bsd_socket_new (addr);
+              agent_attach_stream_component_socket (agent, stream, component, sockptr);
 
-            nice_debug ("Created local UDP socket for STUN request s/c %d/%d, local-address=%s:%d, stun-address=%s:%d result=%p\n",
-                        stream->id, component->id, local_address_string, nice_address_get_port(addr),
-                        stun_address_string, nice_address_get_port(&stun_server), sockptr);
+              component->sockets = g_slist_append (component->sockets, sockptr);
+
+              nice_address_to_string (addr, local_address_string);
+              nice_address_to_string (&stun_server, stun_address_string);
+
+              nice_debug ("Created local UDP socket for STUN request s/c %d/%d, local-address=%s:%d, stun-address=%s:%d result=%p\n",
+                          stream->id, component->id, local_address_string, nice_address_get_port(addr),
+                          stun_address_string, nice_address_get_port(&stun_server), sockptr);
+            }
 
             priv_add_new_candidate_discovery_stun (agent,
                 sockptr,
@@ -2151,9 +2144,10 @@ nice_agent_gather_candidates (
                 stream,
                 n + 1,
                 NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE,
-                host_candidate->sockptr);
+                tcp_active_host_candidate->sockptr);
           }
         }
+
         nice_address_set_port (addr, 0);
 
       }
@@ -2327,10 +2321,6 @@ nice_agent_set_transport (
       component->enable_tcp_passive = TRUE;
       break;
 
-    case NICE_CANDIDATE_TRANSPORT_TCP_SO:
-      component->enable_tcp_active = TRUE;
-      component->enable_tcp_passive = TRUE;
-      break;
     }
   }
 
@@ -2468,7 +2458,7 @@ static gboolean priv_add_remote_candidate (
       nice_debug ("Agent %p : Adding remote candidate with foundation %s addr [%s]:%u"
                   " for s%d/c%d. U/P '%s'/'%s' prio: %u type:%s transport:%s", agent, foundation, tmpbuf,
                   addr? nice_address_get_port (addr) : 0, stream_id, component_id,
-                  username, password, priority, priv_type_to_string(type), priv_transport_to_string(transport));
+                  username, password, priority, candidate_type_to_string(type), candidate_transport_to_string(transport));
     }
 
     if (base_addr)
@@ -2641,8 +2631,9 @@ _nice_agent_recv (
   if (len > 0) {
     gchar tmpbuf[INET6_ADDRSTRLEN];
     nice_address_to_string (from, tmpbuf);
-    nice_debug ("Agent %p : Packet received on local socket %u from [%s]:%u (%u octets).", agent,
-                socket->fileno ? g_socket_get_fd (socket->fileno) : 0, tmpbuf, nice_address_get_port (from), len);
+    nice_debug ("Agent %p : Packet received on local %s socket %u from [%s]:%u (%u octets).", agent,
+                socket_type_to_string(socket->type), socket->fileno ? g_socket_get_fd (socket->fileno) : 0, 
+                tmpbuf, nice_address_get_port (from), len);
   }
 #endif
 
@@ -2960,6 +2951,16 @@ void nice_agent_socket_recv_cb (NiceSocket* socket, NiceAddress* from, gchar* bu
                 socket->fileno ? g_socket_get_fd (socket->fileno) : 0, tmpbuf, nice_address_get_port (from), len);
     return;
   } 
+
+#ifndef NDEBUG
+  if (len > 0) {
+    gchar tmpbuf[INET6_ADDRSTRLEN];
+    nice_address_to_string (from, tmpbuf);
+    nice_debug ("Agent %p : Packet received on local %s socket %u from [%s]:%u (%u octets).", agent,
+                socket_type_to_string(socket->type), socket->fileno ? g_socket_get_fd (socket->fileno) : 0, 
+                tmpbuf, nice_address_get_port (from), len);
+  }
+#endif
 
   agent_lock();
 

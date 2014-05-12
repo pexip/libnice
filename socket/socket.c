@@ -79,3 +79,21 @@ nice_socket_attach (NiceSocket *sock, GMainContext* ctx)
   }
 }
 
+const char* socket_type_to_string (NiceSocketType type)
+{
+  switch (type) {
+  case NICE_SOCKET_TYPE_UDP_BSD: return "udp";
+  case NICE_SOCKET_TYPE_TCP_BSD: return "tcp-bsd";
+  case NICE_SOCKET_TYPE_TCP_ACTIVE: return "tcp-active";
+  case NICE_SOCKET_TYPE_TCP_PASSIVE: return "tcp-passive";
+  case NICE_SOCKET_TYPE_TCP_ESTABLISHED: return "tcp-established";
+  case NICE_SOCKET_TYPE_TCP_SO: return "tcp-so";
+  case NICE_SOCKET_TYPE_PSEUDOSSL: return "pseudossl";
+  case NICE_SOCKET_TYPE_HTTP: return "http";
+  case NICE_SOCKET_TYPE_SOCKS5: return "socks5";
+  case NICE_SOCKET_TYPE_TURN: return "turn";
+  case NICE_SOCKET_TYPE_TCP_TURN: return "tcp-turn";
+  }
+  return "(invalid)";
+}
+

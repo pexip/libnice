@@ -174,6 +174,20 @@ nice_address_set_ipv6 (NiceAddress *addr, const guchar *addr_ipv6);
 
 
 /**
+ * nice_address_get_family
+ * @addr: The #NiceAddress 
+ */
+guint16
+nice_address_get_family (const NiceAddress *addr);
+
+/**
+ * nice_address_is_ipv6:
+ * @addr: The #NiceAddress 
+ */
+gboolean
+nice_address_is_ipv6 (const NiceAddress *addr);
+
+/**
  * nice_address_set_port:
  * @addr: The #NiceAddress to modify
  * @port: The port to set

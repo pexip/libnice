@@ -59,16 +59,29 @@ G_BEGIN_DECLS
 #define NICE_TYPE_CANDIDATE \
   (nice_candidate_get_type ())
 
-
+/*
+ * As per RFC 6544 section 4.2 adjust type preference so that UDP 
+ * is always preferred to any TCP candidate
+ */
 #define NICE_CANDIDATE_TYPE_PREF_HOST                 120
 #define NICE_CANDIDATE_TYPE_PREF_PEER_REFLEXIVE       110
 #define NICE_CANDIDATE_TYPE_PREF_SERVER_REFLEXIVE     100
 #define NICE_CANDIDATE_TYPE_PREF_RELAYED               60
 
+#define NICE_CANDIDATE_TYPE_PREF_HOST_TCP              50
+#define NICE_CANDIDATE_TYPE_PREF_PEER_REFLEXIVE_TCP    40
+#define NICE_CANDIDATE_TYPE_PREF_SERVER_REFLEXIVE_TCP  30
+#define NICE_CANDIDATE_TYPE_PREF_RELAYED_TCP            0
+
 #define NICE_CANDIDATE_OC2007R2_TYPE_PREF_HOST                 120
 #define NICE_CANDIDATE_OC2007R2_TYPE_PREF_PEER_REFLEXIVE       100
 #define NICE_CANDIDATE_OC2007R2_TYPE_PREF_SERVER_REFLEXIVE      60
 #define NICE_CANDIDATE_OC2007R2_TYPE_PREF_RELAYED              110
+
+#define NICE_CANDIDATE_OC2007R2_TYPE_PREF_HOST_TCP              50
+#define NICE_CANDIDATE_OC2007R2_TYPE_PREF_PEER_REFLEXIVE_TCP    30
+#define NICE_CANDIDATE_OC2007R2_TYPE_PREF_SERVER_REFLEXIVE_TCP   0
+#define NICE_CANDIDATE_OC2007R2_TYPE_PREF_RELAYED_TCP           40
 
 /* Max foundation size '1*32ice-char' plus terminating NULL, ICE ID-19  */
 /**
@@ -109,8 +122,7 @@ typedef enum
 {
   NICE_CANDIDATE_TRANSPORT_UDP,
   NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE,
-  NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE,
-  NICE_CANDIDATE_TRANSPORT_TCP_SO
+  NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE
 } NiceCandidateTransport;
 
 /**
@@ -234,6 +246,8 @@ nice_candidate_msn_priority (NiceCandidate *candidate);
 guint64
 nice_candidate_pair_priority (guint32 o_prio, guint32 a_prio);
 
+const char *candidate_type_to_string(NiceCandidateType type);
+const char *candidate_transport_to_string(NiceCandidateTransport transport);
 
 G_END_DECLS
 

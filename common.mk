@@ -13,7 +13,8 @@ ERROR_CFLAGS = \
 	-Wstrict-prototypes \
 	-Wredundant-decls \
 	-Wno-unused-parameter \
-	-Wno-missing-field-initializers
+	-Wno-missing-field-initializers \
+	-Werror 
 # -Wold-style-definition -Winline -Wunreachable-code
 
 CLEANFILES = *.gcno *.gcda

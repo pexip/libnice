@@ -104,7 +104,7 @@ NiceSocket * nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr,
   priv->destroy_notify = destroy_notify;
 
   sock->type = NICE_SOCKET_TYPE_TCP_ACTIVE;
-  sock->addr = tmp_addr;
+  sock->addr = *addr;
   sock->fileno = NULL;
   sock->send = socket_send;
   sock->recv = socket_recv;
@@ -184,13 +184,13 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
     sent_len = nice_socket_send(socket, to, len, buf);
     if (sent_len > 0)
     {
-      nice_debug("tcp-act: Sent on socket, sent %d to %s", sent_len, to_string);
+      nice_debug("tcp-act %p: Sent on socket, sent %d to %s:%u", sock, sent_len, to_string, nice_address_get_port (to));
       return sent_len;
     } else if (sent_len < 0) {
       /* 
        * Correct socket but failed 
        */
-      nice_debug("tcp-act: Failed to send to %s, destroying socket", to_string);
+      nice_debug("tcp-act %p: Failed to send to %s:%u, destroying socket", sock, to_string, nice_address_get_port (to));
       nice_socket_free (socket);
       priv->established_sockets = g_slist_remove(priv->established_sockets, socket);
       break;
@@ -202,10 +202,10 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
    */
   NiceSocket* new_socket = nice_tcp_active_socket_connect (sock, to);
   if (!new_socket) {
-    nice_debug ("tcp-act: failed to connect the new socket to %s", to_string);
+    nice_debug ("tcp-act %p: failed to connect the new socket to %s:%u", sock, to_string, nice_address_get_port (to));
     return -1;
   }
-  nice_debug ("tcp-act: connected outbound socket to %s", to_string);
+  nice_debug ("tcp-act %p: connecting outbound socket to %s:%u. New tcp-est %p", sock, to_string, nice_address_get_port (to), new_socket);
   priv->established_sockets = g_slist_append (priv->established_sockets, new_socket);
   sent_len = nice_socket_send (new_socket, to, len, buf);
   return sent_len;
@@ -225,11 +225,11 @@ void tcp_active_established_socket_recv_cb (NiceSocket* socket, NiceAddress* fro
   TcpActivePriv *priv = listening_socket->priv;
 
   if (priv->recv_cb) {
-    nice_debug("tcp-act: sending up %d bytes", len);
+    nice_debug("tcp-act %p: sending up %d bytes received from tcp-est %p", listening_socket, len, socket);
     
     (priv->recv_cb) (listening_socket, from, buf, len, priv->userdata);
   } else {
-    nice_debug("tcp-act: no callback configured!!");
+    nice_debug("tcp-act %p: no callback configured!!", listening_socket);
   }
 }
 
@@ -243,6 +243,7 @@ nice_tcp_active_socket_connect (NiceSocket *socket, const NiceAddress *addr)
   gboolean gret = FALSE;
   GSocketAddress *gaddr;
   NiceAddress local_addr;
+  gboolean connect_pending = FALSE;
 
   if (addr == NULL) {
     /* We can't connect a tcp socket with no destination address */
@@ -291,6 +292,8 @@ nice_tcp_active_socket_connect (NiceSocket *socket, const NiceAddress *addr)
       g_socket_close (gsock, NULL);
       g_object_unref (gsock);
       return NULL;
+    } else {
+      connect_pending = TRUE;
     }
     g_error_free (gerr);
   }
@@ -308,5 +311,6 @@ nice_tcp_active_socket_connect (NiceSocket *socket, const NiceAddress *addr)
 
   return nice_tcp_established_socket_new (gsock,
                                           &local_addr, addr, active_priv->context, 
-                                          tcp_active_established_socket_recv_cb, (gpointer)socket, NULL);
+                                          tcp_active_established_socket_recv_cb, (gpointer)socket, NULL,
+                                          connect_pending);
 }

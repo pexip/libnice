@@ -589,9 +589,7 @@ static gboolean priv_conn_keepalive_tick_unlocked (NiceAgent *agent)
 	CandidatePair *p = &component->selected_pair;
 
         if (agent->compatibility == NICE_COMPATIBILITY_GOOGLE) {
-          guint32 priority = agent_candidate_ice_priority_full (
-                  NICE_CANDIDATE_TYPE_PREF_PEER_REFLEXIVE, 1,
-                  p->local->component_id);
+          guint32 priority = agent_candidate_ice_priority (agent, p->local, NICE_CANDIDATE_TYPE_PREF_PEER_REFLEXIVE);
           uint8_t uname[NICE_STREAM_MAX_UNAME];
           size_t uname_len =
               priv_create_username (agent, agent_find_stream (agent, stream->id),
@@ -1009,6 +1007,7 @@ void conn_check_remote_candidates_set(NiceAgent *agent, guint stream_id, guint c
           break;
         }
       }
+
       if (match != TRUE) {
         /* note: we have gotten an incoming connectivity check from
          *       an address that is not a known remote candidate */
@@ -1022,8 +1021,7 @@ void conn_check_remote_candidates_set(NiceAgent *agent, guint stream_id, guint c
         if (agent->compatibility == NICE_COMPATIBILITY_GOOGLE ||
             agent->compatibility == NICE_COMPATIBILITY_MSN ||
             agent->compatibility == NICE_COMPATIBILITY_OC2007 ||
-            agent->compatibility == NICE_COMPATIBILITY_OC2007R2 ||
-            agent->compatibility == NICE_COMPATIBILITY_OC2007R2_TCP) {
+            agent->compatibility == NICE_COMPATIBILITY_OC2007R2) {
           /* We need to find which local candidate was used */
           uint8_t uname[NICE_STREAM_MAX_UNAME];
           guint uname_len;
@@ -1063,8 +1061,7 @@ void conn_check_remote_candidates_set(NiceAgent *agent, guint stream_id, guint c
         }
         
         if ((agent->compatibility == NICE_COMPATIBILITY_GOOGLE ||
-             agent->compatibility == NICE_COMPATIBILITY_OC2007R2 ||
-             agent->compatibility == NICE_COMPATIBILITY_OC2007R2_TCP) &&
+             agent->compatibility == NICE_COMPATIBILITY_OC2007R2) &&
             local_candidate == NULL) {
           /* if we couldn't match the username, then the matching remote
            * candidate hasn't been received yet.. we must wait */
@@ -1344,9 +1341,6 @@ static gboolean priv_compatible_transport(NiceCandidate *local, NiceCandidate *r
   if (local->transport == NICE_CANDIDATE_TRANSPORT_UDP &&
       remote->transport == NICE_CANDIDATE_TRANSPORT_UDP) {
     res = TRUE;
-  } else if (local->transport == NICE_CANDIDATE_TRANSPORT_TCP_SO &&
-             remote->transport == NICE_CANDIDATE_TRANSPORT_TCP_SO) {
-    res = TRUE;
   } else if (local->transport == NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE &&
              remote->transport == NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE) {
     res = TRUE;
@@ -1382,12 +1376,19 @@ static gboolean priv_conn_check_add_for_candidate_pair (NiceAgent *agent, guint 
           stream_id,
           component->id,
           NICE_COMPONENT_STATE_CONNECTING);
-    } else {
+    } 
+#if 0
+    /* 
+     * Can't imagine why this was ever necessary and causes problems as it allows the state to revert
+     * from READY back to CONNECTED
+     */
+    else {
       agent_signal_component_state_change (agent,
           stream_id,
           component->id,
           NICE_COMPONENT_STATE_CONNECTED);
     }
+#endif
   }
 
   return ret;
@@ -1702,12 +1703,7 @@ int conn_check_send (NiceAgent *agent, CandidateCheckPair *pair)
    *  - ICE-CONTROLLED/ICE-CONTROLLING (for role conflicts)
    *  - USE-CANDIDATE (if sent by the controlling agent)
    */
-
-  guint32 type_pref = agent_candidate_type_preference (agent, NICE_CANDIDATE_TYPE_PEER_REFLEXIVE);
-  guint32 priority =
-    agent_candidate_ice_priority_full (type_pref,
-                                      1,
-                                      pair->local->component_id);
+  guint32 priority = agent_candidate_ice_priority (agent, pair->local, NICE_CANDIDATE_TYPE_PEER_REFLEXIVE);
   
   uint8_t uname[NICE_STREAM_MAX_UNAME];
   size_t uname_len =
@@ -1823,20 +1819,16 @@ static guint priv_prune_pending_checks (Stream *stream, guint component_id)
       if (p->state == NICE_CHECK_FROZEN ||
           p->state == NICE_CHECK_WAITING) {
         p->state = NICE_CHECK_CANCELLED;
-        nice_debug ("Agent XXX : s/c:%u/%u pair %p(%s) state CANCELED", stream->id, component_id, p, p->foundation);
+        nice_debug ("Agent XXX : s/c:%u/%u pair %p(%s) setting state CANCELLED", stream->id, component_id, p, p->foundation);
       }
       
-      /* note: a SHOULD level req. in ICE 8.1.2. "Updating States" (ID-19) 
-         (For TCP candidates we must always be doing regular nomination so 
-         all in-progress checks should be cancelled) */
+      /* note: a SHOULD level req. in ICE 8.1.2. "Updating States" (ID-19) */
       if (p->state == NICE_CHECK_IN_PROGRESS) {
-        if (highest_nominated_priority != 0 &&
-            (p->priority < highest_nominated_priority ||
-             p->local->transport != NICE_CANDIDATE_TRANSPORT_UDP)) {
+        if (highest_nominated_priority != 0 && p->priority < highest_nominated_priority) {
           p->stun_message.buffer = NULL;
           p->stun_message.buffer_len = 0;
           p->state = NICE_CHECK_CANCELLED;
-          nice_debug ("Agent XXX : s/c:%u/%u pair %p(%s) (for component %d) state CANCELED", stream->id, component_id, p, p->foundation, p->component_id);
+          nice_debug ("Agent XXX : s/c:%u/%u pair %p(%s) (for component %d) setting state CANCELLED", stream->id, component_id, p, p->foundation, p->component_id);
         } else {
           /* We must keep the higher priority pairs running because if a udp
            * packet was lost, we might end up using a bad candidate */
@@ -1962,7 +1954,7 @@ static gboolean priv_schedule_triggered_check (NiceAgent *agent, Stream *stream,
  */
 static void priv_reply_to_conn_check (NiceAgent *agent, Stream *stream, Component *component, NiceCandidate *rcand, const NiceAddress *toaddr, NiceSocket *socket, size_t  rbuf_len, uint8_t *rbuf, gboolean use_candidate)
 {
-  g_assert (rcand == NULL || nice_address_equal(&rcand->addr, toaddr) == TRUE);
+  g_assert (rcand == NULL || nice_address_equal_full(&rcand->addr, toaddr, rcand->transport != NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE) == TRUE);
 
   {
     gchar tmpbuf[INET6_ADDRSTRLEN];
@@ -2120,6 +2112,7 @@ static CandidateCheckPair *priv_process_response_check_for_peer_reflexive(NiceAg
 
   for (j = component->local_candidates; j; j = j->next) {
     NiceCandidate *cand = j->data;
+
     if (nice_address_equal (&mapped, &cand->addr)) {
       local_cand_matches = TRUE; 
       break;
@@ -2142,23 +2135,28 @@ static CandidateCheckPair *priv_process_response_check_for_peer_reflexive(NiceAg
 					      sockptr,
 					      local_candidate,
 					      remote_candidate);
-    /*
-     * This used to set the state of the pair to NICE_CHECK_FAILED. This was 
-     * a bad idea since a pair can be re-activated that state and subsequently
-     * become falsely selected even though in this situation it can never work.
-     * RFC5245 says that the pair that generated the peer reflexive candidate should
-     * be set to succeeded and the newly created pair should be added to the valid list.
-     * libnice currently has no separate valid list and uses NICE_CHECK_SUCCEEDED to
-     * indicate validity which is wrong. Changing this to NICE_CHECK_CANCELLED prevents
-     * re-animation without requiring major surgery on the library this close to release.
-     */
-    p->state = NICE_CHECK_CANCELLED;
-    nice_debug ("Agent %p : pair %p(%s) state CANCELLED", agent, p, p->foundation);
-
-    /* step: add a new discovered pair (see ICE 7.1.2.2.2
+    
+    if (cand) {
+      /*
+       * This used to set the state of the pair to NICE_CHECK_FAILED. This was 
+       * a bad idea since a pair can be re-activated that state and subsequently
+       * become falsely selected even though in this situation it can never work.
+       * RFC5245 says that the pair that generated the peer reflexive candidate should
+       * be set to succeeded and the newly created pair should be added to the valid list.
+       * libnice currently has no separate valid list and uses NICE_CHECK_SUCCEEDED to
+       * indicate validity which is wrong. Changing this to NICE_CHECK_CANCELLED prevents
+       * re-animation without requiring major surgery on the library this close to release.
+       */
+      p->state = NICE_CHECK_CANCELLED;
+      nice_debug ("Agent %p : pair %p(%s) initial state CANCELLED", agent, p, p->foundation);
+      
+      /* step: add a new discovered pair (see ICE 7.1.2.2.2
 	       "Constructing a Valid Pair" (ID-19)) */
-    new_pair = priv_add_peer_reflexive_pair (agent, stream->id, component->id, cand, p);
-    nice_debug ("Agent %p : conncheck %p(%s) CANCELLED, %p(%s) DISCOVERED.", agent, p, p->foundation, new_pair, new_pair->foundation);
+      new_pair = priv_add_peer_reflexive_pair (agent, stream->id, component->id, cand, p);
+      nice_debug ("Agent %p : conncheck %p(%s) CANCELLED, %p(%s) DISCOVERED.", agent, p, p->foundation, new_pair, new_pair->foundation);
+    } else {
+      nice_debug ("Agent %p : Failed to create peer reflexive for s/c: %d/%d.", agent, stream->id, component->id);
+    }
   }
 
   return new_pair;
@@ -2484,6 +2482,30 @@ static gboolean priv_map_reply_to_relay_request (NiceAgent *agent, StunMessage *
                 &niceaddr,
                 d->nicesock,
                 d->transport);
+
+            if (d->component->enable_tcp_active) {
+              /*
+               * Also add a tcp active server reflexive candidate with the same mapped address
+               */
+              GSList *i;
+
+              for (i = d->component->local_candidates; i; i = i->next) {
+                NiceCandidate* cand = i->data;
+
+                if (cand->type == NICE_CANDIDATE_TYPE_HOST && 
+                    cand->transport == NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE &&
+                    nice_address_equal (&cand->base_addr, &d->nicesock->addr)) {
+                  nice_debug("Agent %p: s/c %u/%u: Adding TCP active srflx candidate %u/%u", d->agent, d->stream->id, d->component->id, cand->stream_id, cand->component_id);
+                  discovery_add_server_reflexive_candidate (
+                      d->agent,
+                      d->stream->id,
+                      d->component->id,
+                      &niceaddr,
+                      cand->sockptr,
+                      NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE);
+                }
+              }
+            }
           }
 
           nice_address_set_from_sockaddr (&niceaddr,
@@ -2826,6 +2848,7 @@ gboolean conn_check_handle_inbound_stun (NiceAgent *agent, Stream *stream,
   NiceCandidate *remote_candidate2 = NULL;
   NiceCandidate *local_candidate = NULL;
   gboolean discovery_msg = FALSE;
+  NiceCandidateTransport remote_transport;
 
   nice_address_copy_to_sockaddr (from, (struct sockaddr *) &sockaddr);
 
@@ -2988,9 +3011,28 @@ gboolean conn_check_handle_inbound_stun (NiceAgent *agent, Stream *stream,
   username = (uint8_t *) stun_message_find (&req, STUN_ATTRIBUTE_USERNAME,
 					    &username_len);
 
+  /*
+   * Try and find a matching remote candidate. Infer the remote 
+   * candidate transport type based on the local socket type
+   */
+  switch (socket->type) {
+  case NICE_SOCKET_TYPE_TCP_ACTIVE:
+    remote_transport = NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE;
+    break;
+
+  case NICE_SOCKET_TYPE_TCP_PASSIVE:
+    remote_transport = NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE;
+    break;
+
+  default:
+    remote_transport = NICE_CANDIDATE_TRANSPORT_UDP;
+  }
+
   for (i = component->remote_candidates; i; i = i->next) {
     NiceCandidate *cand = i->data;
-    if (nice_address_equal (from, &cand->addr)) {
+
+    if (nice_address_equal (from, &cand->addr) &&
+        cand->transport == remote_transport) {
       remote_candidate = cand;
       break;
     }

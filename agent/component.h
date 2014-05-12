@@ -152,6 +152,8 @@ NiceCandidate *
 component_set_selected_remote_candidate (NiceAgent *agent, Component *component,
     NiceCandidate *candidate);
 
+const char *component_state_to_string(NiceComponentState state);
+
 G_END_DECLS
 
 #endif /* _NICE_COMPONENT_H */

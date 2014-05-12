@@ -102,6 +102,8 @@ nice_socket_attach (NiceSocket *sock, GMainContext* ctx);
 void
 nice_socket_free (NiceSocket *sock);
 
+const char *socket_type_to_string (NiceSocketType type);
+
 #include "udp-bsd.h"
 #include "tcp-bsd.h"
 #include "tcp-active.h"

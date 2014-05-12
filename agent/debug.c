@@ -115,3 +115,4 @@ void nice_debug (const char *fmt, ...)
     va_end (ap);
   }
 }
+

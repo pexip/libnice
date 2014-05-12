@@ -201,5 +201,5 @@ nice_tcp_so_socket_connect (NiceSocket *socket, NiceAddress *addr)
   }
 
   return nice_tcp_established_socket_new (gsock,
-                                          &socket->addr, addr, so_priv->context, NULL, NULL, NULL);
+                                          &socket->addr, addr, so_priv->context, NULL, NULL, NULL, FALSE);
 }

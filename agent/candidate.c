@@ -159,3 +159,24 @@ nice_candidate_copy (const NiceCandidate *candidate)
 
   return copy;
 }
+
+const char *candidate_type_to_string(NiceCandidateType type)
+{
+  switch (type) {
+  case NICE_CANDIDATE_TYPE_HOST: return "host";
+  case NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE: return "srflx";
+  case NICE_CANDIDATE_TYPE_PEER_REFLEXIVE: return "prflx";
+  case NICE_CANDIDATE_TYPE_RELAYED: return "relay";
+  }
+  return "(invalid)";
+}
+
+const char *candidate_transport_to_string(NiceCandidateTransport transport)
+{
+  switch (transport) {
+  case NICE_CANDIDATE_TRANSPORT_UDP: return "udp";
+  case NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE: return "tcp-act";
+  case NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE: return "tcp-pass";
+  }
+  return "(invalid)";
+}

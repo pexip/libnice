@@ -336,3 +336,18 @@ component_set_selected_remote_candidate (NiceAgent *agent, Component *component,
 
   return local;
 }
+
+const char* component_state_to_string(NiceComponentState state)
+{
+  switch (state) {
+  case NICE_COMPONENT_STATE_DISCONNECTED: return "DISCONNECTED";
+  case NICE_COMPONENT_STATE_GATHERING: return "GATHERING";
+  case NICE_COMPONENT_STATE_CONNECTING: return "CONNECTING";
+  case NICE_COMPONENT_STATE_CONNECTED: return "CONNECTED";
+  case NICE_COMPONENT_STATE_READY: return "READY";
+  case NICE_COMPONENT_STATE_FAILED: return "FAILED";
+  case NICE_COMPONENT_STATE_LAST: return "LAST";
+  }
+  return "(invalid)";
+}
+

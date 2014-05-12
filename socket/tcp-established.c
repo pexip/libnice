@@ -64,6 +64,7 @@ typedef struct {
   GDestroyNotify      destroy_notify;
   guint8              recv_buff[MAX_BUFFER_SIZE];
   guint               recv_offset;
+  gboolean            connect_pending;
 } TcpEstablishedPriv;
 
 struct to_be_sent {
@@ -91,7 +92,8 @@ static gboolean socket_recv_more (GSocket *gsocket, GIOCondition condition,
 NiceSocket *
 nice_tcp_established_socket_new (GSocket *gsock,
                                  NiceAddress *local_addr, const NiceAddress *remote_addr, GMainContext *ctx,
-                                 SocketRecvCallback cb, gpointer userdata, GDestroyNotify destroy_notify)
+                                 SocketRecvCallback cb, gpointer userdata, GDestroyNotify destroy_notify,
+                                 gboolean connect_pending)
 {
   NiceSocket *sock;
   TcpEstablishedPriv *priv;
@@ -107,6 +109,7 @@ nice_tcp_established_socket_new (GSocket *gsock,
   priv->userdata = userdata;
   priv->destroy_notify = destroy_notify;
   priv->recv_offset = 0;
+  priv->connect_pending = connect_pending;
 
   sock->type = NICE_SOCKET_TYPE_TCP_ESTABLISHED;
   sock->fileno = gsock;
@@ -236,7 +239,7 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
   nice_address_to_string (to, to_string);
 
   if (nice_address_equal (to, &priv->remote_addr)) {
-    nice_debug("tcp-est: Sending on tcp-established to %s len=%d", to_string, len);
+    nice_debug("tcp-est %p: Sending on tcp-established to %s:%u len=%d", sock, to_string, nice_address_get_port (to), len);
     
     /* Don't try to access the socket if it had an error, otherwise we risk a
        crash with SIGPIPE (Broken pipe) */
@@ -267,12 +270,13 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
 
       return ret;
     } else {
-      nice_debug ("tcp-est: not connected to %s, queueing", to_string);
+      nice_debug ("tcp-est %p: not connected to %s:%u, queueing. queue-size=%u, queue_is_empty=%d", sock, to_string, 
+                  nice_address_get_port (to), priv->send_queue.length, g_queue_is_empty (&priv->send_queue));
       add_to_be_sent (sock, buff, len, FALSE);
       return len;
     }
   } else {
-    nice_debug ("tcp-est: not for us to send to=%s", to_string);
+      nice_debug ("tcp-est %p: not for us to send to=%s:%u", sock, to_string, nice_address_get_port (to));
     return 0;
   }
 }
@@ -293,14 +297,14 @@ parse_rfc4571(NiceSocket* sock, NiceAddress* from)
     if (priv->recv_offset > 2) {
       guint8 *data = priv->recv_buff;
       guint packet_length = data[0] << 8 | data[1];
-      nice_debug ("socket_recv_more: expecting %u bytes\n", packet_length);
+      nice_debug ("tcp-est %p: socket_recv_more: expecting %u bytes\n", sock, packet_length);
 
       if ( packet_length + 2 <= priv->recv_offset) {
         /* 
          * Have complete packet, deliver it
          */
         if (priv->recv_cb) {
-          nice_debug("socket_recv_more: received %d bytes, delivering", packet_length);
+          nice_debug("tcp-est %p: socket_recv_more: received %d bytes, delivering", sock, packet_length);
           
           (priv->recv_cb)(sock, from, (gchar *)&data[2], packet_length, priv->userdata);
         }
@@ -339,7 +343,7 @@ socket_recv_more (
     priv->recv_offset += len;
     parse_rfc4571(sock, &from);
   } else if (len < 0) {
-    nice_debug("socket_recv_more: error from socket %d", len);
+      nice_debug("tcp-est %p: socket_recv_more: error from socket %d", sock, len);
     g_source_destroy (priv->read_source);
     g_source_unref (priv->read_source);
     priv->read_source = NULL;
@@ -363,13 +367,31 @@ socket_send_more (
   struct to_be_sent *tbs = NULL;
   GError *gerr = NULL;
 
+  nice_debug("tcp-est %p: socket_send_more, condition=%u", sock, condition);
+
   agent_lock();
 
   if (g_source_is_destroyed (g_main_current_source ())) {
-    nice_debug ("tcp-est: Source was destroyed. "
-        "Avoided race condition in tcp-established.c:socket_send_more");
+    nice_debug ("tcp-est %p: Source was destroyed. "
+                "Avoided race condition in tcp-established.c:socket_send_more", sock);
     agent_unlock();
     return FALSE;
+  }
+
+  if (priv->connect_pending) {
+    /* 
+     * First event will be the connect result
+     */
+    if (!g_socket_check_connect_result (gsocket, &gerr)) {
+        nice_debug("tcp-est %p: connect failed. g_socket_is_connected=%d", sock, g_socket_is_connected (sock->fileno));
+    } else {
+        nice_debug("tcp-est %p: connect completed. g_socket_is_connected=%d", sock, g_socket_is_connected (sock->fileno));
+    }
+    if (gerr) {
+      g_error_free (gerr);
+      gerr = NULL;
+    }
+    priv->connect_pending = FALSE;
   }
 
   while ((tbs = g_queue_pop_head (&priv->send_queue)) != NULL) {
@@ -378,8 +400,10 @@ socket_send_more (
     if(condition & G_IO_HUP) {
       /* connection hangs up */
       ret = -1;
+      nice_debug ("tcp-est %p: socket_send_more: got G_IO_HUP signal", sock);
     } else {
       ret = g_socket_send (sock->fileno, tbs->buf, tbs->length, NULL, &gerr);
+      nice_debug ("tcp-est %p: socket_send_more: tried to send %u bytes, ret=%u", sock, tbs->length, ret);
     }
 
     if (ret < 0) {
@@ -407,6 +431,7 @@ socket_send_more (
   }
 
   if (g_queue_is_empty (&priv->send_queue)) {
+    nice_debug ("tcp-est %p: socket_send_more: queue empty, releasing source", sock);
     g_source_destroy (priv->write_source);
     g_source_unref (priv->write_source);
     priv->write_source = NULL;

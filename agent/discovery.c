@@ -254,13 +254,7 @@ static void priv_set_candidate_priority (NiceAgent* agent, Component* component,
              agent->compatibility == NICE_COMPATIBILITY_OC2007)  {
     candidate->priority = nice_candidate_msn_priority (candidate);
   } else {
-    if (candidate->type == NICE_CANDIDATE_TYPE_HOST) {
-      candidate->priority = agent_candidate_ice_priority (agent, candidate);
-    } else {
-      guint type_pref = agent_candidate_type_preference (agent, candidate->type);
-      candidate->priority = agent_candidate_ice_priority_full
-        (type_pref, 0, component->id);
-    }
+    candidate->priority = agent_candidate_ice_priority (agent, candidate, candidate->type);
   }
 }
 
@@ -306,6 +300,11 @@ static guint priv_highest_remote_foundation (Component *component)
    * Starting at 1 was not sensible when we were creating remote candidates 
    * before receiving an answer as it would immediately causes a clash with
    * the foundation values supplied by the remote.
+   *
+   * FIXME: This is only assigning a foundation that is unique to this component.
+   * it should really be unique across all remote candidates. Shouldn't really matter
+   * as the foundation should be overwritten by the next offer/answer exchange (
+   * according to 7.2.1.3 of RFC 5245) but it is confusing in log files.
    */
   for (highest = 100;; highest++) {
     gboolean taken = FALSE;
@@ -391,30 +390,31 @@ static void priv_assign_remote_foundation (NiceAgent *agent, NiceCandidate *cand
     Stream *stream = i->data;
     for (j = stream->components; j; j = j->next) {
       Component *c = j->data;
-
+      
       if (c->id == candidate->component_id)
         component = c;
-
+      
       for (k = c->remote_candidates; k; k = k->next) {
-	NiceCandidate *n = k->data;
-	NiceAddress temp = n->addr;
-
-	/* note: candidate must not on the remote candidate list */
-	g_assert (candidate != n);
-
-	/* note: ports are not to be compared */
-	nice_address_set_port (&temp,
-               nice_address_get_port (&candidate->base_addr));
-
-	if (candidate->type == n->type &&
+        NiceCandidate *n = k->data;
+        NiceAddress temp = n->addr;
+        
+        /* note: candidate must not on the remote candidate list */
+        g_assert (candidate != n);
+        
+        /* note: ports are not to be compared */
+        nice_address_set_port (&temp,
+                               nice_address_get_port (&candidate->base_addr));
+        
+        if (candidate->type == n->type &&
+            candidate->transport == n->transport &&
             candidate->stream_id == n->stream_id &&
-	    nice_address_equal (&candidate->addr, &temp)) {
-	  /* note: currently only one STUN/TURN server per stream at a
-	   *       time is supported, so there is no need to check
-	   *       for candidates that would otherwise share the
-	   *       foundation, but have different STUN/TURN servers */
-	  g_strlcpy (candidate->foundation, n->foundation,
-              NICE_CANDIDATE_MAX_FOUNDATION);
+            nice_address_equal (&candidate->addr, &temp)) {
+          /* note: currently only one STUN/TURN server per stream at a
+           *       time is supported, so there is no need to check
+           *       for candidates that would otherwise share the
+           *       foundation, but have different STUN/TURN servers */
+          g_strlcpy (candidate->foundation, n->foundation,
+                     NICE_CANDIDATE_MAX_FOUNDATION);
           if (n->username) {
             g_free (candidate->username);
             candidate->username = g_strdup (n->username);
@@ -423,16 +423,16 @@ static void priv_assign_remote_foundation (NiceAgent *agent, NiceCandidate *cand
             g_free (candidate->password);
             candidate->password = g_strdup (n->password);
           }
-	  return;
-	}
+          return;
+        }
       }
     }
   }
-
+  
   if (component) {
     next_remote_id = priv_highest_remote_foundation (component);
     g_snprintf (candidate->foundation, NICE_CANDIDATE_MAX_FOUNDATION,
-        "%u", next_remote_id);
+                "%u", next_remote_id);
   }
 }
 
@@ -525,11 +525,6 @@ NiceCandidate *discovery_add_local_host_candidate (
     userdata->component = component;
     socket = nice_tcp_active_socket_new (component->ctx, address, nice_agent_socket_recv_cb, (gpointer)userdata, g_free);
     break;
-  case NICE_CANDIDATE_TRANSPORT_TCP_SO:
-    /*
-     * TODO:
-     */
-    break;
   }
 
   if (!socket)
@@ -540,12 +535,8 @@ NiceCandidate *discovery_add_local_host_candidate (
                                         component, socket);
 
   candidate->sockptr = socket;
-  if (transport != NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE) {
-    candidate->addr = socket->addr;
-    candidate->base_addr = socket->addr;
-  } else {
-    candidate->addr = candidate->base_addr = *address;
-  }
+  candidate->addr = socket->addr;
+  candidate->base_addr = socket->addr;
   
   if (!priv_add_local_candidate_pruned (agent, stream_id, component, candidate))
     goto errors;
@@ -686,9 +677,9 @@ priv_determine_local_transport(NiceCandidateTransport remote_transport)
   case NICE_CANDIDATE_TRANSPORT_UDP: return NICE_CANDIDATE_TRANSPORT_UDP;
   case NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE: return NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE;
   case NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE: return NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE;
-  case NICE_CANDIDATE_TRANSPORT_TCP_SO: return NICE_CANDIDATE_TRANSPORT_TCP_SO;
   }
-  return 0;
+  /* Not reached */
+  return NICE_CANDIDATE_TRANSPORT_UDP;
 }
 
 /*
@@ -716,6 +707,10 @@ discovery_add_peer_reflexive_candidate (
     return NULL;
 
   candidate = nice_candidate_new (NICE_CANDIDATE_TYPE_PEER_REFLEXIVE);
+
+  nice_debug("Agent %p: remote->transport=%s remote->foundation=%s", agent,
+             candidate_transport_to_string(remote->transport),
+             remote->foundation);
 
   candidate->transport = priv_determine_local_transport(remote->transport);
   priv_set_candidate_priority (agent, component, candidate);
@@ -766,6 +761,12 @@ discovery_add_peer_reflexive_candidate (
   if (result != TRUE) {
     /* error: memory allocation, or duplicate candidate */
     nice_candidate_free (candidate), candidate = NULL;
+  } else {
+    nice_debug ("Agent %p: s/c %u/%u adding new local reflexive candidate, type=%s, transport=%s, foundation=%s",
+                agent, candidate->stream_id, candidate->component_id, 
+                candidate_type_to_string(candidate->type), 
+                candidate_transport_to_string(candidate->transport), 
+                candidate->foundation);
   }
 
   return candidate;
@@ -787,18 +788,31 @@ NiceCandidate *discovery_learn_remote_peer_reflexive_candidate (
   Component *component,
   guint32 priority,
   const NiceAddress *remote_address,
-  NiceSocket *udp_socket,
+  NiceSocket *local_socket,
   NiceCandidate *local,
   NiceCandidate *remote)
 {
   NiceCandidate *candidate;
 
-  /* XXX: for use compiler */
-  (void)udp_socket;
-
   candidate = nice_candidate_new (NICE_CANDIDATE_TYPE_PEER_REFLEXIVE);
 
-  candidate->transport = NICE_CANDIDATE_TRANSPORT_UDP;
+  /* 
+   * Determine remote candidate type from the local socket on which the 
+   * request was received 
+   */     
+  switch (local_socket->type) {
+  case NICE_SOCKET_TYPE_TCP_ACTIVE:
+    candidate->transport = NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE;
+    break;
+
+  case NICE_SOCKET_TYPE_TCP_PASSIVE:
+    candidate->transport = NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE;
+    break;
+
+  default:
+    candidate->transport = NICE_CANDIDATE_TRANSPORT_UDP;
+  }
+
   candidate->addr = *remote_address;
   candidate->base_addr = *remote_address;
 
@@ -867,6 +881,11 @@ NiceCandidate *discovery_learn_remote_peer_reflexive_candidate (
   component->remote_candidates = g_slist_append (component->remote_candidates,
       candidate);
 
+  nice_debug ("Agent %p: s/c %u/%u adding new remote candidate, type=%s, transport=%s, foundation=%s",
+              agent, candidate->stream_id, candidate->component_id, 
+              candidate_type_to_string(candidate->type), 
+              candidate_transport_to_string(candidate->transport), 
+              candidate->foundation);
   agent_signal_new_remote_candidate (agent, candidate);
 
   return candidate;
