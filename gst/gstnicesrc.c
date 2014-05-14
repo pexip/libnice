@@ -222,8 +222,8 @@ gst_nice_src_read_callback (NiceAgent *agent,
       break;
     case AF_INET6:
       {
-        gst_netaddress_set_ip6_address (&netbuffer->from, (guint *)(&from->s.ip6.sin6_addr), from->s.ip6.sin6_port);
-        gst_netaddress_set_ip6_address (&netbuffer->to, (guint *)(&to->s.ip6.sin6_addr), to->s.ip6.sin6_port);
+        gst_netaddress_set_ip6_address (&netbuffer->from, (guint8 *)(&from->s.ip6.sin6_addr), from->s.ip6.sin6_port);
+        gst_netaddress_set_ip6_address (&netbuffer->to, (guint8 *)(&to->s.ip6.sin6_addr), to->s.ip6.sin6_port);
       }
       break;
     default:

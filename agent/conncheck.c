@@ -978,7 +978,7 @@ static void priv_preprocess_conn_check_pending_data (NiceAgent *agent, Stream *s
  */
 void conn_check_remote_candidates_set(NiceAgent *agent, guint stream_id, guint component_id)
 {
-  GSList *i, *j, *k, *l, *m, *n, *icomponent;
+  GSList *j, *k, *l, *m, *n;
 
   Stream *stream;
   Component *component;

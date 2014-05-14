@@ -46,6 +46,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #define STUN_MAX_TRANSACTION_STR_LENGTH 33
 
