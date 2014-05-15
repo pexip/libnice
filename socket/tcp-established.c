@@ -391,8 +391,10 @@ socket_send_more (
         g_error_free (gerr);
         break;
       }
-      if (gerr)
+      if (gerr) {
         g_error_free (gerr);
+        gerr = NULL;
+      }
     } else if (ret < (int) tbs->length) {
       add_to_be_sent (sock, tbs->buf + ret, tbs->length - ret, TRUE);
       g_free (tbs->buf);
