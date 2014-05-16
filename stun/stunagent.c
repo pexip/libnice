@@ -169,7 +169,23 @@ StunValidationStatus stun_agent_validate (StunAgent *agent, StunMessage *msg,
     if (fpr != crc32) {
       stun_debug ("STUN demux error: bad fingerprint: 0x%08x,"
           " expected: 0x%08x!\n", fpr, crc32);
-      return STUN_VALIDATION_BAD_REQUEST;
+
+      if (agent->compatibility == STUN_COMPATIBILITY_WLM2009) {
+        /*
+         * Try again with the standard CRC table as that is what Lync 2013 clients will send over 
+         * IPv6 (see MS-ICE2 Footnote 7)
+         */
+        crc32 = stun_fingerprint (msg->buffer, stun_message_length (msg), FALSE);
+        if (fpr != crc32) {
+          stun_debug ("STUN demux error: fingerprint still bad with standard table. fingerprint: 0x%08x,"
+                      " expected: 0x%08x!\n", fpr, crc32);
+          return STUN_VALIDATION_BAD_REQUEST;
+        } else {
+          stun_debug ("STUN demux OK: Lync fingerprint validated with standard CRC table");
+        }
+      } else {
+        return STUN_VALIDATION_BAD_REQUEST;
+      }
     }
 
     stun_debug ("STUN demux: OK!\n");
