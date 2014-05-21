@@ -1,5 +1,6 @@
 
 #include <config.h>
+#define NO_IMPORT_PYGOBJECT
 #include <pygobject.h>
  
 void libnice_register_classes (PyObject *d); 
