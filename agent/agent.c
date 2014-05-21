@@ -248,6 +248,7 @@ agent_candidate_type_preference (NiceAgent* agent, NiceCandidateType type)
     case NICE_CANDIDATE_TYPE_RELAYED:return NICE_CANDIDATE_TYPE_PREF_RELAYED;
     }
   }
+  return 0;
 }
 
 guint32

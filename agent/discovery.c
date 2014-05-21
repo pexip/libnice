@@ -688,6 +688,7 @@ priv_determine_local_transport(NiceCandidateTransport remote_transport)
   case NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE: return NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE;
   case NICE_CANDIDATE_TRANSPORT_TCP_SO: return NICE_CANDIDATE_TRANSPORT_TCP_SO;
   }
+  return 0;
 }
 
 /*
