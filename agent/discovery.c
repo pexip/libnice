@@ -499,7 +499,6 @@ NiceCandidate *discovery_add_local_host_candidate (
   candidate->addr = *address;
   candidate->base_addr = *address;
   candidate->transport = transport;
-  priv_set_candidate_priority (agent, component, candidate);
   priv_generate_candidate_credentials (agent, candidate);
   priv_assign_foundation (agent, candidate);
 
@@ -538,6 +537,7 @@ NiceCandidate *discovery_add_local_host_candidate (
   candidate->addr = socket->addr;
   candidate->base_addr = socket->addr;
   
+  priv_set_candidate_priority (agent, component, candidate);
   if (!priv_add_local_candidate_pruned (agent, stream_id, component, candidate))
     goto errors;
   
@@ -578,7 +578,6 @@ discovery_add_server_reflexive_candidate (
 
   candidate = nice_candidate_new (NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE);
   candidate->transport = transport;
-  priv_set_candidate_priority (agent, component, candidate);
   candidate->stream_id = stream_id;
   candidate->component_id = component_id;
   candidate->addr = *address;
@@ -590,6 +589,7 @@ discovery_add_server_reflexive_candidate (
   priv_generate_candidate_credentials (agent, candidate);
   priv_assign_foundation (agent, candidate);
 
+  priv_set_candidate_priority (agent, component, candidate);
   result = priv_add_local_candidate_pruned (agent, stream_id, component, candidate);
   if (result) {
     agent_signal_new_candidate (agent, candidate);
@@ -628,7 +628,6 @@ discovery_add_relay_candidate (
 
   candidate = nice_candidate_new (NICE_CANDIDATE_TYPE_RELAYED);
   candidate->transport = NICE_CANDIDATE_TRANSPORT_UDP;
-  priv_set_candidate_priority (agent, component, candidate);
   candidate->stream_id = stream_id;
   candidate->component_id = component_id;
   candidate->addr = *address;
@@ -655,6 +654,7 @@ discovery_add_relay_candidate (
 
   priv_assign_foundation (agent, candidate);
 
+  priv_set_candidate_priority (agent, component, candidate);
   if (!priv_add_local_candidate_pruned (agent, stream_id, component, candidate))
     goto errors;
 
@@ -713,7 +713,6 @@ discovery_add_peer_reflexive_candidate (
              remote->foundation);
 
   candidate->transport = priv_determine_local_transport(remote->transport);
-  priv_set_candidate_priority (agent, component, candidate);
   candidate->stream_id = stream_id;
   candidate->component_id = component_id;
   candidate->addr = *address;
@@ -757,6 +756,7 @@ discovery_add_peer_reflexive_candidate (
   candidate->sockptr = base_socket;
   candidate->base_addr = base_socket->addr;
 
+  priv_set_candidate_priority (agent, component, candidate);
   result = priv_add_local_candidate_pruned (agent, stream_id, component, candidate);
   if (result != TRUE) {
     /* error: memory allocation, or duplicate candidate */
@@ -816,13 +816,6 @@ NiceCandidate *discovery_learn_remote_peer_reflexive_candidate (
   candidate->addr = *remote_address;
   candidate->base_addr = *remote_address;
 
-  /* if the check didn't contain the PRIORITY attribute, then the priority will
-   * be 0, which is invalid... */
-  if (priority != 0) {
-    candidate->priority = priority;
-  } else {
-    priv_set_candidate_priority (agent, component, candidate);
-  }
   candidate->stream_id = stream->id;
   candidate->component_id = component->id;
 
@@ -877,6 +870,14 @@ NiceCandidate *discovery_learn_remote_peer_reflexive_candidate (
   candidate->sockptr = NULL; /* not stored for remote candidates */
   /* note: candidate username and password are left NULL as stream 
      level ufrag/password are used */
+
+  /* if the check didn't contain the PRIORITY attribute, then the priority will
+   * be 0, which is invalid... */
+  if (priority != 0) {
+    candidate->priority = priority;
+  } else {
+    priv_set_candidate_priority (agent, component, candidate);
+  }
 
   component->remote_candidates = g_slist_append (component->remote_candidates,
       candidate);
