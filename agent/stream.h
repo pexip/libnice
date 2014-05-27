@@ -72,6 +72,7 @@ struct _Stream
   gchar remote_password[NICE_STREAM_MAX_PWD];
   gboolean gathering;
   gint tos;
+  guint tick_counter;  /* For debug logging */
 };
 
 

@@ -93,7 +93,16 @@ libagent_la_DEPENDENCIES = \
 	$(top_builddir)/socket/libsocket.la \
 	$(top_builddir)/stun/libstun.la
 
-pkginclude_HEADERS = agent.h candidate.h debug.h address.h interfaces.h pseudotcp.h
+pkginclude_HEADERS = \
+	agent.h \
+	candidate.h \
+	debug.h \
+	address.h \
+	interfaces.h \
+	pseudotcp.h \
+	$(top_srcdir)/stun/stunagent.h \
+	$(top_srcdir)/stun/constants.h \
+	$(top_srcdir)/stun/stunmessage.h
 
 if WINDOWS
   libagent_la_LIBADD += -liphlpapi -lws2_32

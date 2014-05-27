@@ -1348,7 +1348,6 @@ adjust_tcp_clock (NiceAgent *agent, Stream *stream, Component *component)
 
 void agent_gathering_done (NiceAgent *agent)
 {
-
   GSList *i, *j, *k, *l, *m;
 
   for (i = agent->streams; i; i = i->next) {
@@ -1358,15 +1357,18 @@ void agent_gathering_done (NiceAgent *agent)
 
       for (k = component->local_candidates; k; k = k->next) {
         NiceCandidate *local_candidate = k->data;
-	{
-	  gchar tmpbuf[INET6_ADDRSTRLEN];
-	  nice_address_to_string (&local_candidate->addr, tmpbuf);
-          nice_debug ("Agent %p: gathered local candidate : foundation:%s [%s]:%u"
-                      " for s%d/c%d. U/P '%s'/'%s'", agent, local_candidate->foundation, 
-                      tmpbuf, nice_address_get_port (&local_candidate->addr),
-                      local_candidate->stream_id, local_candidate->component_id,
-                      local_candidate->username, local_candidate->password);
-	}
+        gchar tmpbuf[INET6_ADDRSTRLEN];
+        gchar tmpbuf2[INET6_ADDRSTRLEN];
+        nice_address_to_string (&local_candidate->addr, tmpbuf);
+        nice_address_to_string (&local_candidate->base_addr, tmpbuf2);
+        nice_debug ("Agent %p: gathered local candidate : foundation:%s %s %s [%s]:%u [%s]:%u"
+                    " for s%d/c%d.", agent, local_candidate->foundation, 
+                    candidate_type_to_string (local_candidate->type),
+                    candidate_transport_to_string (local_candidate->transport),
+                    tmpbuf, nice_address_get_port (&local_candidate->addr),
+                    tmpbuf2, nice_address_get_port (&local_candidate->base_addr),
+                    local_candidate->stream_id, local_candidate->component_id);
+
         for (l = component->remote_candidates; l; l = l->next) {
           NiceCandidate *remote_candidate = l->data;
 
@@ -1377,7 +1379,7 @@ void agent_gathering_done (NiceAgent *agent)
               break;
           }
           if (m == NULL) {
-            conn_check_add_for_candidate (agent, stream->id, component, remote_candidate);
+            conn_check_add_for_remote_candidate (agent, stream->id, component, remote_candidate);
           }
         }
       }
@@ -1552,10 +1554,11 @@ priv_add_new_candidate_discovery_stun (NiceAgent *agent,
   cdisco->component = stream_find_component_by_id (stream, component_id);
   cdisco->agent = agent;
   stun_agent_init (&cdisco->stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
-      STUN_COMPATIBILITY_RFC5389,
-      (agent->turn_compatibility == NICE_COMPATIBILITY_OC2007 ||
-       agent->turn_compatibility == NICE_COMPATIBILITY_OC2007R2) ?
-        STUN_AGENT_USAGE_NO_ALIGNED_ATTRIBUTES : 0);
+                   STUN_COMPATIBILITY_RFC5389,
+                   STUN_AGENT_USAGE_USE_FINGERPRINT |
+                   ((agent->turn_compatibility == NICE_COMPATIBILITY_OC2007 ||
+                     agent->turn_compatibility == NICE_COMPATIBILITY_OC2007R2) ?
+                    STUN_AGENT_USAGE_NO_ALIGNED_ATTRIBUTES : 0));
 
   nice_debug ("Agent %p : Adding new srv-rflx candidate discovery %p compatibility = %d\n",
               agent, cdisco, agent->turn_compatibility);
@@ -2423,7 +2426,7 @@ static gboolean priv_add_remote_candidate (
 	  g_free (candidate->password);
 	  candidate->password = g_strdup (password);
 	}
-	if (conn_check_add_for_candidate (agent, stream_id, component, candidate) < 0)
+	if (conn_check_add_for_remote_candidate (agent, stream_id, component, candidate) < 0)
 	  goto errors;
       }
       else {
@@ -2473,7 +2476,7 @@ static gboolean priv_add_remote_candidate (
       g_strlcpy (candidate->foundation, foundation,
           NICE_CANDIDATE_MAX_FOUNDATION);
 
-    if (conn_check_add_for_candidate (agent, stream_id, component, candidate) < 0)
+    if (conn_check_add_for_remote_candidate (agent, stream_id, component, candidate) < 0)
       goto errors;
   }
 

@@ -1,9 +1,11 @@
 nice_address_copy_to_sockaddr
 nice_address_dup
 nice_address_equal
+nice_address_equal_full
 nice_address_free
 nice_address_get_port
 nice_address_init
+nice_address_is_ipv6
 nice_address_is_private
 nice_address_is_valid
 nice_address_new
@@ -122,3 +124,5 @@ nice_candidate_transport_get_type
 nice_relay_type_get_type
 nice_candidate_pair_priority
 nice_candidate_get_type
+candidate_type_to_string
+candidate_transport_to_string
