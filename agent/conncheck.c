@@ -1485,11 +1485,11 @@ void conn_check_free (NiceAgent *agent)
   for (i = agent->streams; i; i = i->next) {
     Stream *stream = i->data;
 
-    nice_debug ("Agent %p, freeing conncheck_list of stream %p", agent, stream);
+    nice_debug ("Agent %p: freeing conncheck_list of stream %p", agent, stream);
     if (stream->conncheck_list) {
       g_slist_foreach (stream->conncheck_list, conn_check_free_item, NULL);
-      g_slist_free (stream->conncheck_list),
-	stream->conncheck_list = NULL;
+      g_slist_free (stream->conncheck_list);
+      stream->conncheck_list = NULL;
     }
   }
 
@@ -1506,7 +1506,7 @@ void conn_check_free (NiceAgent *agent)
  *
  * @return TRUE on success, FALSE on a fatal error
  */
-gboolean conn_check_prune_stream (NiceAgent *agent, Stream *stream)
+void conn_check_prune_stream (NiceAgent *agent, Stream *stream)
 {
   CandidateCheckPair *pair;
   GSList *i;
@@ -1524,15 +1524,6 @@ gboolean conn_check_prune_stream (NiceAgent *agent, Stream *stream)
     if (!stream->conncheck_list)
       break;
   }
-
-  if (!stream->conncheck_list)
-    conn_check_free (agent);
-
-  /* return FALSE if there was a memory allocation failure */
-  if (stream->conncheck_list == NULL && i != NULL)
-    return FALSE;
-
-  return TRUE;
 }
 
 /*
