@@ -144,7 +144,6 @@ discovery_learn_remote_peer_reflexive_candidate (
   guint32 priority, 
   const NiceAddress *remote_address,
   NiceSocket *udp_socket,
-  NiceCandidate *local,
   NiceCandidate *remote);
 
 #endif /*_NICE_CONNCHECK_H */

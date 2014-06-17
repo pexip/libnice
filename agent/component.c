@@ -156,17 +156,18 @@ component_free (Component *cmp)
  * @return TRUE if pair found, pointer to pair stored at 'pair'
  */
 gboolean
-component_find_pair (Component *cmp, NiceAgent *agent, const gchar *lfoundation, const gchar *rfoundation, CandidatePair *pair)
+component_find_pair (Component *cmp, NiceAgent *agent, const gchar *lfoundation, const gchar *rfoundation, NiceCandidate** local, NiceCandidate** remote, guint64* priority)
 {
   GSList *i;
-  CandidatePair result;
 
-  memset (&result, 0, sizeof(result));
+  *local = NULL;
+  *remote = NULL;
+  priority = 0;
 
   for (i = cmp->local_candidates; i; i = i->next) {
     NiceCandidate *candidate = i->data;
     if (strncmp (candidate->foundation, lfoundation, NICE_CANDIDATE_MAX_FOUNDATION) == 0) {
-      result.local = candidate;
+      *local = candidate;
       break;
     }
   }
@@ -174,15 +175,13 @@ component_find_pair (Component *cmp, NiceAgent *agent, const gchar *lfoundation,
   for (i = cmp->remote_candidates; i; i = i->next) {
     NiceCandidate *candidate = i->data;
     if (strncmp (candidate->foundation, rfoundation, NICE_CANDIDATE_MAX_FOUNDATION) == 0) {
-      result.remote = candidate;
+      *remote = candidate;
       break;
     }
   }
 
-  if (result.local && result.remote) {
-    result.priority = agent_candidate_pair_priority (agent, result.local, result.remote);
-    if (pair)
-      *pair = result;
+  if (local && remote) {
+    *priority = agent_candidate_pair_priority (agent, *local, *remote);
     return TRUE;
   }
 
@@ -232,13 +231,11 @@ component_restart (Component *cmp)
  * Changes the selected pair for the component to 'pair'. Does not
  * emit the "selected-pair-changed" signal.
  */ 
-void component_update_selected_pair (Component *component, const CandidatePair *pair)
+void component_update_selected_pair (Component *component, NiceCandidate* local, NiceCandidate* remote, guint64 priority)
 {
   g_assert (component);
-  g_assert (pair);
-  nice_debug ("setting SELECTED PAIR for component %u: %p(%s:%s) (prio:%"
-              G_GUINT64_FORMAT ").", component->id, pair, pair->local->foundation,
-      pair->remote->foundation, pair->priority);
+  g_assert (local);
+  g_assert (remote);
 
   if (component->selected_pair.keepalive.tick_source != NULL) {
     g_source_destroy (component->selected_pair.keepalive.tick_source);
@@ -248,10 +245,9 @@ void component_update_selected_pair (Component *component, const CandidatePair *
 
   memset (&component->selected_pair, 0, sizeof(CandidatePair));
 
-  component->selected_pair.local = pair->local;
-  component->selected_pair.remote = pair->remote;
-  component->selected_pair.priority = pair->priority;
-
+  component->selected_pair.local = local;
+  component->selected_pair.remote = remote;
+  component->selected_pair.priority = priority;
 }
 
 /*

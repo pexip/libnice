@@ -153,6 +153,7 @@ gst_nice_sink_class_init (GstNiceSinkClass *klass)
 static void
 gst_nice_sink_init (GstNiceSink *sink)
 {
+  (void)sink;
 }
 
 static GstFlowReturn

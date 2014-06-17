@@ -78,10 +78,16 @@ G_BEGIN_DECLS
 #define NICE_CANDIDATE_OC2007R2_TYPE_PREF_SERVER_REFLEXIVE      60
 #define NICE_CANDIDATE_OC2007R2_TYPE_PREF_RELAYED              110
 
-#define NICE_CANDIDATE_OC2007R2_TYPE_PREF_HOST_TCP              50
-#define NICE_CANDIDATE_OC2007R2_TYPE_PREF_PEER_REFLEXIVE_TCP    30
-#define NICE_CANDIDATE_OC2007R2_TYPE_PREF_SERVER_REFLEXIVE_TCP   0
-#define NICE_CANDIDATE_OC2007R2_TYPE_PREF_RELAYED_TCP           40
+/*
+ * These are set deliberately low so that they are out ranked by the 
+ * priority that lync assigns to it's UDP relay candidates. The result
+ * of this is that Lync -> MCU calls should prefer relayed-UDP paths to 
+ * non-relayed TCP paths
+ */
+#define NICE_CANDIDATE_OC2007R2_TYPE_PREF_HOST_TCP               9
+#define NICE_CANDIDATE_OC2007R2_TYPE_PREF_PEER_REFLEXIVE_TCP     8
+#define NICE_CANDIDATE_OC2007R2_TYPE_PREF_SERVER_REFLEXIVE_TCP   7
+#define NICE_CANDIDATE_OC2007R2_TYPE_PREF_RELAYED_TCP            0
 
 /* Max foundation size '1*32ice-char' plus terminating NULL, ICE ID-19  */
 /**
@@ -236,12 +242,6 @@ nice_candidate_free (NiceCandidate *candidate);
 NiceCandidate *
 nice_candidate_copy (const NiceCandidate *candidate);
 
-
-guint32
-nice_candidate_jingle_priority (NiceCandidate *candidate);
-
-guint32
-nice_candidate_msn_priority (NiceCandidate *candidate);
 
 guint64
 nice_candidate_pair_priority (guint32 o_prio, guint32 a_prio);

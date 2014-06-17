@@ -248,14 +248,7 @@ void refresh_cancel (CandidateRefresh *refresh)
 
 static void priv_set_candidate_priority (NiceAgent* agent, Component* component, NiceCandidate* candidate)
 {
-  if (agent->compatibility == NICE_COMPATIBILITY_GOOGLE) {
-    candidate->priority = nice_candidate_jingle_priority (candidate);
-  } else if (agent->compatibility == NICE_COMPATIBILITY_MSN ||
-             agent->compatibility == NICE_COMPATIBILITY_OC2007)  {
-    candidate->priority = nice_candidate_msn_priority (candidate);
-  } else {
-    candidate->priority = agent_candidate_ice_priority (agent, candidate, candidate->type);
-  }
+  candidate->priority = agent_candidate_ice_priority (agent, candidate, candidate->type);
 }
 
 /*
@@ -263,7 +256,7 @@ static void priv_set_candidate_priority (NiceAgent* agent, Component* component,
  * defined in ICE spec section 4.1.3 "Eliminating Redundant
  * Candidates" (ID-19).
  */
-static gboolean priv_add_local_candidate_pruned (NiceAgent *agent, guint stream_id, Component *component, NiceCandidate *candidate)
+static gboolean priv_add_local_candidate_pruned (NiceAgent *agent, guint stream_id, Component *component, NiceCandidate *candidate, gboolean pair_with_remotes)
 {
   GSList *i;
 
@@ -284,7 +277,9 @@ static gboolean priv_add_local_candidate_pruned (NiceAgent *agent, guint stream_
 
   component->local_candidates = g_slist_append (component->local_candidates,
       candidate);
-  conn_check_add_for_local_candidate(agent, stream_id, component, candidate);
+  if (pair_with_remotes) {
+    conn_check_add_for_local_candidate(agent, stream_id, component, candidate);
+  }
 
   return TRUE;
 }
@@ -340,28 +335,25 @@ static void priv_assign_foundation (NiceAgent *agent, NiceCandidate *candidate)
     for (j = stream->components; j; j = j->next) {
       Component *component = j->data;
       for (k = component->local_candidates; k; k = k->next) {
-	NiceCandidate *n = k->data;
-	NiceAddress temp = n->base_addr;
-
-	/* note: candidate must not on the local candidate list */
-	g_assert (candidate != n);
-
-	/* note: ports are not to be compared */
-	nice_address_set_port (&temp,
-               nice_address_get_port (&candidate->base_addr));
-
-	if (candidate->type == n->type &&
+        NiceCandidate *n = k->data;
+        NiceAddress temp = n->base_addr;
+        
+        /* note: candidate must not on the local candidate list */
+        g_assert (candidate != n);
+        
+        /* note: ports are not to be compared */
+        nice_address_set_port (&temp,
+                               nice_address_get_port (&candidate->base_addr));
+        
+        if (candidate->type == n->type &&
             candidate->transport == n->transport &&
-            candidate->stream_id == n->stream_id &&
-	    nice_address_equal (&candidate->base_addr, &temp) &&
-            !(agent->compatibility == NICE_COMPATIBILITY_GOOGLE &&
-                n->type == NICE_CANDIDATE_TYPE_RELAYED)) {
-	  /* note: currently only one STUN/TURN server per stream at a
-	   *       time is supported, so there is no need to check
-	   *       for candidates that would otherwise share the
-	   *       foundation, but have different STUN/TURN servers */
-	  g_strlcpy (candidate->foundation, n->foundation,
-              NICE_CANDIDATE_MAX_FOUNDATION);
+            nice_address_equal (&candidate->base_addr, &temp)) {
+          /* note: currently only one STUN/TURN server per stream at a
+           *       time is supported, so there is no need to check
+           *       for candidates that would otherwise share the
+           *       foundation, but have different STUN/TURN servers */
+          g_strlcpy (candidate->foundation, n->foundation,
+                     NICE_CANDIDATE_MAX_FOUNDATION);
           if (n->username) {
             g_free (candidate->username);
             candidate->username = g_strdup (n->username);
@@ -370,14 +362,14 @@ static void priv_assign_foundation (NiceAgent *agent, NiceCandidate *candidate)
             g_free (candidate->password);
             candidate->password = g_strdup (n->password);
           }
-	  return;
-	}
+          return;
+        }
       }
     }
   }
-
+  
   g_snprintf (candidate->foundation, NICE_CANDIDATE_MAX_FOUNDATION,
-      "%u", agent->next_candidate_id++);
+              "%u", agent->next_candidate_id++);
 }
 
 static void priv_assign_remote_foundation (NiceAgent *agent, NiceCandidate *candidate)
@@ -437,40 +429,6 @@ static void priv_assign_remote_foundation (NiceAgent *agent, NiceCandidate *cand
 }
 
 
-static
-void priv_generate_candidate_credentials (NiceAgent *agent,
-    NiceCandidate *candidate)
-{
-
-  if (agent->compatibility == NICE_COMPATIBILITY_MSN ||
-      agent->compatibility == NICE_COMPATIBILITY_OC2007) {
-    guchar username[32];
-    guchar password[16];
-
-    g_free (candidate->username);
-    g_free (candidate->password);
-
-    nice_rng_generate_bytes (agent->rng, 32, (gchar *)username);
-    nice_rng_generate_bytes (agent->rng, 16, (gchar *)password);
-
-    candidate->username = g_base64_encode (username, 32);
-    candidate->password = g_base64_encode (password, 16);
-
-  } else if (agent->compatibility == NICE_COMPATIBILITY_GOOGLE) {
-    gchar username[16];
-
-    g_free (candidate->username);
-    g_free (candidate->password);
-    candidate->password = NULL;
-
-    nice_rng_generate_bytes_print (agent->rng, 16, (gchar *)username);
-
-    candidate->username = g_strndup (username, 16);
-  }
-
-
-}
-
 /*
  * Creates a local host candidate for 'component_id' of stream
  * 'stream_id'.
@@ -499,7 +457,6 @@ NiceCandidate *discovery_add_local_host_candidate (
   candidate->addr = *address;
   candidate->base_addr = *address;
   candidate->transport = transport;
-  priv_generate_candidate_credentials (agent, candidate);
   priv_assign_foundation (agent, candidate);
 
   /* note: candidate username and password are left NULL as stream
@@ -538,7 +495,7 @@ NiceCandidate *discovery_add_local_host_candidate (
   candidate->base_addr = socket->addr;
   
   priv_set_candidate_priority (agent, component, candidate);
-  if (!priv_add_local_candidate_pruned (agent, stream_id, component, candidate))
+  if (!priv_add_local_candidate_pruned (agent, stream_id, component, candidate, TRUE))
     goto errors;
   
   component->sockets = g_slist_append (component->sockets, socket);
@@ -586,11 +543,10 @@ discovery_add_server_reflexive_candidate (
   candidate->sockptr = base_socket;
   candidate->base_addr = base_socket->addr;
 
-  priv_generate_candidate_credentials (agent, candidate);
   priv_assign_foundation (agent, candidate);
 
   priv_set_candidate_priority (agent, component, candidate);
-  result = priv_add_local_candidate_pruned (agent, stream_id, component, candidate);
+  result = priv_add_local_candidate_pruned (agent, stream_id, component, candidate, TRUE);
   if (result) {
     agent_signal_new_candidate (agent, candidate);
   }
@@ -644,18 +600,10 @@ discovery_add_relay_candidate (
   candidate->sockptr = relay_socket;
   candidate->base_addr = base_socket->addr;
 
-  priv_generate_candidate_credentials (agent, candidate);
-
-  /* Google uses the turn username as the candidate username */
-  if (agent->compatibility == NICE_COMPATIBILITY_GOOGLE) {
-    g_free (candidate->username);
-    candidate->username = g_strdup (turn->username);
-  }
-
   priv_assign_foundation (agent, candidate);
 
   priv_set_candidate_priority (agent, component, candidate);
-  if (!priv_add_local_candidate_pruned (agent, stream_id, component, candidate))
+  if (!priv_add_local_candidate_pruned (agent, stream_id, component, candidate, TRUE))
     goto errors;
 
   component->sockets = g_slist_append (component->sockets, relay_socket);
@@ -720,31 +668,7 @@ discovery_add_peer_reflexive_candidate (
 
   priv_assign_foundation (agent, candidate);
 
-  if ((agent->compatibility == NICE_COMPATIBILITY_MSN ||
-       agent->compatibility == NICE_COMPATIBILITY_OC2007) &&
-      remote && local) {
-    guchar *new_username = NULL;
-    guchar *decoded_local = NULL;
-    guchar *decoded_remote = NULL;
-    gsize local_size;
-    gsize remote_size;
-    g_free(candidate->username);
-    g_free(candidate->password);
-
-    decoded_local = g_base64_decode (local->username, &local_size);
-    decoded_remote = g_base64_decode (remote->username, &remote_size);
-
-    new_username = g_new0(guchar, local_size + remote_size);
-    memcpy(new_username, decoded_local, local_size);
-    memcpy(new_username + local_size, decoded_remote, remote_size);
-
-    candidate->username = g_base64_encode (new_username, local_size + remote_size);
-    g_free(new_username);
-    g_free(decoded_local);
-    g_free(decoded_remote);
-
-    candidate->password = g_strdup(local->password);
-  } else if (local) {
+  if (local) {
     g_free(candidate->username);
     g_free(candidate->password);
 
@@ -757,12 +681,15 @@ discovery_add_peer_reflexive_candidate (
   candidate->base_addr = base_socket->addr;
 
   priv_set_candidate_priority (agent, component, candidate);
-  result = priv_add_local_candidate_pruned (agent, stream_id, component, candidate);
+  result = priv_add_local_candidate_pruned (agent, stream_id, component, candidate, FALSE);
   if (result != TRUE) {
-    /* error: memory allocation, or duplicate candidate */
-    nice_candidate_free (candidate), candidate = NULL;
+    /* 
+     * error: memory allocation, or duplicate candidate 
+     */
+    nice_candidate_free (candidate);
+    candidate = NULL;
   } else {
-    nice_debug ("Agent %p: s/c %u/%u adding new local reflexive candidate, type=%s, transport=%s, foundation=%s",
+    nice_debug ("Agent %p %u/%u: adding new local reflexive candidate, type=%s, transport=%s, foundation=%s",
                 agent, candidate->stream_id, candidate->component_id, 
                 candidate_type_to_string(candidate->type), 
                 candidate_transport_to_string(candidate->transport), 
@@ -789,7 +716,6 @@ NiceCandidate *discovery_learn_remote_peer_reflexive_candidate (
   guint32 priority,
   const NiceAddress *remote_address,
   NiceSocket *local_socket,
-  NiceCandidate *local,
   NiceCandidate *remote)
 {
   NiceCandidate *candidate;
@@ -822,48 +748,27 @@ NiceCandidate *discovery_learn_remote_peer_reflexive_candidate (
 
   priv_assign_remote_foundation (agent, candidate);
 
-  if ((agent->compatibility == NICE_COMPATIBILITY_MSN ||
-       agent->compatibility == NICE_COMPATIBILITY_OC2007) &&
-      remote && local) {
-    guchar *new_username = NULL;
-    guchar *decoded_local = NULL;
-    guchar *decoded_remote = NULL;
-    gsize local_size;
-    gsize remote_size;
-    g_free(candidate->username);
-    g_free (candidate->password);
-
-    decoded_local = g_base64_decode (local->username, &local_size);
-    decoded_remote = g_base64_decode (remote->username, &remote_size);
-
-    new_username = g_new0(guchar, local_size + remote_size);
-    memcpy(new_username, decoded_remote, remote_size);
-    memcpy(new_username + remote_size, decoded_local, local_size);
-
-    candidate->username = g_base64_encode (new_username, local_size + remote_size);
-    g_free(new_username);
-    g_free(decoded_local);
-    g_free(decoded_remote);
-
-    candidate->password = g_strdup(remote->password);
-  } else if (remote) {
+  if (remote) {
     g_free (candidate->username);
     g_free (candidate->password);
-    nice_debug("Agent %p: creating username/password for peer-reflexive candidate %s/%s", agent, 
+    nice_debug("Agent %p %u/%u: creating username/password for peer-reflexive candidate %s/%s", 
+               agent, stream->id, component->id,
                remote->username, remote->password);
     candidate->username = g_strdup(remote->username);
     candidate->password = g_strdup(remote->password);
   } else {
     if (component->remote_candidates) {
       NiceCandidate* first_remote = component->remote_candidates->data;
-      nice_debug("Agent %p: no remote when creating peer-reflexive, using first remote candidate username/password %s/%s", agent,
+      nice_debug("Agent %p %u/%u: no remote when creating peer-reflexive, using first remote candidate username/password %s/%s", 
+                 agent, stream->id, component->id,
                  first_remote->username, first_remote->password);
       g_free (candidate->username);
       g_free (candidate->password);
       candidate->username = g_strdup(first_remote->username);
       candidate->password = g_strdup(first_remote->password);    
     } else {
-      nice_debug("Agent %p: no remote when creating peer-reflexive", agent);
+      nice_debug("Agent %p %u/%u: no remote when creating peer-reflexive", 
+                 agent, stream->id, component->id);
     }    
   }
 
@@ -882,7 +787,7 @@ NiceCandidate *discovery_learn_remote_peer_reflexive_candidate (
   component->remote_candidates = g_slist_append (component->remote_candidates,
       candidate);
 
-  nice_debug ("Agent %p: s/c %u/%u adding new remote candidate, type=%s, transport=%s, foundation=%s",
+  nice_debug ("Agent %p %u/%u: adding new remote candidate, type=%s, transport=%s, foundation=%s",
               agent, candidate->stream_id, candidate->component_id, 
               candidate_type_to_string(candidate->type), 
               candidate_transport_to_string(candidate->transport), 

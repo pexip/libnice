@@ -210,47 +210,18 @@ typedef enum
 /**
  * NiceCompatibility:
  * @NICE_COMPATIBILITY_RFC5245: Use compatibility with the RFC5245 ICE specs
- * @NICE_COMPATIBILITY_GOOGLE: Use compatibility for Google Talk specs
- * @NICE_COMPATIBILITY_MSN: Use compatibility for MSN Messenger specs
- * @NICE_COMPATIBILITY_WLM2009: Use compatibility with Windows Live Messenger
- * 2009
- * @NICE_COMPATIBILITY_OC2007: Use compatibility with Microsoft Office Communicator 2007
  * @NICE_COMPATIBILITY_OC2007R2: Use compatibility with Microsoft Office Communicator 2007 R2
- * @NICE_COMPATIBILITY_DRAFT19: Use compatibility with the RFC5245 ICE specs (backward
- * compatibility with DRAFT19)
- * @NICE_COMPATIBILITY_RFC6544: Use compatibility with the RFC6544 ICE-TCP specs
- * @NICE_COMPATIBILITY_RFC5245_AND_RFC6544: Use compatibility with both RFC5245 ICE-UDP and
- * the RFC6544 ICE-TCP specs
  * @NICE_COMPATIBILITY_LAST: Dummy last compatibility mode
  *
  * An enum to specify which compatible specifications the #NiceAgent should use.
  * Use with nice_agent_new()
  *
- * <warning>@NICE_COMPATIBILITY_DRAFT19 is deprecated and should not be used
- * in newly-written code. It is kept for compatibility reasons and
- * represents the same compatibility as @NICE_COMPATIBILITY_RFC5245 </warning>
- *
- <note>
-   <para>
-    If @NICE_COMPATIBILITY_RFC5245_AND_6544 compatibility mode is used for a non-reliable agent,
-    then ICE-UDP will be used with higher priority and ICE-TCP will also be used when the UDP
-    connectivity fails. If it is used with a reliable agent, then ICE-UDP will be used with
-    the TCP-Over-UDP (#PseudoTcpSocket) if ICE-TCP fails and ICE-UDP succeeds.
-  </para>
- </note>
  */
 typedef enum
 {
   NICE_COMPATIBILITY_RFC5245 = 0,
-  NICE_COMPATIBILITY_DRAFT19 = NICE_COMPATIBILITY_RFC5245,
-  NICE_COMPATIBILITY_GOOGLE,
-  NICE_COMPATIBILITY_MSN,
-  NICE_COMPATIBILITY_WLM2009,
-  NICE_COMPATIBILITY_OC2007,
   NICE_COMPATIBILITY_OC2007R2,
-  NICE_COMPATIBILITY_RFC6544,
-  NICE_COMPATIBILITY_RFC5245_AND_RFC6544 ,
-  NICE_COMPATIBILITY_LAST = NICE_COMPATIBILITY_RFC5245_AND_RFC6544,
+  NICE_COMPATIBILITY_LAST = NICE_COMPATIBILITY_OC2007R2,
 } NiceCompatibility;
 
 /**
@@ -764,7 +735,7 @@ void nice_agent_set_stream_tos (
  * STUN requests, responses and error responses sent during connectivity checks.
  * <para>
  * The SOFTWARE attribute will only be added in the #NICE_COMPATIBILITY_RFC5245
- * (and other RFC compatibilities) and the #NICE_COMPATIBILITY_WLM2009 compatibility modes.
+ * (and other RFC compatibilities)
  *
  * </para>
  * <note>

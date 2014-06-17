@@ -87,12 +87,6 @@ bool stun_agent_default_validater (StunAgent *agent,
   int i;
 
   for (i = 0; val && val[i].username ; i++) {
-    stun_debug ("Comparing username '");
-    stun_debug_bytes (username, username_len);
-    stun_debug ("' (%d) with '", username_len);
-    stun_debug_bytes (val[i].username, val[i].username_len);
-    stun_debug ("' (%d) : %d\n",
-        val[i].username_len, memcmp (username, val[i].username, username_len));
     if (username_len == val[i].username_len &&
         memcmp (username, val[i].username, username_len) == 0) {
       *password = (uint8_t *) val[i].password;
@@ -188,8 +182,6 @@ StunValidationStatus stun_agent_validate (StunAgent *agent, StunMessage *msg,
         return STUN_VALIDATION_BAD_REQUEST;
       }
     }
-
-    stun_debug ("STUN demux: OK!\n");
   }
 
   if (stun_message_get_class (msg) == STUN_RESPONSE ||
@@ -326,7 +318,6 @@ StunValidationStatus stun_agent_validate (StunAgent *agent, StunMessage *msg,
         return STUN_VALIDATION_UNAUTHORIZED;
       }
 
-      stun_debug ("STUN auth: OK!\n");
       msg->key = key;
       msg->key_len = key_len;
     } else if (!(stun_message_get_class (msg) == STUN_ERROR &&
@@ -642,10 +633,6 @@ size_t stun_agent_finish_message (StunAgent *agent, StunMessage *msg,
     fpr = stun_fingerprint (msg->buffer, stun_message_length (msg),
         agent->compatibility == STUN_COMPATIBILITY_WLM2009);
     memcpy (ptr, &fpr, sizeof (fpr));
-
-    stun_debug (" Message HMAC-SHA1 fingerprint: ");
-    stun_debug_bytes (ptr, 4);
-    stun_debug ("\n");
   }
 
 

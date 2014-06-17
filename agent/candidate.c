@@ -100,37 +100,6 @@ nice_candidate_free (NiceCandidate *candidate)
 }
 
 
-guint32
-nice_candidate_jingle_priority (NiceCandidate *candidate)
-{
-  switch (candidate->type)
-    {
-    case NICE_CANDIDATE_TYPE_HOST:             return 1000;
-    case NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE: return 900;
-    case NICE_CANDIDATE_TYPE_PEER_REFLEXIVE:   return 900;
-    case NICE_CANDIDATE_TYPE_RELAYED:          return 500;
-    }
-
-  /* appease GCC */
-  return 0;
-}
-
-guint32
-nice_candidate_msn_priority (NiceCandidate *candidate)
-{
-  switch (candidate->type)
-    {
-    case NICE_CANDIDATE_TYPE_HOST:             return 830;
-    case NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE: return 550;
-    case NICE_CANDIDATE_TYPE_PEER_REFLEXIVE:   return 550;
-    case NICE_CANDIDATE_TYPE_RELAYED:          return 450;
-    }
-
-  /* appease GCC */
-  return 0;
-}
-
-
 /*
  * Calculates the pair priority as specified in ICE
  * sect 5.7.2. "Computing Pair Priority and Ordering Pairs" (ID-19).

@@ -200,6 +200,9 @@ gst_nice_src_read_callback (NiceAgent *agent,
   GstNetBuffer *netbuffer = NULL;
   GstBuffer *buffer = NULL;
 
+  (void)stream_id;
+  (void)component_id;
+
   GST_LOG_OBJECT (agent, "Got buffer, getting out of the main loop");
 
 #if GST_CHECK_VERSION (1,0,0)

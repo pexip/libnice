@@ -51,13 +51,13 @@
 
 typedef enum
 {
-  NICE_CHECK_WAITING = 1,   /**< waiting to be scheduled */
+  NICE_CHECK_WAITING = 0,   /**< waiting to be scheduled */
   NICE_CHECK_IN_PROGRESS,   /**< conn. checks started */
   NICE_CHECK_SUCCEEDED,     /**< conn. succesfully checked */
   NICE_CHECK_FAILED,        /**< no connectivity, retransmissions ceased */
   NICE_CHECK_FROZEN,        /**< waiting to be scheduled to WAITING */
-  NICE_CHECK_CANCELLED,     /**< check cancelled */
-  NICE_CHECK_DISCOVERED     /**< a valid candidate pair not on check list */
+  NICE_CHECK_CANCELLED,      /**< check cancelled */
+  NICE_CHECK_STATE_LAST=NICE_CHECK_CANCELLED
 } NiceCheckState;
 
 typedef struct _CandidateCheckPair CandidateCheckPair;
@@ -79,12 +79,15 @@ struct _CandidateCheckPair
   StunTimer timer;
   uint8_t stun_buffer[STUN_MAX_MESSAGE_SIZE];
   StunMessage stun_message;
+  CandidateCheckPair *valid_pair;   /* For pairs that have succeeded this points to the valid pair created (which may be this pair,
+                                     * any other pair on the checklist or indeed a brand new pair) */
 };
 
-int conn_check_add_for_remote_candidate (NiceAgent *agent, guint stream_id, Component *component, NiceCandidate *remote);
-int conn_check_add_for_local_candidate (NiceAgent *agent, guint stream_id, Component *component, NiceCandidate *local);
+void conn_check_add_for_remote_candidate (NiceAgent *agent, guint stream_id, Component *component, NiceCandidate *remote);
+void conn_check_add_for_local_candidate (NiceAgent *agent, guint stream_id, Component *component, NiceCandidate *local);
+gboolean conn_check_add_for_candidate_pair (NiceAgent *agent, guint stream_id, Component *component, NiceCandidate *local, NiceCandidate *remote);
 void conn_check_free_item (gpointer data, gpointer user_data);
-void conn_check_free (NiceAgent *agent);
+void conn_check_prune_all_streams (NiceAgent *agent);
 gboolean conn_check_schedule_next (NiceAgent *agent);
 int conn_check_send (NiceAgent *agent, CandidateCheckPair *pair);
 void conn_check_prune_stream (NiceAgent *agent, Stream *stream);

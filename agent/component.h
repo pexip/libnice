@@ -137,13 +137,13 @@ void
 component_free (Component *cmp);
 
 gboolean
-component_find_pair (Component *cmp, NiceAgent *agent, const gchar *lfoundation, const gchar *rfoundation, CandidatePair *pair);
+component_find_pair (Component *cmp, NiceAgent *agent, const gchar *lfoundation, const gchar *rfoundation, NiceCandidate** local, NiceCandidate** remote, guint64* priority);
 
 gboolean
 component_restart (Component *cmp);
 
-void
-component_update_selected_pair (Component *component, const CandidatePair *pair);
+void 
+component_update_selected_pair (Component *component, NiceCandidate* local, NiceCandidate* remote, guint64 priority);
 
 NiceCandidate *
 component_find_remote_candidate (const Component *component, const NiceAddress *addr, NiceCandidateTransport transport);

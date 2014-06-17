@@ -34,6 +34,8 @@ _wrap_nice_agent_new(PyGObject *self, PyObject *args, PyObject *kwargs)
 	gint compatibility;
 	gint turn_compatibility;
 
+	(void)kwargs;
+
 	if (! PyArg_ParseTuple( args, "O!OO", &PyGMainContext_Type, &maincontext, &compatibility_obj, &turncompatibility_obj))
         return -1;
 
@@ -245,7 +247,7 @@ _wrap_nice_agent_get_local_candidates(PyGObject *self, PyObject *args)
   for (item = candidates; item; item = g_slist_next (item))
   {
     NiceCandidate *candidate = item->data;
-	PyList_Append(result, pyg_boxed_new(nice_candidate_get_type(), item->data, TRUE, TRUE));
+		PyList_Append(result, pyg_boxed_new(nice_candidate_get_type(), candidate, TRUE, TRUE));
   }
 
   return result;
@@ -273,7 +275,7 @@ _wrap_nice_agent_get_remote_candidates(PyGObject *self, PyObject *args)
   for (item = candidates; item; item = g_slist_next (item))
   {
     NiceCandidate *candidate = item->data;
-	PyList_Append(result, pyg_boxed_new(nice_candidate_get_type(), item->data, TRUE, TRUE));
+		PyList_Append(result, pyg_boxed_new(nice_candidate_get_type(), candidate, TRUE, TRUE));
   }
 
   return result;

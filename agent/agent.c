@@ -282,15 +282,7 @@ agent_candidate_ice_priority (NiceAgent *agent, const NiceCandidate *candidate, 
 StunUsageIceCompatibility
 agent_to_ice_compatibility (NiceAgent *agent)
 {
-  return agent->compatibility == NICE_COMPATIBILITY_GOOGLE ?
-      STUN_USAGE_ICE_COMPATIBILITY_GOOGLE :
-      agent->compatibility == NICE_COMPATIBILITY_MSN ?
-      STUN_USAGE_ICE_COMPATIBILITY_MSN :
-      agent->compatibility == NICE_COMPATIBILITY_WLM2009 ?
-      STUN_USAGE_ICE_COMPATIBILITY_WLM2009 :
-      agent->compatibility == NICE_COMPATIBILITY_OC2007 ?
-      STUN_USAGE_ICE_COMPATIBILITY_MSN :
-      agent->compatibility == NICE_COMPATIBILITY_OC2007R2 ?
+  return agent->compatibility == NICE_COMPATIBILITY_OC2007R2 ?
       STUN_USAGE_ICE_COMPATIBILITY_WLM2009 :
       STUN_USAGE_ICE_COMPATIBILITY_RFC5245;
 }
@@ -299,15 +291,7 @@ agent_to_ice_compatibility (NiceAgent *agent)
 StunUsageTurnCompatibility
 agent_to_turn_compatibility (NiceAgent *agent)
 {
-  return agent->turn_compatibility == NICE_COMPATIBILITY_GOOGLE ?
-      STUN_USAGE_TURN_COMPATIBILITY_GOOGLE :
-      agent->turn_compatibility == NICE_COMPATIBILITY_MSN ?
-      STUN_USAGE_TURN_COMPATIBILITY_MSN :
-      agent->turn_compatibility == NICE_COMPATIBILITY_WLM2009 ?
-      STUN_USAGE_TURN_COMPATIBILITY_MSN :
-      agent->turn_compatibility == NICE_COMPATIBILITY_OC2007 ?
-      STUN_USAGE_TURN_COMPATIBILITY_OC2007 :
-      agent->turn_compatibility == NICE_COMPATIBILITY_OC2007R2 ?
+  return agent->turn_compatibility == NICE_COMPATIBILITY_OC2007R2 ?
       STUN_USAGE_TURN_COMPATIBILITY_OC2007 :
       STUN_USAGE_TURN_COMPATIBILITY_RFC5766;
 }
@@ -315,15 +299,7 @@ agent_to_turn_compatibility (NiceAgent *agent)
 NiceTurnSocketCompatibility
 agent_to_turn_socket_compatibility (NiceAgent *agent)
 {
-  return agent->turn_compatibility == NICE_COMPATIBILITY_GOOGLE ?
-      NICE_TURN_SOCKET_COMPATIBILITY_GOOGLE :
-      agent->turn_compatibility == NICE_COMPATIBILITY_MSN ?
-      NICE_TURN_SOCKET_COMPATIBILITY_MSN :
-      agent->turn_compatibility == NICE_COMPATIBILITY_WLM2009 ?
-      NICE_TURN_SOCKET_COMPATIBILITY_MSN :
-      agent->turn_compatibility == NICE_COMPATIBILITY_OC2007 ?
-      NICE_TURN_SOCKET_COMPATIBILITY_OC2007 :
-      agent->turn_compatibility == NICE_COMPATIBILITY_OC2007R2 ?
+  return agent->turn_compatibility == NICE_COMPATIBILITY_OC2007R2 ?
       NICE_TURN_SOCKET_COMPATIBILITY_OC2007 :
       NICE_TURN_SOCKET_COMPATIBILITY_RFC5766;
 }
@@ -472,8 +448,8 @@ nice_agent_class_init (NiceAgentClass *klass)
         "max-connectivity-checks",
         "Maximum number of connectivity checks",
         "Upper limit for the total number of connectivity checks performed",
-        0, 0xffffffff,
-	0, /* default set in init */
+        1, 0xffffffff,
+        NICE_AGENT_MAX_CONNECTIVITY_CHECKS_DEFAULT,
         G_PARAM_READWRITE));
 
   /**
@@ -815,8 +791,6 @@ nice_agent_init (NiceAgent *agent)
   agent->software_attribute = NULL;
 
   agent->compatibility = NICE_COMPATIBILITY_RFC5245;
-  agent->use_ice_udp = TRUE;
-  agent->use_ice_tcp = TRUE;
   agent->reliable = FALSE;
 
   stun_agent_init (&agent->stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
@@ -875,16 +849,7 @@ nice_agent_get_property (
       break;
 
     case PROP_COMPATIBILITY:
-      if (agent->compatibility == NICE_COMPATIBILITY_RFC5245) {
-        if (agent->use_ice_udp && agent->use_ice_tcp)
-          g_value_set_uint (value, NICE_COMPATIBILITY_RFC5245_AND_RFC6544);
-        else if (agent->use_ice_tcp)
-          g_value_set_uint (value, NICE_COMPATIBILITY_RFC6544);
-        else
-          g_value_set_uint (value, NICE_COMPATIBILITY_RFC5245);
-      } else {
-        g_value_set_uint (value, agent->compatibility);
-      }
+      g_value_set_uint (value, agent->compatibility);
       break;
 
     case PROP_TURN_COMPATIBILITY:
@@ -985,50 +950,13 @@ nice_agent_set_property (
 
     case PROP_COMPATIBILITY:
       agent->compatibility = g_value_get_uint (value);
-      agent->use_ice_udp = FALSE;
-      agent->use_ice_tcp = FALSE;
-      if (agent->compatibility == NICE_COMPATIBILITY_GOOGLE) {
-        agent->use_ice_udp = TRUE;
-        stun_agent_init (&agent->stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
-            STUN_COMPATIBILITY_RFC3489,
-            STUN_AGENT_USAGE_SHORT_TERM_CREDENTIALS |
-            STUN_AGENT_USAGE_IGNORE_CREDENTIALS);
-      } else if (agent->compatibility == NICE_COMPATIBILITY_MSN) {
-        agent->use_ice_udp = TRUE;
-        stun_agent_init (&agent->stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
-            STUN_COMPATIBILITY_RFC3489,
-            STUN_AGENT_USAGE_SHORT_TERM_CREDENTIALS |
-            STUN_AGENT_USAGE_FORCE_VALIDATER);
-      } else if (agent->compatibility == NICE_COMPATIBILITY_WLM2009) {
-        agent->use_ice_udp = TRUE;
-        stun_agent_init (&agent->stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
-            STUN_COMPATIBILITY_WLM2009,
-            STUN_AGENT_USAGE_SHORT_TERM_CREDENTIALS |
-            STUN_AGENT_USAGE_USE_FINGERPRINT);
-      } else if (agent->compatibility == NICE_COMPATIBILITY_OC2007) {
-        agent->use_ice_udp = TRUE;
-        stun_agent_init (&agent->stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
-            STUN_COMPATIBILITY_RFC3489,
-            STUN_AGENT_USAGE_SHORT_TERM_CREDENTIALS |
-            STUN_AGENT_USAGE_FORCE_VALIDATER |
-            STUN_AGENT_USAGE_NO_ALIGNED_ATTRIBUTES);
-      } else if (agent->compatibility == NICE_COMPATIBILITY_OC2007R2) {
-        agent->use_ice_udp = TRUE;
-        agent->use_ice_tcp = TRUE;
+      if (agent->compatibility == NICE_COMPATIBILITY_OC2007R2) {
         stun_agent_init (&agent->stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
             STUN_COMPATIBILITY_WLM2009,
             STUN_AGENT_USAGE_SHORT_TERM_CREDENTIALS |
             STUN_AGENT_USAGE_USE_FINGERPRINT |
             STUN_AGENT_USAGE_NO_ALIGNED_ATTRIBUTES);
       } else {
-        if (agent->compatibility == NICE_COMPATIBILITY_RFC5245_AND_RFC6544) {
-          agent->use_ice_udp = TRUE;
-          agent->use_ice_tcp = TRUE;
-        } else if (agent->compatibility == NICE_COMPATIBILITY_RFC6544) {
-          agent->use_ice_tcp = TRUE;
-        } else {
-          agent->use_ice_udp = TRUE;
-        }
         agent->compatibility = NICE_COMPATIBILITY_RFC5245;
         stun_agent_init (&agent->stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
             STUN_COMPATIBILITY_RFC5389,
@@ -1361,13 +1289,13 @@ void agent_gathering_done (NiceAgent *agent)
         gchar tmpbuf2[INET6_ADDRSTRLEN];
         nice_address_to_string (&local_candidate->addr, tmpbuf);
         nice_address_to_string (&local_candidate->base_addr, tmpbuf2);
-        nice_debug ("Agent %p: gathered local candidate : foundation:%s %s %s [%s]:%u [%s]:%u"
-                    " for s%d/c%d.", agent, local_candidate->foundation, 
+        nice_debug ("Agent %p %u/%u: gathered local candidate : foundation:%s %s %s [%s]:%u [%s]:%u",
+                    agent, local_candidate->stream_id, local_candidate->component_id,
+                    local_candidate->foundation, 
                     candidate_type_to_string (local_candidate->type),
                     candidate_transport_to_string (local_candidate->transport),
                     tmpbuf, nice_address_get_port (&local_candidate->addr),
-                    tmpbuf2, nice_address_get_port (&local_candidate->base_addr),
-                    local_candidate->stream_id, local_candidate->component_id);
+                    tmpbuf2, nice_address_get_port (&local_candidate->base_addr));
 
         for (l = component->remote_candidates; l; l = l->next) {
           NiceCandidate *remote_candidate = l->data;
@@ -1379,7 +1307,7 @@ void agent_gathering_done (NiceAgent *agent)
               break;
           }
           if (m == NULL) {
-            conn_check_add_for_remote_candidate (agent, stream->id, component, remote_candidate);
+            conn_check_add_for_candidate_pair (agent, stream->id, component, local_candidate, remote_candidate);
           }
         }
       }
@@ -1447,7 +1375,7 @@ void agent_signal_new_selected_pair (NiceAgent *agent, guint stream_id, guint co
     }
   }
 
-  nice_debug("Agent %p: s/c %u/%u signalling new-selected-pair (%s:%s) local-candidate-type=%s remote-candidate-type=%s local-transport=%s remote-transport=%s", agent, stream_id, component_id,
+  nice_debug("Agent %p %u/%u: signalling new-selected-pair (%s:%s) local-candidate-type=%s remote-candidate-type=%s local-transport=%s remote-transport=%s", agent, stream_id, component_id,
              lcandidate->foundation, rcandidate->foundation,
              candidate_type_to_string(lcandidate->type), 
              candidate_type_to_string(rcandidate->type),
@@ -1490,7 +1418,7 @@ void agent_signal_component_state_change (NiceAgent *agent, guint stream_id, gui
     return;
 
   if (component->state != state && state < NICE_COMPONENT_STATE_LAST) {
-    nice_debug ("Agent %p s/c:%u/%u: signalling STATE-CHANGE %s -> %s.", agent,
+    nice_debug ("Agent %p %u/%u: signalling STATE-CHANGE %s -> %s.", agent,
                 stream_id, component_id, component_state_to_string(component->state), component_state_to_string(state));
 
     component->state = state;
@@ -1556,8 +1484,7 @@ priv_add_new_candidate_discovery_stun (NiceAgent *agent,
   stun_agent_init (&cdisco->stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
                    STUN_COMPATIBILITY_RFC5389,
                    STUN_AGENT_USAGE_USE_FINGERPRINT |
-                   ((agent->turn_compatibility == NICE_COMPATIBILITY_OC2007 ||
-                     agent->turn_compatibility == NICE_COMPATIBILITY_OC2007R2) ?
+                   (agent->turn_compatibility == NICE_COMPATIBILITY_OC2007R2 ?
                     STUN_AGENT_USAGE_NO_ALIGNED_ATTRIBUTES : 0));
 
   nice_debug ("Agent %p : Adding new srv-rflx candidate discovery %p compatibility = %d\n",
@@ -1586,20 +1513,6 @@ priv_add_new_candidate_discovery_turn (NiceAgent *agent,
   cdisco->type = NICE_CANDIDATE_TYPE_RELAYED;
 
   if (turn->type ==  NICE_RELAY_TYPE_TURN_UDP) {
-    if (agent->compatibility == NICE_COMPATIBILITY_GOOGLE) {
-      NiceAddress addr = socket->addr;
-      NiceSocket *new_socket;
-      nice_address_set_port (&addr, 0);
-
-      new_socket = nice_udp_bsd_socket_new (&addr);
-      if (new_socket) {
-        _priv_set_socket_tos (agent, new_socket, stream->tos);
-        agent_attach_stream_component_socket (agent, stream,
-            component, new_socket);
-        component->sockets= g_slist_append (component->sockets, new_socket);
-        socket = new_socket;
-      }
-    }
     cdisco->nicesock = socket;
   } else {
     NiceAddress proxy_server;
@@ -1637,10 +1550,6 @@ priv_add_new_candidate_discovery_turn (NiceAgent *agent,
     if (socket == NULL)
       return;
 
-    if (turn->type ==  NICE_RELAY_TYPE_TURN_TLS &&
-        agent->compatibility == NICE_COMPATIBILITY_GOOGLE) {
-      socket = nice_pseudossl_socket_new (socket);
-    }
     cdisco->nicesock = nice_tcp_turn_socket_new (socket,
         agent_to_turn_socket_compatibility (agent));
 
@@ -1656,29 +1565,12 @@ priv_add_new_candidate_discovery_turn (NiceAgent *agent,
   cdisco->component = stream_find_component_by_id (stream, component_id);
   cdisco->agent = agent;
 
-  if (agent->turn_compatibility == NICE_COMPATIBILITY_GOOGLE) {
-    stun_agent_init (&cdisco->stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
-        STUN_COMPATIBILITY_RFC3489,
-        STUN_AGENT_USAGE_SHORT_TERM_CREDENTIALS |
-        STUN_AGENT_USAGE_IGNORE_CREDENTIALS);
-  } else if (agent->turn_compatibility == NICE_COMPATIBILITY_MSN ||
-      agent->turn_compatibility == NICE_COMPATIBILITY_WLM2009) {
-    stun_agent_init (&cdisco->stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
-        STUN_COMPATIBILITY_RFC3489,
-        STUN_AGENT_USAGE_SHORT_TERM_CREDENTIALS);
-  } else if (agent->turn_compatibility == NICE_COMPATIBILITY_OC2007 ||
-      agent->turn_compatibility == NICE_COMPATIBILITY_OC2007R2) {
-    stun_agent_init (&cdisco->stun_agent, STUN_MSOC_KNOWN_ATTRIBUTES,
-        STUN_COMPATIBILITY_OC2007,
-        STUN_AGENT_USAGE_LONG_TERM_CREDENTIALS |
-        STUN_AGENT_USAGE_NO_ALIGNED_ATTRIBUTES);
-  } else {
-    stun_agent_init (&cdisco->stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
-        STUN_COMPATIBILITY_RFC5389,
-        STUN_AGENT_USAGE_ADD_SOFTWARE |
-        STUN_AGENT_USAGE_LONG_TERM_CREDENTIALS |
-        STUN_AGENT_USAGE_NO_INDICATION_AUTH);
-  }
+  
+  stun_agent_init (&cdisco->stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
+      STUN_COMPATIBILITY_RFC5389,
+      STUN_AGENT_USAGE_ADD_SOFTWARE |
+      STUN_AGENT_USAGE_LONG_TERM_CREDENTIALS |
+      STUN_AGENT_USAGE_NO_INDICATION_AUTH);
   stun_agent_set_software (&cdisco->stun_agent, agent->software_attribute);
 
   nice_debug ("Agent %p : Adding new relay-rflx candidate discovery %p\n",
@@ -1992,10 +1884,12 @@ nice_agent_gather_candidates (
       udp_host_candidate = NULL;
       if (component->enable_udp) {
         while (udp_host_candidate == NULL) {
-          nice_debug ("Agent %p: Trying to create host candidate on port %d", agent, current_port);
+          nice_debug ("Agent %p %u/%u: Trying to create host candidate on port %d", 
+                      agent, stream->id, n + 1,
+                      current_port);
           nice_address_set_port (addr, current_port);
           udp_host_candidate = discovery_add_local_host_candidate (agent, stream->id,
-                                                               n + 1, addr, NICE_CANDIDATE_TRANSPORT_UDP);
+                                                                   n + 1, addr, NICE_CANDIDATE_TRANSPORT_UDP);
           if (current_port > 0)
             current_port++;
           if (current_port == 0 || current_port > component->max_port)
@@ -2175,15 +2069,13 @@ nice_agent_gather_candidates (
 #ifdef HAVE_GUPNP
       g_slist_length (agent->upnp_mapping) == 0) {
 #else
-      TRUE) {
+    TRUE) {
 #endif
-    nice_debug ("Agent %p: Candidate gathering FINISHED, no scheduled items.",
-        agent);
     agent_gathering_done (agent);
   } else if (agent->discovery_unsched_items) {
     discovery_schedule (agent);
   }
-
+  
  error:
   for (i = local_addresses; i; i = i->next)
     nice_address_free (i->data);
@@ -2380,111 +2272,118 @@ static gboolean priv_add_remote_candidate (
 
   if (!agent_find_component (agent, stream_id, component_id, NULL, &component))
     return FALSE;
-
+  
   /* step: check whether the candidate already exists */
   candidate = component_find_remote_candidate(component, addr, transport);
   if (candidate) {
     /* case 1: an existing candidate, update the attributes if we need to */
     if (candidate->type != type ||
-	(base_addr && nice_address_is_valid(&candidate->base_addr) && !nice_address_equal(&candidate->base_addr, base_addr)) ||
-	candidate->priority != priority ||
-	(foundation && g_strcmp0(candidate->foundation, foundation) != 0) ||
-	(username && g_strcmp0(candidate->username, username) != 0) ||
-	(password && g_strcmp0(candidate->password, password) != 0))
+        (base_addr && nice_address_is_valid(&candidate->base_addr) && !nice_address_equal(&candidate->base_addr, base_addr)) ||
+        candidate->priority != priority ||
+        (foundation && g_strcmp0(candidate->foundation, foundation) != 0) ||
+        (username && g_strcmp0(candidate->username, username) != 0) ||
+        (password && g_strcmp0(candidate->password, password) != 0))
+    {
       {
-	{
-	  gchar tmpbuf[INET6_ADDRSTRLEN];
-	  nice_address_to_string (addr, tmpbuf);
-	  nice_debug ("Agent %p : Updating existing remote candidate with addr [%s]:%u"
-		      " for s%d/c%d. U/P '%s'/'%s' prio: %u type:%d transport:%d", agent, tmpbuf,
-		      nice_address_get_port (addr), stream_id, component_id,
-		      username, password, priority, type, transport);
-	}
-
-	candidate->type = type;
-	if (base_addr)
-	  candidate->base_addr = *base_addr;
-	candidate->priority = priority;
-	if (foundation)
-	  g_strlcpy(candidate->foundation, foundation,
-		    NICE_CANDIDATE_MAX_FOUNDATION);
-	/* note: username and password must remain the same during
-	 *       a session; see sect 9.1.2 in ICE ID-19 */
-
-	/* note: however, the user/pass in ID-19 is global, if the user/pass
-	 * are set in the candidate here, it means they need to be updated...
-	 * this is essential to overcome a race condition where we might receive
-	 * a valid binding request from a valid candidate that wasn't yet added to
-	 * our list of candidates.. this 'update' will make the peer-rflx a
-	 * server-rflx/host candidate again and restore that user/pass it needed
-	 * to have in the first place */
-	if (username) {
-	  g_free (candidate->username);
-	  candidate->username = g_strdup (username);
-	}
-	if (password) {
-	  g_free (candidate->password);
-	  candidate->password = g_strdup (password);
-	}
-	if (conn_check_add_for_remote_candidate (agent, stream_id, component, candidate) < 0)
-	  goto errors;
+        gchar tmpbuf[INET6_ADDRSTRLEN];
+        nice_address_to_string (addr, tmpbuf);
+        nice_debug ("Agent %p : Updating existing remote candidate with addr [%s]:%u"
+                    " for s%d/c%d. U/P '%s'/'%s' prio: %u type:%d transport:%d", agent, tmpbuf,
+                    nice_address_get_port (addr), stream_id, component_id,
+                    username, password, priority, type, transport);
       }
-      else {
-	{
-	  gchar tmpbuf[INET6_ADDRSTRLEN];
-	  nice_address_to_string (addr, tmpbuf);
-	  nice_debug ("Agent %p : Not updating existing remote candidate with addr [%s]:%u"
-		      " for s%d/c%d. U/P '%s'/'%s' prio: %u type:%d transport:%d", agent, tmpbuf,
-		      nice_address_get_port (addr), stream_id, component_id,
-		      username, password, priority, type, transport);
-	}
+      
+      candidate->type = type;
+      if (base_addr)
+        candidate->base_addr = *base_addr;
+      candidate->priority = priority;
+      if (foundation)
+        g_strlcpy(candidate->foundation, foundation,
+                  NICE_CANDIDATE_MAX_FOUNDATION);
+      /* note: username and password must remain the same during
+       *       a session; see sect 9.1.2 in ICE ID-19 */
+      
+      /* note: however, the user/pass in ID-19 is global, if the user/pass
+       * are set in the candidate here, it means they need to be updated...
+       * this is essential to overcome a race condition where we might receive
+       * a valid binding request from a valid candidate that wasn't yet added to
+       * our list of candidates.. this 'update' will make the peer-rflx a
+       * server-rflx/host candidate again and restore that user/pass it needed
+       * to have in the first place */
+      if (username) {
+        g_free (candidate->username);
+        candidate->username = g_strdup (username);
       }
+      if (password) {
+        g_free (candidate->password);
+        candidate->password = g_strdup (password);
+      }
+
+      /*
+       * Don't pair up remote peer reflexive candidates (RFC 5245 Section 7.2.1.3)
+       */
+      if (type != NICE_CANDIDATE_TYPE_PEER_REFLEXIVE) {
+        conn_check_add_for_remote_candidate (agent, stream_id, component, candidate);
+      }
+    }
+    else {
+      {
+        gchar tmpbuf[INET6_ADDRSTRLEN];
+        nice_address_to_string (addr, tmpbuf);
+        nice_debug ("Agent %p : Not updating existing remote candidate with addr [%s]:%u"
+                    " for s%d/c%d. U/P '%s'/'%s' prio: %u type:%d transport:%d", agent, tmpbuf,
+                    nice_address_get_port (addr), stream_id, component_id,
+                    username, password, priority, type, transport);
+      }
+    }
   }
   else {
     /* case 2: add a new candidate */
-
+    
     candidate = nice_candidate_new (type);
     component->remote_candidates = g_slist_append (component->remote_candidates,
-        candidate);
-
+                                                   candidate);
+    
     candidate->stream_id = stream_id;
     candidate->component_id = component_id;
-
+    
     candidate->type = type;
     if (addr)
       candidate->addr = *addr;
-
+    
     {
       gchar tmpbuf[INET6_ADDRSTRLEN] = {0};
       if(addr)
         nice_address_to_string (addr, tmpbuf);
-      nice_debug ("Agent %p : Adding remote candidate with foundation %s addr [%s]:%u"
-                  " for s%d/c%d. U/P '%s'/'%s' prio: %u type:%s transport:%s", agent, foundation, tmpbuf,
-                  addr? nice_address_get_port (addr) : 0, stream_id, component_id,
+      nice_debug ("Agent %p %u/%u: Adding remote candidate with foundation %s addr [%s]:%u"
+                  " U/P '%s'/'%s' prio: %u type:%s transport:%s", 
+                  agent, stream_id, component_id,
+                  foundation, tmpbuf,
+                  addr? nice_address_get_port (addr) : 0,
                   username, password, priority, candidate_type_to_string(type), candidate_transport_to_string(transport));
     }
-
+    
     if (base_addr)
       candidate->base_addr = *base_addr;
-
+    
     candidate->transport = transport;
     candidate->priority = priority;
     candidate->username = g_strdup (username);
     candidate->password = g_strdup (password);
-
+    
     if (foundation)
       g_strlcpy (candidate->foundation, foundation,
           NICE_CANDIDATE_MAX_FOUNDATION);
-
-    if (conn_check_add_for_remote_candidate (agent, stream_id, component, candidate) < 0)
-      goto errors;
+    
+    /*
+     * Don't pair up remote peer reflexive candidates (RFC 5245 Section 7.2.1.3)
+     */
+    if (type != NICE_CANDIDATE_TYPE_PEER_REFLEXIVE) {
+      conn_check_add_for_remote_candidate (agent, stream_id, component, candidate);
+    }
   }
-
-  return TRUE;
-
-errors:
-  nice_candidate_free (candidate);
-  return FALSE;
+  
+  return TRUE;  
 }
 
 NICEAPI_EXPORT gboolean
@@ -2548,12 +2447,10 @@ nice_agent_get_local_credentials (
 NICEAPI_EXPORT int
 nice_agent_set_remote_candidates (NiceAgent *agent, guint stream_id, guint component_id, const GSList *candidates)
 {
-  const GSList *i; 
+  const GSList *i;
   int added = 0;
   Stream *stream;
   Component *component;
-
-  nice_debug ("Agent %p: nice_agent_set_remote_candidates s/c: %d/%d", agent, stream_id, component_id);
 
   agent_lock();
 
@@ -2587,23 +2484,25 @@ nice_agent_set_remote_candidates (NiceAgent *agent, guint stream_id, guint compo
    }
  }
 
- nice_debug("Agent %p: s/c %u/%u: added all remote candidates, checking for any pending inbound checks", agent, stream_id, component_id);
+ nice_debug("Agent %p %u/%u: added all remote candidates, checking for any pending inbound checks", 
+            agent, stream_id, component_id);
  conn_check_remote_candidates_set(agent, stream_id, component_id);
 
  if (added > 0) {
    gboolean res = conn_check_schedule_next (agent);
    if (res != TRUE)
-     nice_debug ("Agent %p : Warning: unable to schedule any conn checks!", agent);
+     nice_debug ("Agent %p %u/%u: Warning: unable to schedule any conn checks!", 
+                 agent, stream_id, component_id);
  }
 
- done:
+done:
  agent_unlock();
  return added;
 }
 
 static gboolean _nice_should_have_padding(NiceCompatibility compatibility)
 {
-  if (compatibility == NICE_COMPATIBILITY_OC2007 || compatibility == NICE_COMPATIBILITY_OC2007R2) {
+  if (compatibility == NICE_COMPATIBILITY_OC2007R2) {
     return FALSE;
   } else {
     return TRUE;
@@ -2634,7 +2533,7 @@ _nice_agent_recv (
   if (len > 0) {
     gchar tmpbuf[INET6_ADDRSTRLEN];
     nice_address_to_string (from, tmpbuf);
-    nice_debug ("Agent %p : Packet received on local %s socket %u from [%s]:%u (%u octets).", agent,
+    nice_debug ("Agent %p   : Packet received on local %s socket %u from [%s]:%u (%u octets).", agent,
                 socket_type_to_string(socket->type), socket->fileno ? g_socket_get_fd (socket->fileno) : 0, 
                 tmpbuf, nice_address_get_port (from), len);
   }
@@ -2661,7 +2560,7 @@ _nice_agent_recv (
         has_padding = _nice_should_have_padding(agent->turn_compatibility);
 
 #ifndef NDEBUG
-        nice_debug ("Agent %p : Packet received from TURN server candidate, has_padding=%d",
+        nice_debug ("Agent %p    : Packet received from TURN server candidate, has_padding=%d",
                     agent, has_padding);
 #endif
         for (i = component->local_candidates; i; i = i->next) {
@@ -2810,7 +2709,7 @@ nice_agent_restart (
   agent_lock();
 
   /* step: clean up all connectivity checks */
-  conn_check_free (agent);
+  conn_check_prune_all_streams (agent);
 
   /* step: regenerate tie-breaker value */
   priv_generate_tie_breaker (agent);
@@ -2841,7 +2740,7 @@ nice_agent_dispose (GObject *object)
   g_assert (agent->refresh_list == NULL);
 
   /* step: free resources for the connectivity check timers */
-  conn_check_free (agent);
+  conn_check_prune_all_streams (agent);
 
   priv_remove_keepalive_timer (agent);
 
@@ -2959,7 +2858,7 @@ void nice_agent_socket_recv_cb (NiceSocket* socket, NiceAddress* from, gchar* bu
   if (len > 0) {
     gchar tmpbuf[INET6_ADDRSTRLEN];
     nice_address_to_string (from, tmpbuf);
-    nice_debug ("Agent %p : Packet received on local %s socket %u from [%s]:%u (%u octets).", agent,
+    nice_debug ("Agent %p    : Packet received on local %s socket %u from [%s]:%u (%u octets).", agent,
                 socket_type_to_string(socket->type), socket->fileno ? g_socket_get_fd (socket->fileno) : 0, 
                 tmpbuf, nice_address_get_port (from), len);
   }
@@ -2980,7 +2879,7 @@ void nice_agent_socket_recv_cb (NiceSocket* socket, NiceAddress* from, gchar* bu
         has_padding = _nice_should_have_padding(agent->turn_compatibility);
 
 #ifndef NDEBUG
-        nice_debug ("Agent %p : Packet received from TURN server candidate.",
+        nice_debug ("Agent %p    : Packet received from TURN server candidate.",
                     agent);
 #endif
         for (i = component->local_candidates; i; i = i->next) {
@@ -3001,12 +2900,10 @@ void nice_agent_socket_recv_cb (NiceSocket* socket, NiceAddress* from, gchar* bu
 
   if (stun_message_validate_buffer_length ((uint8_t *) buf, (size_t) len, has_padding) != len) {
     is_stun = FALSE;
-    nice_debug("STUN message failed to validate");
   } 
 
   if (!is_stun || !conn_check_handle_inbound_stun (agent, stream, component, socket,
                                                    from, buf, len)) {
-    nice_debug("Unhandled stun message, passing to client");
     /* unhandled STUN, pass to client */
     if (component->g_source_io_cb) {
       gpointer cdata = component->data;
@@ -3019,7 +2916,6 @@ void nice_agent_socket_recv_cb (NiceSocket* socket, NiceAddress* from, gchar* bu
       agent_unlock();
     }    
   } else {
-    nice_debug("Handled STUN message!!");
     agent_unlock();
   }
 }
@@ -3116,11 +3012,11 @@ agent_attach_stream_component_socket (NiceAgent *agent,
     ctx = io_ctx_new (agent, stream, component, socket, source);
     g_source_set_callback (source, (GSourceFunc) nice_agent_g_source_cb,
                            ctx, (GDestroyNotify) io_ctx_free);
-    nice_debug ("Agent %p : Attach source %p (stream %u). ctx %p", agent, source, stream->id, component->ctx);
+    nice_debug ("Agent %p %u/%u: Attach source %p ctx %p", agent, stream->id, component->id, source, component->ctx);
     g_source_attach (source, component->ctx);
     component->gsources = g_slist_append (component->gsources, source);
   } else {
-    nice_debug ("Agent %p : Source has no fileno (stream %u)", agent, stream->id);
+    nice_debug ("Agent %p %u/%u: Source has no fileno", agent, stream->id, component->id);
   }
 }
 
@@ -3233,8 +3129,10 @@ nice_agent_set_selected_pair (
 {
   Component *component;
   Stream *stream;
-  CandidatePair pair;
   gboolean ret = FALSE;
+  NiceCandidate *local = NULL;
+  NiceCandidate *remote = NULL;
+  guint64 priority = 0;
 
   agent_lock();
 
@@ -3242,8 +3140,13 @@ nice_agent_set_selected_pair (
   if (!agent_find_component (agent, stream_id, component_id, &stream, &component)) {
     goto done;
   }
-
-  if (!component_find_pair (component, agent, lfoundation, rfoundation, &pair)){
+  
+  /*
+   * JBFIXME: It is possible for multiple remote peer reflexive candidates to have the same 
+   * foundation so there is no guarantee that this API will set the correct 
+   * pair of candidates
+   */
+  if (!component_find_pair (component, agent, lfoundation, rfoundation, &local, &remote, &priority)){
     goto done;
   }
 
@@ -3254,8 +3157,8 @@ nice_agent_set_selected_pair (
   agent_signal_component_state_change (agent, stream_id, component_id, NICE_COMPONENT_STATE_READY);
 
   /* step: set the selected pair */
-  component_update_selected_pair (component, &pair);
-  agent_signal_new_selected_pair (agent, stream_id, component_id, pair.local, pair.remote);
+  component_update_selected_pair (component, local, remote, priority);
+  agent_signal_new_selected_pair (agent, stream_id, component_id, local, remote);
 
   ret = TRUE;
 
@@ -3326,16 +3229,17 @@ _priv_set_socket_tos (NiceAgent *agent, NiceSocket *sock, gint tos)
 {
   if (sock->fileno && 
       setsockopt (g_socket_get_fd (sock->fileno), IPPROTO_IP,
-          IP_TOS, (const char *) &tos, sizeof (tos)) < 0) {
+                  IP_TOS, (const char *) &tos, sizeof (tos)) < 0) {
     nice_debug ("Agent %p: Could not set socket ToS", agent,
-        g_strerror (errno));
+                g_strerror (errno));
   }
+
 #ifdef IPV6_TCLASS
   if (sock->fileno && 
       setsockopt (g_socket_get_fd (sock->fileno), IPPROTO_IPV6,
-          IPV6_TCLASS, (const char *) &tos, sizeof (tos)) < 0) {
+                  IPV6_TCLASS, (const char *) &tos, sizeof (tos)) < 0) {
     nice_debug ("Agent %p: Could not set IPV6 socket ToS", agent,
-        g_strerror (errno));
+                g_strerror (errno));
   }
 #endif
 }

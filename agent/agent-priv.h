@@ -71,7 +71,8 @@
 #define NICE_AGENT_TIMER_TA_DEFAULT 20      /* timer Ta, msecs (impl. defined) */
 #define NICE_AGENT_TIMER_TR_DEFAULT 25000   /* timer Tr, msecs (impl. defined) */
 #define NICE_AGENT_TIMER_TR_MIN     15000   /* timer Tr, msecs (ICE ID-19) */
-#define NICE_AGENT_MAX_CONNECTIVITY_CHECKS_DEFAULT 100 /* see spec 5.7.3 (ID-19) */
+#define NICE_AGENT_MAX_CONNECTIVITY_CHECKS_DEFAULT 80 /* see spec 5.7.3 RFC 5245 and 3.1.4.8.2.1 of MS-ICE2. 
+                                                         We use the lower of the two suggested limits */
 
 
 /* An upper limit to size of STUN packets handled (based on Ethernet
@@ -123,8 +124,6 @@ struct _NiceAgent
 #endif
   gchar *software_attribute;       /* SOFTWARE attribute */
   gboolean reliable;               /* property: reliable */
-  gboolean use_ice_udp;            /* To use ICE-UDP in reliable mode */
-  gboolean use_ice_tcp;            /* To use ICE-TCP in non-reliabale mode*/
   /* XXX: add pointer to internal data struct for ABI-safe extensions */
 };
 

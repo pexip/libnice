@@ -276,7 +276,11 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
       return len;
     }
   } else {
-      nice_debug ("tcp-est %p: not for us to send to=%s:%u", sock, to_string, nice_address_get_port (to));
+    gchar remote_string [NICE_ADDRESS_STRING_LEN];
+
+    nice_address_to_string (&priv->remote_addr, remote_string);
+    nice_debug ("tcp-est %p: not for us to send to=%s:%u (priv->remote_addr = %s:%u)", sock, to_string, nice_address_get_port (to),
+                remote_string, nice_address_get_port (&priv->remote_addr));
     return 0;
   }
 }
@@ -313,7 +317,7 @@ parse_rfc4571(NiceSocket* sock, NiceAddress* from)
          * More data after current packet 
          */
         memmove(&priv->recv_buff[0], &priv->recv_buff[packet_length + 2], 
-                priv->recv_offset - packet_length + 2);
+                priv->recv_offset - packet_length - 2);
         priv->recv_offset = priv->recv_offset - packet_length - 2;
       } else {
         done = TRUE;
