@@ -65,7 +65,7 @@
 static const char* priv_state_to_string(NiceCheckState state);
 static void priv_update_check_list_failed_components (NiceAgent *agent, Stream *stream);
 static void priv_update_check_list_state_for_ready (NiceAgent *agent, Stream *stream, Component *component);
-static guint priv_prune_pending_checks (Stream *stream, guint component_id);
+static guint priv_prune_pending_checks (NiceAgent* agent, Stream *stream, guint component_id);
 static gboolean priv_schedule_triggered_check (NiceAgent *agent, Stream *stream, Component *component, NiceSocket *local_socket, NiceCandidate *remote_cand, gboolean use_candidate);
 static void priv_mark_pair_nominated (NiceAgent *agent, Stream *stream, Component *component, NiceCandidate *remotecand);
 static size_t priv_create_username (NiceAgent *agent, Stream *stream,
@@ -1243,7 +1243,7 @@ static void priv_update_check_list_state_for_ready (NiceAgent *agent, Stream *st
     /* Only go to READY if no checks are left in progress. If there are
      * any that are kept, then this function will be called again when the
      * conncheck tick timer finishes them all */
-    if (priv_prune_pending_checks (stream, component->id) == 0) {
+    if (priv_prune_pending_checks (agent, stream, component->id) == 0) {
       nice_debug ("Agent %p: signaling s/c %d/%d as ready", agent, stream->id, component->id);
       agent_signal_component_state_change (agent, stream->id,
                                            component->id, NICE_COMPONENT_STATE_READY);
@@ -1810,12 +1810,13 @@ int conn_check_send (NiceAgent *agent, CandidateCheckPair *pair)
  *
  * @see priv_update_check_list_state_failed_components()
  */
-static guint priv_prune_pending_checks (Stream *stream, guint component_id)
+static guint priv_prune_pending_checks (NiceAgent* agent, Stream *stream, guint component_id)
 {
   GSList *i;
   guint64 highest_nominated_priority = 0;
   guint in_progress = 0;
   CandidateCheckPair *highest_nominated_pair = NULL;
+  gboolean prune_all_checks = FALSE;
 
   for (i = stream->conncheck_list; i; i = i->next) {
     CandidateCheckPair *p = i->data;
@@ -1833,10 +1834,26 @@ static guint priv_prune_pending_checks (Stream *stream, guint component_id)
   nice_debug ("Agent XXX: s/c:%u/%u Pruning pending checks. Highest nominated pair %s priority "
               "is %" G_GUINT64_FORMAT, stream->id, component_id, highest_nominated_pair->foundation, highest_nominated_priority);
   
+  /*
+   * For Microsoft RDP once we have a nominated RTP pair then cancel all outstanding pairs for any 
+   * component of this stream as we know the Lync client will not nominate any more
+   */
+  if (agent->compatibility == NICE_COMPATIBILITY_OC2007R2 &&
+      !agent->controlling_mode &&
+      highest_nominated_pair != NULL &&
+      component_id == NICE_COMPONENT_TYPE_RTP &&
+      (highest_nominated_pair->local->transport == NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE ||
+       highest_nominated_pair->local->transport == NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE)) {
+    nice_debug ("Agent %p %u/%u: RDP call, pruning all checks highest_nominated_pair = %p(%s)",
+                agent, stream->id, component_id,
+                highest_nominated_pair, highest_nominated_pair->foundation);
+    prune_all_checks = TRUE;
+  }
+      
   /* step: cancel all FROZEN and WAITING pairs for the component */
   for (i = stream->conncheck_list; i; i = i->next) {
     CandidateCheckPair *p = i->data;
-    if (p->component_id == component_id) {
+    if (p->component_id == component_id || prune_all_checks) {
       if (p->state == NICE_CHECK_FROZEN ||
           p->state == NICE_CHECK_WAITING) {
         p->state = NICE_CHECK_CANCELLED;
@@ -1845,7 +1862,8 @@ static guint priv_prune_pending_checks (Stream *stream, guint component_id)
       
       /* note: a SHOULD level req. in ICE 8.1.2. "Updating States" (ID-19) */
       if (p->state == NICE_CHECK_IN_PROGRESS) {
-        if (highest_nominated_priority != 0 && p->priority < highest_nominated_priority) {
+        if ((highest_nominated_priority != 0 && p->priority < highest_nominated_priority ) ||
+            prune_all_checks) {
           p->stun_message.buffer = NULL;
           p->stun_message.buffer_len = 0;
           p->state = NICE_CHECK_CANCELLED;
