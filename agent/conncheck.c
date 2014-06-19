@@ -275,6 +275,7 @@ static void priv_conn_check_unfreeze_related (NiceAgent *agent, Stream *stream, 
 static gboolean priv_conn_check_tick_stream (Stream *stream, NiceAgent *agent, GTimeVal *now)
 {
   gboolean keep_timer_going = FALSE;
+  gboolean nominated_tcp_pair = FALSE;
   guint s_inprogress = 0, s_succeeded = 0, s_discovered = 0,
     s_nominated = 0, s_waiting_for_nomination = 0, s_failed = 0,
     s_cancelled = 0;
@@ -286,63 +287,63 @@ static gboolean priv_conn_check_tick_stream (Stream *stream, NiceAgent *agent, G
 
     if (p->state == NICE_CHECK_IN_PROGRESS) {
       if (p->stun_message.buffer == NULL) {
-	nice_debug ("Agent %p : STUN connectivity check was cancelled, marking as done.", agent);
-	p->state = NICE_CHECK_FAILED;
-  nice_debug ("Agent %p : pair %p(%s) state FAILED", agent, p, p->foundation);
+        nice_debug ("Agent %p : STUN connectivity check was cancelled, marking as done.", agent);
+        p->state = NICE_CHECK_FAILED;
+        nice_debug ("Agent %p : pair %p(%s) state FAILED", agent, p, p->foundation);
       } else if (priv_timer_expired (&p->next_tick, now)) {
         switch (stun_timer_refresh (&p->timer)) {
-          case STUN_USAGE_TIMER_RETURN_TIMEOUT:
-            {
-              /* case: error, abort processing */
-              StunTransactionId id;
-
-              nice_debug ("Agent %p : Retransmissions failed, giving up on connectivity check %p(%s)", agent, p, p->foundation);
-              p->state = NICE_CHECK_FAILED;
-              nice_debug ("Agent %p : pair %p(%s) state FAILED", agent, p, p->foundation);
-
-              stun_message_id (&p->stun_message, id);
-              stun_agent_forget_transaction (&agent->stun_agent, id);
-
-              p->stun_message.buffer = NULL;
-              p->stun_message.buffer_len = 0;
-
-
-              break;
-            }
-          case STUN_USAGE_TIMER_RETURN_RETRANSMIT:
-            {
-              /* case: not ready, so schedule a new timeout */
-              unsigned int timeout = stun_timer_remainder (&p->timer);
-              nice_debug ("Agent %p :STUN transaction retransmitted (timeout %dms).",
-                  agent, timeout);
-
-              nice_socket_send (p->local->sockptr, &p->remote->addr,
-                  stun_message_length (&p->stun_message),
-                  (gchar *)p->stun_buffer);
-
-
-              /* note: convert from milli to microseconds for g_time_val_add() */
-              p->next_tick = *now;
-              g_time_val_add (&p->next_tick, timeout * 1000);
-
-              keep_timer_going = TRUE;
-              break;
-            }
-          case STUN_USAGE_TIMER_RETURN_SUCCESS:
-            {
-              unsigned int timeout = stun_timer_remainder (&p->timer);
-
-              /* note: convert from milli to microseconds for g_time_val_add() */
-              p->next_tick = *now;
-              g_time_val_add (&p->next_tick, timeout * 1000);
-
-              keep_timer_going = TRUE;
-              break;
-            }
+        case STUN_USAGE_TIMER_RETURN_TIMEOUT:
+          {
+            /* case: error, abort processing */
+            StunTransactionId id;
+            
+            nice_debug ("Agent %p : Retransmissions failed, giving up on connectivity check %p(%s)", agent, p, p->foundation);
+            p->state = NICE_CHECK_FAILED;
+            nice_debug ("Agent %p : pair %p(%s) state FAILED", agent, p, p->foundation);
+            
+            stun_message_id (&p->stun_message, id);
+            stun_agent_forget_transaction (&agent->stun_agent, id);
+            
+            p->stun_message.buffer = NULL;
+            p->stun_message.buffer_len = 0;
+            
+            
+            break;
+          }
+        case STUN_USAGE_TIMER_RETURN_RETRANSMIT:
+          {
+            /* case: not ready, so schedule a new timeout */
+            unsigned int timeout = stun_timer_remainder (&p->timer);
+            nice_debug ("Agent %p :STUN transaction retransmitted (timeout %dms).",
+                        agent, timeout);
+            
+            nice_socket_send (p->local->sockptr, &p->remote->addr,
+                              stun_message_length (&p->stun_message),
+                              (gchar *)p->stun_buffer);
+            
+            
+            /* note: convert from milli to microseconds for g_time_val_add() */
+            p->next_tick = *now;
+            g_time_val_add (&p->next_tick, timeout * 1000);
+            
+            keep_timer_going = TRUE;
+            break;
+          }
+        case STUN_USAGE_TIMER_RETURN_SUCCESS:
+          {
+            unsigned int timeout = stun_timer_remainder (&p->timer);
+            
+            /* note: convert from milli to microseconds for g_time_val_add() */
+            p->next_tick = *now;
+            g_time_val_add (&p->next_tick, timeout * 1000);
+            
+            keep_timer_going = TRUE;
+            break;
+          }
         }
       }
     }
-
+    
     if (p->state == NICE_CHECK_FROZEN)
       ++frozen;
     else if (p->state == NICE_CHECK_IN_PROGRESS)
@@ -359,49 +360,70 @@ static gboolean priv_conn_check_tick_stream (Stream *stream, NiceAgent *agent, G
       ++s_cancelled;
     
     if ((p->state == NICE_CHECK_SUCCEEDED || p->state == NICE_CHECK_DISCOVERED)
-        && p->nominated)
+        && p->nominated) {
       ++s_nominated;
+      if ((p->local->transport == NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE ||
+           p->local->transport == NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE) &&
+          p->component_id == NICE_COMPONENT_TYPE_RTP) {
+        nominated_tcp_pair = TRUE;
+      }
+    }
     else if ((p->state == NICE_CHECK_SUCCEEDED ||
-            p->state == NICE_CHECK_DISCOVERED) && !p->nominated)
+              p->state == NICE_CHECK_DISCOVERED) && !p->nominated)
       ++s_waiting_for_nomination;
   }
-
-    /* note: keep the timer going as long as there is work to be done */
+  
+  /* note: keep the timer going as long as there is work to be done */
   if (s_inprogress)
     keep_timer_going = TRUE;
   
+  /*
+   * Hack to detect RDP streams. In this case there may be multiple pairs in
+   * discovered/succeeded state but the remote lync client will only ever nominate 
+   * a single check pair. RDP can be detected by 
+   *   agent->controlling_mode = FALSE
+   *   agent->compatibility_mode = OC2007R2
+   *   we have a nominated local TCP candidate
+   */
+  if (agent->compatibility == NICE_COMPATIBILITY_OC2007R2 &&
+      !agent->controlling_mode &&
+      nominated_tcp_pair) {
+    nice_debug ("Agent %p %u: Nominated pair for RDP stream, keep_timer_going=%d", agent, stream, keep_timer_going);
+  } else {
     /* note: if some components have established connectivity,
      *       but yet no nominated pair, keep timer going */
-  if (s_nominated < stream->n_components &&
-      s_waiting_for_nomination) {
-    keep_timer_going = TRUE;
-    if (agent->controlling_mode) {
-      guint n;
-      for (n = 0; n < stream->n_components; n++) {
-        for (k = stream->conncheck_list; k ; k = k->next) {
-          CandidateCheckPair *p = k->data;
-          /* note: highest priority item selected (list always sorted) */
-          if (p->state == NICE_CHECK_SUCCEEDED ||
-              p->state == NICE_CHECK_DISCOVERED) {
-            nice_debug ("Agent %p : s/c:%u/%u restarting check %p(%s) as the nominated pair.", agent, p->stream_id, p->component_id, p, p->foundation);
-            p->nominated = TRUE;
-            priv_conn_check_initiate (agent, p);
-            break; /* move to the next component */
+    if (s_nominated < stream->n_components &&
+        s_waiting_for_nomination) {
+      keep_timer_going = TRUE;
+      if (agent->controlling_mode) {
+        guint n;
+        for (n = 0; n < stream->n_components; n++) {
+          for (k = stream->conncheck_list; k ; k = k->next) {
+            CandidateCheckPair *p = k->data;
+            /* note: highest priority item selected (list always sorted) */
+            if (p->state == NICE_CHECK_SUCCEEDED ||
+                p->state == NICE_CHECK_DISCOVERED) {
+              nice_debug ("Agent %p : s/c:%u/%u restarting check %p(%s) as the nominated pair.", agent, p->stream_id, p->component_id, p, p->foundation);
+              p->nominated = TRUE;
+              priv_conn_check_initiate (agent, p);
+              break; /* move to the next component */
+            }
           }
         }
       }
     }
   }
+
   if (stream->tick_counter++ % 50 == 0 || keep_timer_going != TRUE) {
     nice_debug ("Agent %p : tick_stream:%u, timer tick #%u: len(conncheck_list)=%u (%u frozen, %u in-progress, "
                 "%u waiting, %u succeeded, %u discovered, "
-                "%u failed, %u cancelled). %u nominated, %u waiting-for-nom", agent, stream->id, stream->tick_counter,
+                "%u failed, %u cancelled). %u nominated, %u waiting-for-nom keep_timer_going=%d", agent, stream->id, stream->tick_counter,
                 g_slist_length(stream->conncheck_list),
                 frozen, s_inprogress, waiting, s_succeeded,
                 s_discovered, s_failed,
-                s_cancelled, s_nominated, s_waiting_for_nomination);
+                s_cancelled, s_nominated, s_waiting_for_nomination, keep_timer_going);
   }
-
+  
   return keep_timer_going;
 
 }
