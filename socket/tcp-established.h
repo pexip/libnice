@@ -46,7 +46,7 @@ G_BEGIN_DECLS
 NiceSocket *nice_tcp_established_socket_new (GSocket *gsock,
                                              NiceAddress *local_addr, const NiceAddress *remote_addr, GMainContext *ctx,
                                              SocketRecvCallback cb, gpointer userdata, GDestroyNotify destroy_notify,
-                                             gboolean connect_pending);
+                                             gboolean connect_pending, guint max_tcp_queue_size);
 
 G_END_DECLS
 

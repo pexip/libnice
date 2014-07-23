@@ -60,6 +60,7 @@ typedef struct {
   GDestroyNotify      destroy_notify;
   GSList             *established_sockets;             /**< list of NiceSocket objs */
   GSList             *gsources;            /**< list of GSource objs */
+  guint               max_tcp_queue_size;
 } TcpPassivePriv;
 
 
@@ -73,7 +74,7 @@ static void tcp_passive_established_socket_recv_cb (NiceSocket* socket, NiceAddr
 
 
 NiceSocket *
-nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr, SocketRecvCallback cb, gpointer userdata, GDestroyNotify destroy_notify)
+nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr, SocketRecvCallback cb, gpointer userdata, GDestroyNotify destroy_notify, guint max_tcp_queue_size)
 {
   struct sockaddr_storage name;
   NiceSocket *sock;
@@ -147,6 +148,8 @@ nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr, SocketRecvCal
   priv->recv_cb = cb;
   priv->userdata = userdata;
   priv->destroy_notify = destroy_notify;
+  priv->max_tcp_queue_size = max_tcp_queue_size;
+
   sock->type = NICE_SOCKET_TYPE_TCP_PASSIVE;
   sock->fileno = gsock;
   sock->send = socket_send;
@@ -293,5 +296,6 @@ nice_tcp_passive_socket_accept (NiceSocket *socket)
 
   return nice_tcp_established_socket_new (gsock,
                                           &socket->addr, &remote_addr, priv->context, 
-                                          tcp_passive_established_socket_recv_cb, (gpointer)socket, NULL, FALSE);
+                                          tcp_passive_established_socket_recv_cb, (gpointer)socket, NULL, FALSE,
+                                          priv->max_tcp_queue_size);
 }

@@ -40,8 +40,6 @@ libsocket_la_SOURCES = \
 	tcp-active.h \
 	tcp-passive.c \
 	tcp-passive.h \
-	tcp-so.c \
-	tcp-so.h \
 	tcp-established.c \
 	tcp-established.h
 

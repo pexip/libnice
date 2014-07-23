@@ -101,7 +101,8 @@ enum
   PROP_PROXY_PASSWORD,
   PROP_UPNP,
   PROP_UPNP_TIMEOUT,
-  PROP_RELIABLE
+  PROP_RELIABLE,
+  PROP_MAX_TCP_QUEUE_SIZE
 };
 
 
@@ -452,6 +453,15 @@ nice_agent_class_init (NiceAgentClass *klass)
         NICE_AGENT_MAX_CONNECTIVITY_CHECKS_DEFAULT,
         G_PARAM_READWRITE));
 
+  g_object_class_install_property (gobject_class, PROP_MAX_TCP_QUEUE_SIZE,
+      g_param_spec_uint (
+        "max-tcp-queue-size",
+        "Maximum number of packets that will be queued on a TCP connection",
+        "Maximum number of packets that will be queued on a TCP connection. 0 -> unlimited",
+        0, 0xffffffff,
+        NICE_AGENT_MAX_TCP_QUEUE_SIZE_DEFAULT,
+        G_PARAM_READWRITE));
+
   /**
    * NiceAgent:proxy-ip:
    *
@@ -780,6 +790,7 @@ nice_agent_init (NiceAgent *agent)
   agent->stun_server_port = DEFAULT_STUN_PORT;
   agent->controlling_mode = TRUE;
   agent->max_conn_checks = NICE_AGENT_MAX_CONNECTIVITY_CHECKS_DEFAULT;
+  agent->max_tcp_queue_size = NICE_AGENT_MAX_TCP_QUEUE_SIZE_DEFAULT;
 
   agent->discovery_list = NULL;
   agent->discovery_unsched_items = 0;
@@ -879,6 +890,10 @@ nice_agent_get_property (
     case PROP_MAX_CONNECTIVITY_CHECKS:
       g_value_set_uint (value, agent->max_conn_checks);
       /* XXX: should we prune the list of already existing checks? */
+      break;
+
+    case PROP_MAX_TCP_QUEUE_SIZE:
+      g_value_set_uint (value, agent->max_tcp_queue_size);
       break;
 
     case PROP_PROXY_IP:
@@ -993,6 +1008,10 @@ nice_agent_set_property (
 
     case PROP_MAX_CONNECTIVITY_CHECKS:
       agent->max_conn_checks = g_value_get_uint (value);
+      break;
+
+    case PROP_MAX_TCP_QUEUE_SIZE:
+      agent->max_tcp_queue_size = g_value_get_uint (value);
       break;
 
     case PROP_PROXY_IP:
@@ -2620,7 +2639,7 @@ nice_agent_send (
     gchar tmpbuf[INET6_ADDRSTRLEN];
     nice_address_to_string (&component->selected_pair.remote->addr, tmpbuf);
 
-    nice_debug ("Agent %p : s%d:%d: sending %d bytes to [%s]:%d", agent, stream_id, component_id,
+    nice_debug ("Agent %p %u/%u: sending %d bytes to [%s]:%d", agent, stream_id, component_id,
         len, tmpbuf,
         nice_address_get_port (&component->selected_pair.remote->addr));
 #endif

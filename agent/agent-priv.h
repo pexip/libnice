@@ -73,7 +73,7 @@
 #define NICE_AGENT_TIMER_TR_MIN     15000   /* timer Tr, msecs (ICE ID-19) */
 #define NICE_AGENT_MAX_CONNECTIVITY_CHECKS_DEFAULT 80 /* see spec 5.7.3 RFC 5245 and 3.1.4.8.2.1 of MS-ICE2. 
                                                          We use the lower of the two suggested limits */
-
+#define NICE_AGENT_MAX_TCP_QUEUE_SIZE_DEFAULT 100
 
 /* An upper limit to size of STUN packets handled (based on Ethernet
  * MTU and estimated typical sizes of ICE STUN packet */
@@ -95,6 +95,7 @@ struct _NiceAgent
   gboolean controlling_mode;      /* property: controlling-mode */
   guint timer_ta;                 /* property: timer Ta */
   guint max_conn_checks;          /* property: max connectivity checks */
+  guint max_tcp_queue_size;       /* property: max TCP transmit queue size */
 
   GSList *local_addresses;        /* list of NiceAddresses for local
 				     interfaces */

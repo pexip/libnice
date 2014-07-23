@@ -65,6 +65,7 @@ typedef struct {
   guint8              recv_buff[MAX_BUFFER_SIZE];
   guint               recv_offset;
   gboolean            connect_pending;
+  guint               max_tcp_queue_size;
 } TcpEstablishedPriv;
 
 struct to_be_sent {
@@ -93,7 +94,7 @@ NiceSocket *
 nice_tcp_established_socket_new (GSocket *gsock,
                                  NiceAddress *local_addr, const NiceAddress *remote_addr, GMainContext *ctx,
                                  SocketRecvCallback cb, gpointer userdata, GDestroyNotify destroy_notify,
-                                 gboolean connect_pending)
+                                 gboolean connect_pending, guint max_tcp_queue_size)
 {
   NiceSocket *sock;
   TcpEstablishedPriv *priv;
@@ -110,6 +111,7 @@ nice_tcp_established_socket_new (GSocket *gsock,
   priv->destroy_notify = destroy_notify;
   priv->recv_offset = 0;
   priv->connect_pending = connect_pending;
+  priv->max_tcp_queue_size = max_tcp_queue_size;
 
   sock->type = NICE_SOCKET_TYPE_TCP_ESTABLISHED;
   sock->fileno = gsock;
@@ -119,6 +121,14 @@ nice_tcp_established_socket_new (GSocket *gsock,
   sock->is_reliable = socket_is_reliable;
   sock->close = socket_close;
   sock->attach = socket_attach;
+
+  /*
+   * Reduce the tx queue size so the minimum number of packets
+   * are queued in the kernel
+   */
+  int fd = g_socket_get_fd (gsock);
+  int sendbuff = 2048;
+  setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sendbuff, sizeof(sendbuff));
 
   priv->read_source = g_socket_create_source(sock->fileno, G_IO_IN | G_IO_ERR, NULL);
   g_source_set_callback (priv->read_source, (GSourceFunc) socket_recv_more, sock, NULL);
@@ -270,8 +280,8 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
 
       return ret;
     } else {
-      nice_debug ("tcp-est %p: not connected to %s:%u, queueing. queue-size=%u, queue_is_empty=%d", sock, to_string, 
-                  nice_address_get_port (to), priv->send_queue.length, g_queue_is_empty (&priv->send_queue));
+      nice_debug ("tcp-est %p: not connected to %s:%u, queueing. queue-size=%u, queue_is_empty=%d max-tcp-queue-size=%d", sock, to_string, 
+                  nice_address_get_port (to), priv->send_queue.length, g_queue_is_empty (&priv->send_queue), priv->max_tcp_queue_size);
       add_to_be_sent (sock, buff, len, FALSE);
       return len;
     }
@@ -457,6 +467,27 @@ add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len, gboolean add_to_h
     return;
 
   agent_lock();
+
+  /*
+   * Check for queue overflow, we'll allow upto priv->max_tcp_queue_size+1 elements
+   * on the queue
+   */
+  if (!add_to_head && priv->max_tcp_queue_size != 0) {
+    while (g_queue_get_length (&priv->send_queue) > priv->max_tcp_queue_size) {
+      
+      /*
+       * We want to discard the oldest queued data which is at the front of the queue.
+       * However we need to be careful as the first element on the queue may be partially
+       * transmitted already, we'll discard the second element on the list instead
+       */
+      struct to_be_sent *pkt;
+      
+      nice_debug ("tcp-est %p: TCP queue size breached, discarding", sock);
+      pkt = g_queue_pop_nth (&priv->send_queue, 1);
+      g_assert (pkt != NULL);
+      free_to_be_sent (pkt);
+    }
+  }
 
   tbs = g_slice_new0 (struct to_be_sent);
   tbs->buf = g_memdup (buf, len);

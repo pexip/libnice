@@ -59,6 +59,7 @@ typedef struct {
   GDestroyNotify      destroy_notify;
   GSList             *established_sockets; /**< list of NiceSocket objs */
   GSList             *gsources;            /**< list of GSource objs */
+  guint               max_tcp_queue_size;
 } TcpActivePriv;
 
 static void socket_attach (NiceSocket* sock, GMainContext* ctx);
@@ -71,7 +72,7 @@ static gboolean socket_is_reliable (NiceSocket *sock);
 
 
 NiceSocket * nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr, 
-                                         SocketRecvCallback cb, gpointer userdata, GDestroyNotify destroy_notify)
+                                         SocketRecvCallback cb, gpointer userdata, GDestroyNotify destroy_notify, guint max_tcp_queue_size)
 {
   struct sockaddr_storage name;
   NiceAddress tmp_addr;
@@ -102,6 +103,7 @@ NiceSocket * nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr,
   priv->recv_cb = cb;
   priv->userdata = userdata;
   priv->destroy_notify = destroy_notify;
+  priv->max_tcp_queue_size = max_tcp_queue_size;
 
   sock->type = NICE_SOCKET_TYPE_TCP_ACTIVE;
   sock->addr = *addr;
@@ -312,5 +314,5 @@ nice_tcp_active_socket_connect (NiceSocket *socket, const NiceAddress *addr)
   return nice_tcp_established_socket_new (gsock,
                                           &local_addr, addr, active_priv->context, 
                                           tcp_active_established_socket_recv_cb, (gpointer)socket, NULL,
-                                          connect_pending);
+                                          connect_pending, active_priv->max_tcp_queue_size);
 }
