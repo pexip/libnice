@@ -2192,10 +2192,13 @@ static void priv_recalculate_pair_priorities (NiceAgent *agent)
 
   for (i = agent->streams; i; i = i->next) {
     Stream *stream = i->data;
+    priv_print_check_list (agent, stream, stream->conncheck_list, "Check list (before re-priorisation)");
     for (j = stream->conncheck_list; j; j = j->next) {
       CandidateCheckPair *p = j->data;
       p->priority = agent_candidate_pair_priority (agent, p->local, p->remote);
     }
+    priv_print_check_list (agent, stream, stream->conncheck_list, "Check list (after re-priorisation)");
+    g_assert (priv_conn_check_list_is_ordered (stream->conncheck_list));
   }
 }
 
