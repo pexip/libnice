@@ -1424,9 +1424,10 @@ static void priv_add_pair_to_valid_list (NiceAgent *agent, Stream *stream, Compo
 {
   GSList *i;
 
-  nice_debug ("Agent %p %u/%u: Adding pair %p(%s) local-transport:%s to the valid list",
+  nice_debug ("Agent %p %u/%u: Adding pair %p(%s) local-transport:%s to the valid list. pri=%" G_GUINT64_FORMAT,
               agent, stream->id, component->id,
-              valid_pair, valid_pair->foundation, candidate_transport_to_string (valid_pair->local->transport));
+              valid_pair, valid_pair->foundation, candidate_transport_to_string (valid_pair->local->transport),
+              valid_pair->priority);
   /*
    * Prevent elements appearing more than once (which can happen due to retransmissions)
    */
@@ -2141,9 +2142,9 @@ static int priv_store_pending_check (NiceAgent *agent, Stream *stream, Component
     icheck->username = g_memdup (username, username_len);
 
   nice_address_to_string (from, from_string);
-  nice_debug ("Agent %p %u/%u: Storing pending check from [%s]:%u use_cand=%d icheck=%p",
+  nice_debug ("Agent %p %u/%u: Storing pending check from [%s]:%u use_cand=%d priority=%d icheck=%p",
               agent, stream->id, component->id,
-              from_string, nice_address_get_port(from), use_candidate, icheck);
+              from_string, nice_address_get_port(from), use_candidate, icheck->priority, icheck);
 
   return 0;
 }

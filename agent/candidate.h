@@ -83,9 +83,15 @@ G_BEGIN_DECLS
  * priority that lync assigns to it's UDP relay candidates. The result
  * of this is that Lync -> MCU calls should prefer relayed-UDP paths to 
  * non-relayed TCP paths
+ *
+ * We assign TCP active candidates a higher priority in our SDP but that
+ * priority will never actually be used since the local type for a
+ * TCP active candidate will always be peer reflexive (since we connect
+ * from an ephemeral port). Therefore we assign higher priority to peer
+ * reflexive than to host to make ICE converge quicker when using TCP.
  */
-#define NICE_CANDIDATE_OC2007R2_TYPE_PREF_HOST_TCP               9
-#define NICE_CANDIDATE_OC2007R2_TYPE_PREF_PEER_REFLEXIVE_TCP     8
+#define NICE_CANDIDATE_OC2007R2_TYPE_PREF_HOST_TCP               8
+#define NICE_CANDIDATE_OC2007R2_TYPE_PREF_PEER_REFLEXIVE_TCP     9
 #define NICE_CANDIDATE_OC2007R2_TYPE_PREF_SERVER_REFLEXIVE_TCP   7
 #define NICE_CANDIDATE_OC2007R2_TYPE_PREF_RELAYED_TCP            0
 
