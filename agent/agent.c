@@ -1530,6 +1530,7 @@ priv_add_new_candidate_discovery_turn (NiceAgent *agent,
 
   cdisco = g_slice_new0 (CandidateDiscovery);
   cdisco->type = NICE_CANDIDATE_TYPE_RELAYED;
+  cdisco->transport = NICE_CANDIDATE_TRANSPORT_UDP;
 
   if (turn->type ==  NICE_RELAY_TYPE_TURN_UDP) {
     cdisco->nicesock = socket;
