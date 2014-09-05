@@ -2198,6 +2198,8 @@ static void priv_recalculate_pair_priorities (NiceAgent *agent)
       CandidateCheckPair *p = j->data;
       p->priority = agent_candidate_pair_priority (agent, p->local, p->remote);
     }
+    stream->conncheck_list = g_slist_sort(stream->conncheck_list, (GCompareFunc)conn_check_compare);
+    stream->valid_list = g_slist_sort(stream->valid_list, (GCompareFunc)conn_check_compare);
     priv_print_check_list (agent, stream, stream->conncheck_list, "Check list (after re-priorisation)");
     g_assert (priv_conn_check_list_is_ordered (stream->conncheck_list));
   }
