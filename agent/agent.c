@@ -1299,34 +1299,36 @@ void agent_gathering_done (NiceAgent *agent)
 
   for (i = agent->streams; i; i = i->next) {
     Stream *stream = i->data;
-    for (j = stream->components; j; j = j->next) {
-      Component *component = j->data;
-
-      for (k = component->local_candidates; k; k = k->next) {
-        NiceCandidate *local_candidate = k->data;
-        gchar tmpbuf[INET6_ADDRSTRLEN];
-        gchar tmpbuf2[INET6_ADDRSTRLEN];
-        nice_address_to_string (&local_candidate->addr, tmpbuf);
-        nice_address_to_string (&local_candidate->base_addr, tmpbuf2);
-        nice_debug ("Agent %p %u/%u: gathered local candidate : foundation:%s %s %s [%s]:%u [%s]:%u",
-                    agent, local_candidate->stream_id, local_candidate->component_id,
-                    local_candidate->foundation, 
-                    candidate_type_to_string (local_candidate->type),
-                    candidate_transport_to_string (local_candidate->transport),
-                    tmpbuf, nice_address_get_port (&local_candidate->addr),
-                    tmpbuf2, nice_address_get_port (&local_candidate->base_addr));
-
-        for (l = component->remote_candidates; l; l = l->next) {
-          NiceCandidate *remote_candidate = l->data;
-
-          for (m = stream->conncheck_list; m; m = m->next) {
-            CandidateCheckPair *p = m->data;
-
-            if (p->local == local_candidate && p->remote == remote_candidate)
-              break;
-          }
-          if (m == NULL) {
-            conn_check_add_for_candidate_pair (agent, stream->id, component, local_candidate, remote_candidate);
+    if (stream->gathering) {
+      for (j = stream->components; j; j = j->next) {
+        Component *component = j->data;
+        
+        for (k = component->local_candidates; k; k = k->next) {
+          NiceCandidate *local_candidate = k->data;
+          gchar tmpbuf[INET6_ADDRSTRLEN];
+          gchar tmpbuf2[INET6_ADDRSTRLEN];
+          nice_address_to_string (&local_candidate->addr, tmpbuf);
+          nice_address_to_string (&local_candidate->base_addr, tmpbuf2);
+          nice_debug ("Agent %p %u/%u: gathered local candidate : foundation:%s %s %s [%s]:%u [%s]:%u",
+                      agent, local_candidate->stream_id, local_candidate->component_id,
+                      local_candidate->foundation, 
+                      candidate_type_to_string (local_candidate->type),
+                      candidate_transport_to_string (local_candidate->transport),
+                      tmpbuf, nice_address_get_port (&local_candidate->addr),
+                      tmpbuf2, nice_address_get_port (&local_candidate->base_addr));
+          
+          for (l = component->remote_candidates; l; l = l->next) {
+            NiceCandidate *remote_candidate = l->data;
+            
+            for (m = stream->conncheck_list; m; m = m->next) {
+              CandidateCheckPair *p = m->data;
+              
+              if (p->local == local_candidate && p->remote == remote_candidate)
+                break;
+            }
+            if (m == NULL) {
+              conn_check_add_for_candidate_pair (agent, stream->id, component, local_candidate, remote_candidate);
+            }
           }
         }
       }
