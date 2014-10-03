@@ -60,7 +60,7 @@ G_BEGIN_DECLS
   (nice_candidate_get_type ())
 
 /*
- * As per RFC 6544 section 4.2 adjust type preference so that UDP 
+ * As per RFC 6544 section 4.2 adjust type preference so that UDP
  * is always preferred to any TCP candidate
  */
 #define NICE_CANDIDATE_TYPE_PREF_HOST                 120
@@ -79,9 +79,9 @@ G_BEGIN_DECLS
 #define NICE_CANDIDATE_OC2007R2_TYPE_PREF_RELAYED              110
 
 /*
- * These are set deliberately low so that they are out ranked by the 
+ * These are set deliberately low so that they are out ranked by the
  * priority that lync assigns to it's UDP relay candidates. The result
- * of this is that Lync -> MCU calls should prefer relayed-UDP paths to 
+ * of this is that Lync -> MCU calls should prefer relayed-UDP paths to
  * non-relayed TCP paths
  *
  * We assign TCP active candidates a higher priority in our SDP but that
@@ -132,9 +132,9 @@ typedef enum
  */
 typedef enum
 {
-  NICE_CANDIDATE_TRANSPORT_UDP,
-  NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE,
-  NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE
+  NICE_CANDIDATE_TRANSPORT_UDP = 1,
+  NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE = 2,
+  NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE = 4
 } NiceCandidateTransport;
 
 /**
