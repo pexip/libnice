@@ -80,6 +80,7 @@
 
 (define-function nice_agent_new
   (c-name "nice_agent_new")
+  (unblock-threads t)
   (is-constructor-of "NiceAgent")
   (return-type "NiceAgent*")
   (parameters
