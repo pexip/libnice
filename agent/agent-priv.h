@@ -96,6 +96,8 @@ struct _NiceAgent
   guint timer_ta;                 /* property: timer Ta */
   guint max_conn_checks;          /* property: max connectivity checks */
   guint max_tcp_queue_size;       /* property: max TCP transmit queue size */
+  guint conncheck_timeout;        /* property: initial retransmission interval for connectivity checks */
+  guint conncheck_retransmissions; /* property: maximum number of retransmissions for connectivity checks */
 
   GSList *local_addresses;        /* list of NiceAddresses for local
 				     interfaces */

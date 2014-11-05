@@ -102,7 +102,9 @@ enum
   PROP_UPNP,
   PROP_UPNP_TIMEOUT,
   PROP_RELIABLE,
-  PROP_MAX_TCP_QUEUE_SIZE
+  PROP_MAX_TCP_QUEUE_SIZE,
+  PROP_CONNCHECK_TIMEOUT,
+  PROP_CONNCHECK_RETRANSMISSIONS
 };
 
 
@@ -601,6 +603,24 @@ nice_agent_class_init (NiceAgentClass *klass)
 	FALSE,
         G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
 
+  g_object_class_install_property (gobject_class, PROP_CONNCHECK_TIMEOUT,
+      g_param_spec_uint (
+        "connectivity-check-timeout",
+        "Initial timeout for connectivity check (ms)",
+        "Initial timeout for connectivity checks (ms). Each subsequent retransmission will double the timeout",
+        1, 0xffffffff,
+        STUN_TIMER_DEFAULT_TIMEOUT,
+        G_PARAM_READWRITE));
+
+  g_object_class_install_property (gobject_class, PROP_CONNCHECK_RETRANSMISSIONS,
+      g_param_spec_uint (
+        "connectivity-check-retransmissions",
+        "Maximum restransmissions for a connectivity check",
+        "Maximum restransmissions for a connectivity check",
+        1, 0xffffffff,
+        STUN_TIMER_DEFAULT_MAX_RETRANSMISSIONS,
+        G_PARAM_READWRITE));
+
   /* install signals */
 
   /**
@@ -791,6 +811,8 @@ nice_agent_init (NiceAgent *agent)
   agent->controlling_mode = TRUE;
   agent->max_conn_checks = NICE_AGENT_MAX_CONNECTIVITY_CHECKS_DEFAULT;
   agent->max_tcp_queue_size = NICE_AGENT_MAX_TCP_QUEUE_SIZE_DEFAULT;
+  agent->conncheck_timeout = STUN_TIMER_DEFAULT_TIMEOUT;
+  agent->conncheck_retransmissions = STUN_TIMER_DEFAULT_MAX_RETRANSMISSIONS;
 
   agent->discovery_list = NULL;
   agent->discovery_unsched_items = 0;
@@ -885,6 +907,14 @@ nice_agent_get_property (
 
     case PROP_STUN_PACING_TIMER:
       g_value_set_uint (value, agent->timer_ta);
+      break;
+
+    case PROP_CONNCHECK_TIMEOUT:
+      g_value_set_uint (value, agent->conncheck_timeout);
+      break;
+
+    case PROP_CONNCHECK_RETRANSMISSIONS:
+      g_value_set_uint (value, agent->conncheck_retransmissions);
       break;
 
     case PROP_MAX_CONNECTIVITY_CHECKS:
@@ -1008,6 +1038,14 @@ nice_agent_set_property (
 
     case PROP_MAX_CONNECTIVITY_CHECKS:
       agent->max_conn_checks = g_value_get_uint (value);
+      break;
+
+    case PROP_CONNCHECK_TIMEOUT:
+      agent->conncheck_timeout = g_value_get_uint (value);
+      break;
+
+    case PROP_CONNCHECK_RETRANSMISSIONS:
+      agent->conncheck_retransmissions = g_value_get_uint (value);
       break;
 
     case PROP_MAX_TCP_QUEUE_SIZE:

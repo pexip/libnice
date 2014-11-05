@@ -1838,8 +1838,7 @@ int conn_check_send (NiceAgent *agent, CandidateCheckPair *pair)
                                                   agent_to_ice_compatibility (agent));
 
     if (buffer_len > 0) {
-      stun_timer_start (&pair->timer, STUN_TIMER_DEFAULT_TIMEOUT,
-                        STUN_TIMER_DEFAULT_MAX_RETRANSMISSIONS);
+      stun_timer_start (&pair->timer, agent->conncheck_timeout, agent->conncheck_retransmissions);
 
       nice_debug ("Agent %p %u/%u: Sending conncheck msg len=%u to %s",
                   agent, pair->stream_id, pair->component_id, buffer_len, tmpbuf);
@@ -2009,8 +2008,7 @@ static gboolean priv_schedule_triggered_check (NiceAgent *agent, Stream *stream,
                     "restarting the timer again?: %s ..", agent,
                     p->timer_restarted ? "no" : "yes");
         if (!p->timer_restarted) {
-          stun_timer_start (&p->timer, STUN_TIMER_DEFAULT_TIMEOUT,
-                            STUN_TIMER_DEFAULT_MAX_RETRANSMISSIONS);
+          stun_timer_start (&p->timer, agent->conncheck_timeout, agent->conncheck_retransmissions);
           p->timer_restarted = TRUE;
         }
       }
