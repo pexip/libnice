@@ -69,6 +69,7 @@ static gint socket_recv (NiceSocket *sock, NiceAddress *from,
 static gint socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf);
 static gboolean socket_is_reliable (NiceSocket *sock);
+static int socket_get_tx_queue_size (NiceSocket *sock);
 
 
 NiceSocket * nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr, 
@@ -113,7 +114,7 @@ NiceSocket * nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr,
   sock->is_reliable = socket_is_reliable;
   sock->close = socket_close;
   sock->attach = socket_attach;
-
+  sock->get_tx_queue_size = socket_get_tx_queue_size;
   return sock;
 }
 
@@ -315,4 +316,20 @@ nice_tcp_active_socket_connect (NiceSocket *socket, const NiceAddress *addr)
                                           &local_addr, addr, active_priv->context, 
                                           tcp_active_established_socket_recv_cb, (gpointer)socket, NULL,
                                           connect_pending, active_priv->max_tcp_queue_size);
+}
+
+
+static int socket_get_tx_queue_size (NiceSocket *sock)
+{
+  TcpActivePriv *priv = sock->priv;
+  GSList *i;
+  int ret = 0;
+
+  for (i = priv->established_sockets; i; i = i->next) {
+    NiceSocket *socket = i->data;
+    gint queue_len = nice_socket_get_tx_queue_size (socket);
+    if (queue_len > ret)
+      ret = queue_len;
+  }
+  return ret;
 }

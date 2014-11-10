@@ -754,6 +754,23 @@ void nice_agent_set_stream_tos (
  */
 void nice_agent_set_software (NiceAgent *agent, const gchar *software);
 
+/**
+ * nice_agent_get_tx_queue_size:
+ * @agent: The #NiceAgent Object
+ * @stream_id: The ID of the stream
+ * @component_id: The ID of the component
+ *
+ * Returns the current number of bytes queued for transmission on the given
+ * stream/component. Only really makes sense for streams using TCP media, for
+ * streams using UDP will always return 0. 
+ *
+ */
+gint
+nice_agent_get_tx_queue_size (
+  NiceAgent *agent,
+  guint stream_id,
+  guint component_id);
+
 G_END_DECLS
 
 #endif /* _AGENT_H */

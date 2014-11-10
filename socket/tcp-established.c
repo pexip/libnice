@@ -66,6 +66,7 @@ typedef struct {
   guint               recv_offset;
   gboolean            connect_pending;
   guint               max_tcp_queue_size;
+  gint                tx_queue_size_bytes;
 } TcpEstablishedPriv;
 
 struct to_be_sent {
@@ -88,7 +89,7 @@ static gboolean socket_send_more (GSocket *gsocket, GIOCondition condition,
                                   gpointer data);
 static gboolean socket_recv_more (GSocket *gsocket, GIOCondition condition,
                                   gpointer data);
-
+static int socket_get_tx_queue_size (NiceSocket *sock);
 
 NiceSocket *
 nice_tcp_established_socket_new (GSocket *gsock,
@@ -121,6 +122,7 @@ nice_tcp_established_socket_new (GSocket *gsock,
   sock->is_reliable = socket_is_reliable;
   sock->close = socket_close;
   sock->attach = socket_attach;
+  sock->get_tx_queue_size = socket_get_tx_queue_size;
 
   /*
    * Reduce the tx queue size so the minimum number of packets
@@ -410,6 +412,8 @@ socket_send_more (
 
   while ((tbs = g_queue_pop_head (&priv->send_queue)) != NULL) {
     int ret;
+    
+    priv->tx_queue_size_bytes -= tbs->length;
 
     if(condition & G_IO_HUP) {
       /* connection hangs up */
@@ -484,7 +488,7 @@ add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len, gboolean add_to_h
       
       nice_debug ("tcp-est %p: TCP queue size breached, discarding", sock);
       pkt = g_queue_pop_nth (&priv->send_queue, 1);
-      g_assert (pkt != NULL);
+      priv->tx_queue_size_bytes -= pkt->length;
       free_to_be_sent (pkt);
     }
   }
@@ -498,6 +502,7 @@ add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len, gboolean add_to_h
   } else {
     g_queue_push_tail (&priv->send_queue, tbs);
   }
+  priv->tx_queue_size_bytes += tbs->length;
 
   if (priv->write_source == NULL) {
     priv->write_source = g_socket_create_source(sock->fileno, G_IO_OUT, NULL);
@@ -513,4 +518,11 @@ free_to_be_sent (struct to_be_sent *tbs)
 {
   g_free (tbs->buf);
   g_slice_free (struct to_be_sent, tbs);
+}
+
+static int socket_get_tx_queue_size (NiceSocket *sock)
+{
+  TcpEstablishedPriv *priv = sock->priv;
+
+  return priv->tx_queue_size_bytes;
 }

@@ -3290,3 +3290,31 @@ void nice_agent_set_software (NiceAgent *agent, const gchar *software)
 
   agent_unlock ();
 }
+
+NICEAPI_EXPORT gint
+nice_agent_get_tx_queue_size (
+  NiceAgent *agent,
+  guint stream_id,
+  guint component_id)
+{
+  Stream *stream;
+  Component *component;
+  gint ret = 0;
+
+  agent_lock();
+
+  if (!agent_find_component (agent, stream_id, component_id,
+          &stream, &component)) {
+    goto done;
+  }
+
+  if (component->selected_pair.local != NULL) {
+    NiceSocket *sock = component->selected_pair.local->sockptr;
+
+    ret = nice_socket_get_tx_queue_size (sock);
+  }
+
+ done:
+  agent_unlock();
+  return ret;
+}

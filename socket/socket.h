@@ -78,7 +78,8 @@ struct _NiceSocket
       const gchar *buf);
   gboolean (*is_reliable) (NiceSocket *sock);
   void (*close) (NiceSocket *sock);
-    void (*attach) (NiceSocket *sock, GMainContext* ctx);
+  void (*attach) (NiceSocket *sock, GMainContext* ctx);
+  int (*get_tx_queue_size) (NiceSocket *sock);
 
   void *priv;
 };
@@ -98,6 +99,9 @@ nice_socket_is_reliable (NiceSocket *sock);
 
 void
 nice_socket_attach (NiceSocket *sock, GMainContext* ctx);
+
+gint
+nice_socket_get_tx_queue_size (NiceSocket *sock);
 
 void
 nice_socket_free (NiceSocket *sock);

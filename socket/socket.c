@@ -56,6 +56,18 @@ nice_socket_send (NiceSocket *sock, const NiceAddress *to,
   return sock->send (sock, to, len, buf);
 }
 
+gint
+nice_socket_get_tx_queue_size (NiceSocket *sock)
+{
+  int ret = 0;
+
+  if (sock->get_tx_queue_size != NULL) {
+    ret = sock->get_tx_queue_size (sock);
+  }
+  
+  return ret;
+}
+
 gboolean
 nice_socket_is_reliable (NiceSocket *sock)
 {

@@ -71,7 +71,7 @@ static gint socket_send (NiceSocket *sock, const NiceAddress *to,
 static gint socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf);
 static gboolean socket_is_reliable (NiceSocket *sock);
 static void tcp_passive_established_socket_recv_cb (NiceSocket* socket, NiceAddress* from, gchar* buf, gint len, gpointer *userdata);
-
+static int socket_get_tx_queue_size (NiceSocket *sock);
 
 NiceSocket *
 nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr, SocketRecvCallback cb, gpointer userdata, GDestroyNotify destroy_notify, guint max_tcp_queue_size)
@@ -157,6 +157,8 @@ nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr, SocketRecvCal
   sock->is_reliable = socket_is_reliable;
   sock->close = socket_close;
   sock->attach = socket_attach;
+  sock->get_tx_queue_size = socket_get_tx_queue_size;
+
   return sock;
 }
 
@@ -299,3 +301,19 @@ nice_tcp_passive_socket_accept (NiceSocket *socket)
                                           tcp_passive_established_socket_recv_cb, (gpointer)socket, NULL, FALSE,
                                           priv->max_tcp_queue_size);
 }
+
+static int socket_get_tx_queue_size (NiceSocket *sock)
+{
+  TcpPassivePriv *priv = sock->priv;
+  GSList *i;
+  int ret = 0;
+
+  for (i = priv->established_sockets; i; i = i->next) {
+    NiceSocket *socket = i->data;
+    gint queue_len = nice_socket_get_tx_queue_size (socket);
+    if (queue_len > ret)
+      ret = queue_len;
+  }
+  return ret;
+}
+
