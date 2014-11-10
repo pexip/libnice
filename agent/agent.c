@@ -104,7 +104,9 @@ enum
   PROP_RELIABLE,
   PROP_MAX_TCP_QUEUE_SIZE,
   PROP_CONNCHECK_TIMEOUT,
-  PROP_CONNCHECK_RETRANSMISSIONS
+  PROP_CONNCHECK_RETRANSMISSIONS,
+  PROP_AGGRESSIVE_MODE,
+  PROP_REGULAR_NOMINATION_TIMEOUT
 };
 
 
@@ -621,6 +623,23 @@ nice_agent_class_init (NiceAgentClass *klass)
         STUN_TIMER_DEFAULT_MAX_RETRANSMISSIONS,
         G_PARAM_READWRITE));
 
+  g_object_class_install_property (gobject_class, PROP_AGGRESSIVE_MODE,
+      g_param_spec_boolean (
+        "aggressive-mode",
+        "Use aggressive nomination when controller",
+        "Use aggressive nomination when controller",
+        TRUE,
+        G_PARAM_READWRITE));
+
+  g_object_class_install_property (gobject_class, PROP_REGULAR_NOMINATION_TIMEOUT,
+      g_param_spec_uint (
+        "regular-nomination-timeout",
+        "Timeout (in ms) before regular nomination will select non-optimal media path",
+        "Timeout (in ms) before regular nomination will select non-optimal media path",
+        1, 0xffffffff,
+        NICE_AGENT_REGULAR_NOMINATION_TIMEOUT_DEFAULT,  /* Not construct time so ignored */
+        G_PARAM_READWRITE));
+
   /* install signals */
 
   /**
@@ -813,6 +832,8 @@ nice_agent_init (NiceAgent *agent)
   agent->max_tcp_queue_size = NICE_AGENT_MAX_TCP_QUEUE_SIZE_DEFAULT;
   agent->conncheck_timeout = STUN_TIMER_DEFAULT_TIMEOUT;
   agent->conncheck_retransmissions = STUN_TIMER_DEFAULT_MAX_RETRANSMISSIONS;
+  agent->aggressive_mode = TRUE;
+  agent->regular_nomination_timeout = NICE_AGENT_REGULAR_NOMINATION_TIMEOUT_DEFAULT;
 
   agent->discovery_list = NULL;
   agent->discovery_unsched_items = 0;
@@ -915,6 +936,14 @@ nice_agent_get_property (
 
     case PROP_CONNCHECK_RETRANSMISSIONS:
       g_value_set_uint (value, agent->conncheck_retransmissions);
+      break;
+      
+    case PROP_AGGRESSIVE_MODE:
+      g_value_set_boolean (value, agent->aggressive_mode);
+      break;
+
+    case PROP_REGULAR_NOMINATION_TIMEOUT:
+      g_value_set_uint (value, agent->regular_nomination_timeout);
       break;
 
     case PROP_MAX_CONNECTIVITY_CHECKS:
@@ -1034,6 +1063,14 @@ nice_agent_set_property (
 
     case PROP_STUN_PACING_TIMER:
       agent->timer_ta = g_value_get_uint (value);
+      break;
+
+    case PROP_AGGRESSIVE_MODE:
+      agent->aggressive_mode = g_value_get_boolean (value);
+      break;
+
+    case PROP_REGULAR_NOMINATION_TIMEOUT:
+      agent->regular_nomination_timeout = g_value_get_uint (value);
       break;
 
     case PROP_MAX_CONNECTIVITY_CHECKS:

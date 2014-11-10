@@ -87,6 +87,34 @@ static const char* priv_state_to_string(NiceCheckState state)
   return "(invalid)";
 }
 
+static void priv_print_check_pair (NiceAgent* agent, Stream* stream, CandidateCheckPair* p)
+{
+  gchar* lcand_str;
+  gchar* rcand_str;
+  gchar  addr_str[NICE_ADDRESS_STRING_LEN];
+  
+  nice_address_to_string (&p->local->addr, addr_str);
+  lcand_str = g_strdup_printf ("%s %s:%u/%s", candidate_type_to_string (p->local->type),
+                               addr_str, nice_address_get_port (&p->local->addr),
+                               candidate_transport_to_string (p->local->transport));
+  
+  nice_address_to_string (&p->remote->addr, addr_str);
+  rcand_str = g_strdup_printf ("%s %s:%u/%s", candidate_type_to_string (p->remote->type),
+                               addr_str, nice_address_get_port (&p->remote->addr),
+                               candidate_transport_to_string (p->remote->transport));
+  
+  
+  nice_debug ("Agent %p %u/%u:   %s %s -> %s %s nom=%s",
+              agent, stream->id, p->component_id,
+              p->foundation,
+              lcand_str, rcand_str,
+              priv_state_to_string (p->state),
+              p->nominated ? "YES" : "NO");
+  
+  g_free (lcand_str);
+  g_free (rcand_str);
+}
+
 static void priv_print_check_list (NiceAgent* agent, Stream* stream, GSList* list, const char *name)
 {
   GSList *i;
@@ -95,30 +123,7 @@ static void priv_print_check_list (NiceAgent* agent, Stream* stream, GSList* lis
   if (list) {
     for (i = list; i ; i = i->next) {
       CandidateCheckPair *p = i->data;
-      gchar* lcand_str;
-      gchar* rcand_str;
-      gchar  addr_str[NICE_ADDRESS_STRING_LEN];
-
-      nice_address_to_string (&p->local->addr, addr_str);
-      lcand_str = g_strdup_printf ("%s %s:%u/%s", candidate_type_to_string (p->local->type),
-                                   addr_str, nice_address_get_port (&p->local->addr),
-                                   candidate_transport_to_string (p->local->transport));
-      
-      nice_address_to_string (&p->remote->addr, addr_str);
-      rcand_str = g_strdup_printf ("%s %s:%u/%s", candidate_type_to_string (p->remote->type),
-                                   addr_str, nice_address_get_port (&p->remote->addr),
-                                   candidate_transport_to_string (p->remote->transport));
-      
-
-      nice_debug ("Agent %p %u/%u:   %s %s -> %s %s nom=%s",
-                  agent, stream->id, p->component_id,
-                  p->foundation,
-                  lcand_str, rcand_str,
-                  priv_state_to_string (p->state),
-                  p->nominated ? "YES" : "NO");
-
-      g_free (lcand_str);
-      g_free (rcand_str);
+      priv_print_check_pair (agent, stream, p);
     }
   } else {
     nice_debug ("Agent %p %u/*:   *empty*",
@@ -639,6 +644,169 @@ static void priv_tick_in_progress_check (NiceAgent* agent, Stream* stream, Candi
   }
 }
 
+static gboolean is_microsoft_tcp_pair (NiceAgent *agent, CandidateCheckPair *p)
+{
+  return (agent->compatibility == NICE_COMPATIBILITY_OC2007R2) && 
+    (p->local->transport == NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE ||
+     p->local->transport == NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE);
+     
+}
+
+static CandidateCheckPair* priv_find_pair_with_matching_foundation (NiceAgent* agent, Stream* stream, CandidateCheckPair* p, guint component_id)
+{
+  (void)agent;
+  GSList* i;
+
+  for (i = stream->conncheck_list; i; i = g_slist_next (i)) {
+    CandidateCheckPair *p1 = i->data;
+    if ( p1->component_id == component_id &&
+         strcmp (p->foundation, p1->foundation) == 0 ) {
+      return p1;
+    }
+  }
+  return NULL;
+}
+
+static gboolean priv_attempt_to_nominate_pair (NiceAgent *agent, Stream *stream, CandidateCheckPair* rtp_pair)
+{
+  if (rtp_pair->component_id == NICE_COMPONENT_TYPE_RTP && rtp_pair->state == NICE_CHECK_SUCCEEDED) {
+
+    if (is_microsoft_tcp_pair (agent, rtp_pair) || stream->n_components < 2) {
+      /* 
+       *  For Microsoft TCP streams we may not have an RTCP pair (as rtcp-mux will always be enabled). In this
+       *  case just go ahead and nominate the RTP pair
+       */
+      rtp_pair->nominated = TRUE;
+      nice_debug ("Agent %p %u/*: Microsoft TCP pair, nominating without RTCP", agent, stream->id);
+      priv_print_check_pair (agent, stream, rtp_pair);
+      priv_conn_check_initiate (agent, rtp_pair);
+      return TRUE;
+
+    } else {
+      CandidateCheckPair *rtcp_pair = priv_find_pair_with_matching_foundation(agent, stream, rtp_pair, NICE_COMPONENT_TYPE_RTCP);
+
+      if (rtcp_pair != NULL && rtcp_pair->state == NICE_CHECK_SUCCEEDED) {
+        rtp_pair->nominated = TRUE;
+        rtcp_pair->nominated = TRUE;
+        nice_debug ("Agent %p %u/*: Have matching RTP & RTCP succeeded pairs, nominating...", agent, stream->id);
+        priv_print_check_pair (agent, stream, rtp_pair);
+        priv_print_check_pair (agent, stream, rtcp_pair);
+        priv_conn_check_initiate (agent, rtp_pair);
+        priv_conn_check_initiate (agent, rtcp_pair);
+        return TRUE;
+      }
+      
+    }
+  }
+  return FALSE;
+}
+
+static void priv_nominate_any_successful_pair (NiceAgent *agent, Stream *stream)
+{
+  /* 
+   * Find the higher priority succeeded pair for RTP that has a matching succeeded pair for
+   * RTCP (or doesn't need one e.g. TCP pairs in Microsoft mode
+   */
+  GSList* i;
+
+  for (i = stream->conncheck_list; i; i = g_slist_next (i)) {
+    CandidateCheckPair *rtp_pair = i->data;
+    if (priv_attempt_to_nominate_pair (agent, stream, rtp_pair)) {
+      break;
+    }
+  }
+}
+
+static void priv_nominate_highest_priority_successful_pair (NiceAgent* agent, Stream *stream)
+{
+  GSList* i = stream->conncheck_list;
+  GSList* j = NULL;
+
+  for (i = stream->conncheck_list; i; i = g_slist_next (i)) {
+    CandidateCheckPair *rtp_pair = stream->conncheck_list->data;
+    if (rtp_pair->component_id == NICE_COMPONENT_TYPE_RTP) {
+      if (!priv_attempt_to_nominate_pair (agent, stream, rtp_pair) && 
+          rtp_pair->local->transport == NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE) {
+        /* 
+         * if the highest priority is TCP active and we have a TCP passive with the same 
+         * local and remote candidate types that has succeeded then use that instead (as the media
+         * path generated is the same)
+         */
+        nice_debug ("Agent %p %u/*: Regular nomination, highest priority is TCP active...",
+                    agent, stream->id);
+        priv_print_check_pair (agent, stream, rtp_pair);
+
+        for(j = g_slist_next(i); j; j = g_slist_next(j)) {
+          CandidateCheckPair *p = j->data;
+
+          if (p->component_id == rtp_pair->component_id &&
+              p->local->transport == NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE &&
+              p->local->type == rtp_pair->local->type &&
+              p->remote->type == NICE_CANDIDATE_TYPE_PEER_REFLEXIVE) {
+            nice_debug ("Agent %p %u/*: Regular nomination, highest priority is TCP active, attempting to nominate highest priority TCP passive",
+                        agent, stream->id);
+            priv_print_check_pair (agent, stream, p);
+            priv_attempt_to_nominate_pair (agent, stream, p);
+            break;
+          }
+        }
+      }
+      break;
+    }
+  }
+}
+
+static gboolean priv_check_for_regular_nomination (NiceAgent* agent, Stream *stream, GTimeVal *now)
+{
+  guint   succeeded = 0, nominated = 0;
+  GSList  *i;
+
+  if (!agent->controlling_mode || agent->aggressive_mode) {
+    return FALSE;
+  }
+
+  /*
+   * Get counts of succedded and nominated pairs on the valid list for the first component
+   */
+  for (i = stream->conncheck_list; i; i = i->next) {
+    CandidateCheckPair *p = i->data;
+    if (p->component_id == NICE_COMPONENT_TYPE_RTP &&
+        p->state == NICE_CHECK_SUCCEEDED) {
+      ++succeeded;
+      if (p->nominated == TRUE) {
+        ++nominated;
+      }
+    }
+  }
+
+  if (nominated > 0) {
+    /* We've already nominated pairs, nothing to do */
+    nice_debug ("Agent %p %u/*: Checking for regular nomination, already nominated (succeeded=%u nominated=%u)",
+                agent, stream->id, succeeded, nominated);
+    return FALSE;
+  }
+  
+  if (succeeded == 0) {
+    /* Can't nominate if nothing succeeded */
+    nice_debug ("Agent %p %u/*: Checking for regular nomination, nothing succeeded (succeeded=%u nominated=%u)",
+                agent, stream->id, succeeded, nominated);
+    return FALSE;
+  }
+
+  if (stream->tick_counter * agent->timer_ta > agent->regular_nomination_timeout) {
+    nice_debug ("Agent %p %u/*: Checking for regular nomination succeeded=%u nominated=%u",
+                agent, stream->id, succeeded, nominated);
+    priv_nominate_any_successful_pair (agent, stream);
+  } else {
+    /* Only nominate if the highest priority pair has succeeded */
+    nice_debug ("Agent %p %u/*: Checking if highest priority pair has succeeded succeeded=%u nominated=%u",
+                agent, stream->id, succeeded, nominated);
+    priv_nominate_highest_priority_successful_pair (agent, stream);
+  }
+
+  return TRUE;
+}
+
 /*
  * Helper function for connectivity check timer callback that
  * runs through the stream specific part of the state machine.
@@ -649,6 +817,8 @@ static gboolean priv_conn_check_tick_stream (Stream *stream, NiceAgent *agent, G
 {
   gboolean keep_timer_going = FALSE;
   GSList *i;
+
+  keep_timer_going = priv_check_for_regular_nomination(agent, stream, now);
 
   for (i = stream->conncheck_list; i ; i = i->next) {
     CandidateCheckPair *p = i->data;
@@ -1553,6 +1723,7 @@ gboolean conn_check_add_for_candidate_pair (NiceAgent *agent, guint stream_id, C
     return FALSE;
   }
 
+
   /*
    * note: match pairs only if transport and address family are the same
    * 
@@ -1818,7 +1989,7 @@ int conn_check_send (NiceAgent *agent, CandidateCheckPair *pair)
 
   nice_address_to_string (&pair->remote->addr, tmpbuf);
 
-  if (cand_use)
+  if (cand_use && agent->aggressive_mode)
     pair->nominated = controlling;
 
   nice_address_to_string (&pair->remote->addr, tmpbuf);
@@ -1868,18 +2039,66 @@ int conn_check_send (NiceAgent *agent, CandidateCheckPair *pair)
 }
 
 /*
- * Implemented the pruning steps described in ICE sect 8.1.2
- * "Updating States" (ID-19) after a pair has been nominated.
- *
- * @see priv_update_check_list_state_failed_components()
+ * Equivalent of priv_prune_pending_checks but with different logic to handle when
+ * we are controller and running in regular nomination mode
  */
-static guint priv_prune_pending_checks (NiceAgent *agent, Stream *stream, guint component_id)
+static guint priv_prune_pending_checks_regular_nomination (NiceAgent *agent, Stream *stream, guint component_id)
+{
+  GSList *i;
+  guint in_progress = 0;
+
+  nice_debug ("Agent %p %u/%u: Pruning pending checks.",
+              agent, stream->id, component_id);
+
+  /* step: cancel all FROZEN and WAITING pairs for the component */
+  for (i = stream->conncheck_list; i; i = i->next) {
+    CandidateCheckPair *p = i->data;
+    if (p->component_id == component_id) {
+
+      switch (p->state) {
+      case NICE_CHECK_WAITING:
+      case NICE_CHECK_FROZEN:
+        priv_set_pair_state (agent, p, NICE_CHECK_CANCELLED);
+        break;
+        
+      case NICE_CHECK_IN_PROGRESS:
+        /*
+         * The nominated pairs go back to the IN_PROGRESS state whilst waiting for the
+         * remote party to respond. Any other in progress checks can be cancelled though
+         */
+        if (!p->nominated) {
+          p->stun_message.buffer = NULL;
+          p->stun_message.buffer_len = 0;
+          priv_set_pair_state (agent, p, NICE_CHECK_CANCELLED);
+        } else {
+          /* We must keep the higher priority pairs running because if a udp
+           * packet was lost, we might end up using a bad candidate */
+          nice_debug ("Agent %p %u/%u: pair %p(%s) kept IN_PROGRESS because it's a nominated pair",
+                      agent, stream->id, component_id, p, p->foundation);
+          in_progress++;
+        }
+        break;
+
+      case NICE_CHECK_SUCCEEDED:
+      case NICE_CHECK_FAILED:
+      case NICE_CHECK_CANCELLED:
+        /* Do nothing */
+        break;
+      }
+    }
+  }
+  
+  return in_progress;
+}
+
+static guint priv_prune_pending_checks_aggressive_or_controlled (NiceAgent *agent, Stream *stream, guint component_id)
 {
   GSList *i;
   guint64 highest_nominated_priority = 0;
   guint in_progress = 0;
   CandidateCheckPair *highest_nominated_pair = NULL;
   gboolean prune_all_checks = FALSE;
+
 
   for (i = stream->valid_list; i; i = i->next) {
     CandidateCheckPair *p = i->data;
@@ -1944,7 +2163,7 @@ static guint priv_prune_pending_checks (NiceAgent *agent, Stream *stream, guint 
                         p->priority, highest_nominated_pair->foundation,
                         highest_nominated_priority);
             in_progress++;
-          }         
+          }
         }
       }
 
@@ -1969,6 +2188,21 @@ static guint priv_prune_pending_checks (NiceAgent *agent, Stream *stream, guint 
   }
 
   return in_progress;
+}
+
+/*
+ * Implemented the pruning steps described in ICE sect 8.1.2
+ * "Updating States" (ID-19) after a pair has been nominated.
+ *
+ * @see priv_update_check_list_state_failed_components()
+ */
+static guint priv_prune_pending_checks (NiceAgent *agent, Stream *stream, guint component_id)
+{
+  if (agent->controlling_mode && !agent->aggressive_mode) {
+    return priv_prune_pending_checks_regular_nomination (agent, stream, component_id);
+  } else {
+    return priv_prune_pending_checks_aggressive_or_controlled (agent, stream, component_id);
+  }
 }
 
 /*

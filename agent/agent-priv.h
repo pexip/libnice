@@ -74,6 +74,7 @@
 #define NICE_AGENT_MAX_CONNECTIVITY_CHECKS_DEFAULT 80 /* see spec 5.7.3 RFC 5245 and 3.1.4.8.2.1 of MS-ICE2. 
                                                          We use the lower of the two suggested limits */
 #define NICE_AGENT_MAX_TCP_QUEUE_SIZE_DEFAULT 100
+#define NICE_AGENT_REGULAR_NOMINATION_TIMEOUT_DEFAULT 3000
 
 /* An upper limit to size of STUN packets handled (based on Ethernet
  * MTU and estimated typical sizes of ICE STUN packet */
@@ -98,6 +99,8 @@ struct _NiceAgent
   guint max_tcp_queue_size;       /* property: max TCP transmit queue size */
   guint conncheck_timeout;        /* property: initial retransmission interval for connectivity checks */
   guint conncheck_retransmissions; /* property: maximum number of retransmissions for connectivity checks */
+  gboolean aggressive_mode;        /* property: use aggressive nomination when controller */
+  guint regular_nomination_timeout; /* property: timeout (ms) before regular nomination starts nominating non-optimal media paths */
 
   GSList *local_addresses;        /* list of NiceAddresses for local
 				     interfaces */
