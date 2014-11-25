@@ -61,10 +61,12 @@ typedef struct _GstNiceSink GstNiceSink;
 struct _GstNiceSink
 {
   GstBaseSink parent;
-  GstPad *sinkpad;
   NiceAgent *agent;
   guint stream_id;
   guint component_id;
+
+  gulong overflow_hid;
+  gulong writable_hid;
 };
 
 typedef struct _GstNiceSinkClass GstNiceSinkClass;

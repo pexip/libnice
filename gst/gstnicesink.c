@@ -156,6 +156,21 @@ gst_nice_sink_init (GstNiceSink *sink)
   (void)sink;
 }
 
+static void
+gst_nice_sink_dispose (GObject *object)
+{
+  GstNiceSink *sink = GST_NICE_SINK (object);
+
+  if (sink->agent != NULL) {
+    g_signal_handler_disconnect (sink->agent, sink->overflow_hid);
+    g_signal_handler_disconnect (sink->agent, sink->writable_hid);
+    g_object_unref (sink->agent);
+    sink->agent = NULL;
+  }
+
+  G_OBJECT_CLASS (gst_nice_sink_parent_class)->dispose (object);
+}
+
 static GstFlowReturn
 gst_nice_sink_render (GstBaseSink *basesink, GstBuffer *buffer)
 {
@@ -179,17 +194,28 @@ gst_nice_sink_render (GstBaseSink *basesink, GstBuffer *buffer)
   return GST_FLOW_OK;
 }
 
+static void
+gst_nice_sink_on_overflow (GstNiceSink * sink,
+    guint stream_id, guint component_id, NiceAgent * agent)
+{
+  (void) stream_id;
+  (void) component_id;
+  (void) agent;
+
+  gst_pad_push_event (GST_BASE_SINK_PAD (sink),
+      gst_event_new_qos (0.5, -1, GST_CLOCK_TIME_NONE));
+}
 
 static void
-gst_nice_sink_dispose (GObject *object)
+gst_nice_sink_on_writable (GstNiceSink * sink,
+    guint stream_id, guint component_id, NiceAgent * agent)
 {
-  GstNiceSink *sink = GST_NICE_SINK (object);
+  (void) stream_id;
+  (void) component_id;
+  (void) agent;
 
-  if (sink->agent)
-    g_object_unref (sink->agent);
-  sink->agent = NULL;
-
-  G_OBJECT_CLASS (gst_nice_sink_parent_class)->dispose (object);
+  gst_pad_push_event (GST_BASE_SINK_PAD (sink),
+      gst_event_new_qos (1.0, 1, GST_CLOCK_TIME_NONE));
 }
 
 static void
@@ -204,11 +230,20 @@ gst_nice_sink_set_property (
   switch (prop_id)
     {
     case PROP_AGENT:
-      if (sink->agent)
+      if (sink->agent) {
         GST_ERROR_OBJECT (object,
             "Changing the agent on a nice sink not allowed");
-      else
+      } else {
         sink->agent = g_value_dup_object (value);
+        if (G_LIKELY (sink->agent != NULL)) {
+          sink->overflow_hid = g_signal_connect_swapped (sink->agent,
+              "reliable-transport-overflow",
+              G_CALLBACK (gst_nice_sink_on_overflow), sink);
+          sink->writable_hid = g_signal_connect_swapped (sink->agent,
+              "reliable-transport-writable",
+              G_CALLBACK (gst_nice_sink_on_writable), sink);
+        }
+      }
       break;
 
     case PROP_STREAM:
