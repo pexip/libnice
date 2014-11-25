@@ -471,7 +471,9 @@ NiceCandidate *discovery_add_local_host_candidate (
     userdata->agent = agent;
     userdata->stream = stream;
     userdata->component = component;
-    socket = nice_tcp_passive_socket_new (component->ctx, address, nice_agent_socket_recv_cb, (gpointer)userdata, g_free, agent->max_tcp_queue_size);
+    socket = nice_tcp_passive_socket_new (component->ctx, address,
+        nice_agent_socket_rx_cb, nice_agent_socket_tx_cb,
+        (gpointer)userdata, g_free, agent->max_tcp_queue_size);
     break;
 
   case NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE:
@@ -479,7 +481,9 @@ NiceCandidate *discovery_add_local_host_candidate (
     userdata->agent = agent;
     userdata->stream = stream;
     userdata->component = component;
-    socket = nice_tcp_active_socket_new (component->ctx, address, nice_agent_socket_recv_cb, (gpointer)userdata, g_free, agent->max_tcp_queue_size);
+    socket = nice_tcp_active_socket_new (component->ctx, address,
+        nice_agent_socket_rx_cb, nice_agent_socket_tx_cb,
+        (gpointer)userdata, g_free, agent->max_tcp_queue_size);
     break;
   }
 

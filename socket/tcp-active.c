@@ -54,7 +54,8 @@
 typedef struct {
   GSocketAddress     *local_addr;
   GMainContext       *context;
-  SocketRecvCallback  recv_cb;
+  SocketRXCallback    rxcb;
+  SocketTXCallback    txcb;
   gpointer            userdata;
   GDestroyNotify      destroy_notify;
   GSList             *established_sockets; /**< list of NiceSocket objs */
@@ -69,17 +70,22 @@ static gint socket_recv (NiceSocket *sock, NiceAddress *from,
 static gint socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf);
 static gboolean socket_is_reliable (NiceSocket *sock);
-static int socket_get_tx_queue_size (NiceSocket *sock);
+static gint socket_get_tx_queue_size (NiceSocket *sock);
 
 
-NiceSocket * nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr, 
-                                         SocketRecvCallback cb, gpointer userdata, GDestroyNotify destroy_notify, guint max_tcp_queue_size)
+NiceSocket *
+nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr,
+    SocketRXCallback rxcb, SocketTXCallback txcb, gpointer userdata,
+    GDestroyNotify destroy_notify, guint max_tcp_queue_size)
 {
   struct sockaddr_storage name;
   NiceAddress tmp_addr;
   NiceSocket *sock;
   TcpActivePriv *priv;
   GSocketAddress *gaddr;
+
+  g_return_val_if_fail (rxcb != NULL, NULL);
+  g_return_val_if_fail (txcb != NULL, NULL);
 
   if (addr == NULL) {
     /* We can't connect a tcp with no local address */
@@ -101,7 +107,8 @@ NiceSocket * nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr,
   sock->priv = priv = g_slice_new0 (TcpActivePriv);
   priv->local_addr = gaddr;
   priv->context = ctx ? g_main_context_ref (ctx) : NULL;
-  priv->recv_cb = cb;
+  priv->rxcb = rxcb;
+  priv->txcb = txcb;
   priv->userdata = userdata;
   priv->destroy_notify = destroy_notify;
   priv->max_tcp_queue_size = max_tcp_queue_size;
@@ -221,26 +228,31 @@ socket_is_reliable (NiceSocket *sock)
   return TRUE;
 }
 
-static
-void tcp_active_established_socket_recv_cb (NiceSocket* socket, NiceAddress* from, gchar* buf, gint len, gpointer *userdata)
+static void
+tcp_active_established_socket_rx_cb (NiceSocket* socket, NiceAddress* from,
+    gchar* buf, gint len, gpointer userdata)
 {
-  NiceSocket* listening_socket = (NiceSocket *)userdata;
-  TcpActivePriv *priv = listening_socket->priv;
+  NiceSocket* active = (NiceSocket *)userdata;
+  TcpActivePriv *priv = active->priv;
 
-  if (priv->recv_cb) {
-    nice_debug("tcp-act %p: sending up %d bytes received from tcp-est %p", listening_socket, len, socket);
-    
-    (priv->recv_cb) (listening_socket, from, buf, len, priv->userdata);
-  } else {
-    nice_debug("tcp-act %p: no callback configured!!", listening_socket);
-  }
+  priv->rxcb (active, from, buf, len, priv->userdata);
+}
+
+static void
+tcp_active_established_socket_tx_cb (NiceSocket* socket,
+    gchar* buf, gint len, gsize queued, gpointer userdata)
+{
+  NiceSocket* active = (NiceSocket *)userdata;
+  TcpActivePriv *priv = active->priv;
+
+  priv->txcb (active, buf, len, queued, priv->userdata);
 }
 
 NiceSocket *
 nice_tcp_active_socket_connect (NiceSocket *socket, const NiceAddress *addr)
 {
   struct sockaddr_storage name;
-  TcpActivePriv *active_priv = socket->priv;
+  TcpActivePriv *priv = socket->priv;
   GSocket *gsock = NULL;
   GError *gerr = NULL;
   gboolean gret = FALSE;
@@ -285,7 +297,7 @@ nice_tcp_active_socket_connect (NiceSocket *socket, const NiceAddress *addr)
   /* GSocket: All socket file descriptors are set to be close-on-exec. */
   g_socket_set_blocking (gsock, false);
 
-  gret = g_socket_bind (gsock, active_priv->local_addr, TRUE, NULL) &&
+  gret = g_socket_bind (gsock, priv->local_addr, TRUE, NULL) &&
       g_socket_connect (gsock, gaddr, NULL, &gerr);
   g_object_unref (gaddr);
 
@@ -312,14 +324,14 @@ nice_tcp_active_socket_connect (NiceSocket *socket, const NiceAddress *addr)
 
   nice_address_set_from_sockaddr (&local_addr, (struct sockaddr *)&name);
 
-  return nice_tcp_established_socket_new (gsock,
-                                          &local_addr, addr, active_priv->context, 
-                                          tcp_active_established_socket_recv_cb, (gpointer)socket, NULL,
-                                          connect_pending, active_priv->max_tcp_queue_size);
+  return nice_tcp_established_socket_new (gsock, &local_addr, addr, priv->context,
+      tcp_active_established_socket_rx_cb, tcp_active_established_socket_tx_cb,
+      (gpointer)socket, NULL, connect_pending, priv->max_tcp_queue_size);
 }
 
 
-static int socket_get_tx_queue_size (NiceSocket *sock)
+static gint
+socket_get_tx_queue_size (NiceSocket *sock)
 {
   TcpActivePriv *priv = sock->priv;
   GSList *i;

@@ -55,7 +55,8 @@
 
 typedef struct {
   GMainContext       *context;
-  SocketRecvCallback  recv_cb;
+  SocketRXCallback    rxcb;
+  SocketTXCallback    txcb;
   gpointer            userdata;
   GDestroyNotify      destroy_notify;
   GSList             *established_sockets;             /**< list of NiceSocket objs */
@@ -70,11 +71,12 @@ static gint socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf);
 static gint socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf);
 static gboolean socket_is_reliable (NiceSocket *sock);
-static void tcp_passive_established_socket_recv_cb (NiceSocket* socket, NiceAddress* from, gchar* buf, gint len, gpointer *userdata);
-static int socket_get_tx_queue_size (NiceSocket *sock);
+static gint socket_get_tx_queue_size (NiceSocket *sock);
 
 NiceSocket *
-nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr, SocketRecvCallback cb, gpointer userdata, GDestroyNotify destroy_notify, guint max_tcp_queue_size)
+nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr,
+    SocketRXCallback rxcb, SocketTXCallback txcb, gpointer userdata,
+    GDestroyNotify destroy_notify, guint max_tcp_queue_size)
 {
   struct sockaddr_storage name;
   NiceSocket *sock;
@@ -83,12 +85,11 @@ nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr, SocketRecvCal
   gboolean gret = FALSE;
   GSocketAddress *gaddr;
 
-  if (addr == NULL) {
-    /* We can't connect a tcp socket with no destination address */
-    return NULL;
-  }
-  nice_address_copy_to_sockaddr (addr, (struct sockaddr *)&name);
+  g_return_val_if_fail (addr != NULL, NULL);
+  g_return_val_if_fail (rxcb != NULL, NULL);
+  g_return_val_if_fail (txcb != NULL, NULL);
 
+  nice_address_copy_to_sockaddr (addr, (struct sockaddr *)&name);
   gaddr = g_socket_address_new_from_native (&name, sizeof (name));
 
   if (gaddr == NULL) {
@@ -145,7 +146,8 @@ nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr, SocketRecvCal
 
   sock->priv = priv = g_slice_new0 (TcpPassivePriv);
   priv->context = ctx ? g_main_context_ref (ctx) : NULL;
-  priv->recv_cb = cb;
+  priv->rxcb = rxcb;
+  priv->txcb = txcb;
   priv->userdata = userdata;
   priv->destroy_notify = destroy_notify;
   priv->max_tcp_queue_size = max_tcp_queue_size;
@@ -252,18 +254,24 @@ socket_is_reliable (NiceSocket *sock)
   return TRUE;
 }
 
-void tcp_passive_established_socket_recv_cb (NiceSocket* socket, NiceAddress* from, gchar* buf, gint len, gpointer *userdata)
+static void
+tcp_passive_established_socket_rx_cb (NiceSocket* socket, NiceAddress* from,
+    gchar* buf, gint len, gpointer userdata)
 {
-  NiceSocket* listening_socket = (NiceSocket *)userdata;
-  TcpPassivePriv *priv = listening_socket->priv;
+  NiceSocket* passive = (NiceSocket *)userdata;
+  TcpPassivePriv *priv = passive->priv;
 
-  if (priv->recv_cb) {
-      nice_debug("tcp-pass %p: sending up %d bytes received from tcp-est %p", listening_socket, len, socket);
-    
-    (priv->recv_cb) (listening_socket, from, buf, len, priv->userdata);
-  } else {
-    nice_debug("tcp-pass %p: no callback configured!!", listening_socket);
-  }
+  priv->rxcb (passive, from, buf, len, priv->userdata);
+}
+
+static void
+tcp_passive_established_socket_tx_cb (NiceSocket* socket,
+    gchar* buf, gint len, gsize queued, gpointer userdata)
+{
+  NiceSocket* passive = (NiceSocket *)userdata;
+  TcpPassivePriv *priv = passive->priv;
+
+  priv->txcb (passive, buf, len, queued, priv->userdata);
 }
 
 NiceSocket *
@@ -296,13 +304,13 @@ nice_tcp_passive_socket_accept (NiceSocket *socket)
 
   nice_address_set_from_sockaddr (&remote_addr, (struct sockaddr *)&name);
 
-  return nice_tcp_established_socket_new (gsock,
-                                          &socket->addr, &remote_addr, priv->context, 
-                                          tcp_passive_established_socket_recv_cb, (gpointer)socket, NULL, FALSE,
-                                          priv->max_tcp_queue_size);
+  return nice_tcp_established_socket_new (gsock, &socket->addr, &remote_addr, priv->context,
+      tcp_passive_established_socket_rx_cb, tcp_passive_established_socket_tx_cb,
+      (gpointer)socket, NULL, FALSE, priv->max_tcp_queue_size);
 }
 
-static int socket_get_tx_queue_size (NiceSocket *sock)
+static gint
+socket_get_tx_queue_size (NiceSocket *sock)
 {
   TcpPassivePriv *priv = sock->priv;
   GSList *i;

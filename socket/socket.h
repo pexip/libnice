@@ -84,7 +84,8 @@ struct _NiceSocket
   void *priv;
 };
 
-typedef void (*SocketRecvCallback)(NiceSocket* socket, NiceAddress* from, gchar* buf, gint len, gpointer *userdata);
+typedef void (*SocketRXCallback)(NiceSocket* socket, NiceAddress* from, gchar* buf, gint len, gpointer userdata);
+typedef void (*SocketTXCallback)(NiceSocket* socket, gchar* buf, gint len, gsize queued, gpointer userdata);
 
 G_GNUC_WARN_UNUSED_RESULT
 gint

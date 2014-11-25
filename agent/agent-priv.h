@@ -84,6 +84,8 @@ struct _NiceAgent
 {
   GObject parent;                 /* gobject pointer */
 
+  GMutex mutex;
+
   gboolean full_mode;             /* property: full-mode */
   GTimeVal next_check_tv;         /* property: next conncheck timestamp */
   gchar *stun_server_ip;          /* property: STUN server IP */
@@ -130,6 +132,7 @@ struct _NiceAgent
 #endif
   gchar *software_attribute;       /* SOFTWARE attribute */
   gboolean reliable;               /* property: reliable */
+  gboolean writable;
   /* XXX: add pointer to internal data struct for ABI-safe extensions */
 };
 
@@ -192,7 +195,8 @@ StunUsageTurnCompatibility agent_to_turn_compatibility (NiceAgent *agent);
 NiceTurnSocketCompatibility agent_to_turn_socket_compatibility (NiceAgent *agent);
 
 void _priv_set_socket_tos (NiceAgent *agent, NiceSocket *sock, gint tos);
-void nice_agent_socket_recv_cb (NiceSocket* socket, NiceAddress* from, gchar* buf, gint len, gpointer *userdata);
+void nice_agent_socket_rx_cb (NiceSocket* socket, NiceAddress* from, gchar* buf, gint len, gpointer userdata);
+void nice_agent_socket_tx_cb (NiceSocket* socket, gchar* buf, gint len, gsize queued, gpointer userdata);
 
 guint32 agent_candidate_ice_priority (NiceAgent* agent, const NiceCandidate *candidate, NiceCandidateType type);
 

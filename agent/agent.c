@@ -119,6 +119,7 @@ enum
   SIGNAL_NEW_REMOTE_CANDIDATE,
   SIGNAL_INITIAL_BINDING_REQUEST_RECEIVED,
   SIGNAL_RELIABLE_TRANSPORT_WRITABLE,
+  SIGNAL_RELIABLE_TRANSPORT_OVERFLOW,
   N_SIGNALS,
 };
 
@@ -809,6 +810,31 @@ nice_agent_class_init (NiceAgentClass *klass)
           G_TYPE_UINT, G_TYPE_UINT,
           G_TYPE_INVALID);
 
+  /**
+   * NiceAgent::reliable-transport-overflow
+   * @agent: The #NiceAgent object
+   * @stream_id: The ID of the stream
+   * @component_id: The ID of the component
+   *
+   * This signal is fired on the reliable #NiceAgent when the underlying reliable
+   * transport buffer is full.
+   *
+   * Since: PEXIP specific
+   */
+  signals[SIGNAL_RELIABLE_TRANSPORT_OVERFLOW] =
+      g_signal_new (
+          "reliable-transport-overflow",
+          G_OBJECT_CLASS_TYPE (klass),
+          G_SIGNAL_RUN_LAST,
+          0,
+          NULL,
+          NULL,
+          agent_marshal_VOID__UINT_UINT,
+          G_TYPE_NONE,
+          2,
+          G_TYPE_UINT, G_TYPE_UINT,
+          G_TYPE_INVALID);
+
 
   /* Init debug options depending on env variables */
   nice_debug_init ();
@@ -854,6 +880,8 @@ nice_agent_init (NiceAgent *agent)
 
   agent->rng = nice_rng_new ();
   priv_generate_tie_breaker (agent);
+
+  g_mutex_init (&agent->mutex);
 }
 
 
@@ -2829,9 +2857,10 @@ nice_agent_dispose (GObject *object)
     g_main_context_unref (agent->main_context);
   agent->main_context = NULL;
 
+  g_mutex_clear (&agent->mutex);
+
   if (G_OBJECT_CLASS (nice_agent_parent_class)->dispose)
     G_OBJECT_CLASS (nice_agent_parent_class)->dispose (object);
-
 }
 
 
@@ -2874,10 +2903,11 @@ io_ctx_free (IOCtx *ctx)
 }
 
 /*
- * Callback from non gsocket based NiceSockets when data 
- * received.
+ * Callback from non gsocket based NiceSockets when data received.
  */
-void nice_agent_socket_recv_cb (NiceSocket* socket, NiceAddress* from, gchar* buf, gint len, gpointer *userdata)
+void
+nice_agent_socket_rx_cb (NiceSocket* socket, NiceAddress* from,
+    gchar* buf, gint len, gpointer userdata)
 {
   TcpUserData *ctx = (TcpUserData *)userdata;
   NiceAgent *agent = ctx->agent;
@@ -2961,6 +2991,28 @@ void nice_agent_socket_recv_cb (NiceSocket* socket, NiceAddress* from, gchar* bu
   } else {
     agent_unlock();
   }
+}
+
+void
+nice_agent_socket_tx_cb (NiceSocket* socket, gchar* buf, gint len, gsize queued,
+    gpointer userdata)
+{
+  TcpUserData *ctx = (TcpUserData *)userdata;
+  NiceAgent *agent = ctx->agent;
+  Stream *stream = ctx->stream;
+  Component *component = ctx->component;
+
+  g_mutex_lock (&agent->mutex);
+  if (agent->writable && queued > 0) {
+    agent->writable = FALSE;
+    g_signal_emit (agent, signals[SIGNAL_RELIABLE_TRANSPORT_OVERFLOW],
+        0, stream->id, component->id);
+  } else if (!agent->writable && queued == 0) {
+    agent->writable = TRUE;
+    g_signal_emit (agent, signals[SIGNAL_RELIABLE_TRANSPORT_WRITABLE],
+        0, stream->id, component->id);
+  }
+  g_mutex_unlock (&agent->mutex);
 }
                       
 static gboolean

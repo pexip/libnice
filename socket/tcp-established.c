@@ -59,7 +59,8 @@ typedef struct {
   GSource            *read_source;
   GSource            *write_source;
   gboolean            error;
-  SocketRecvCallback  recv_cb;
+  SocketRXCallback    rxcb;
+  SocketTXCallback    txcb;
   gpointer            userdata;
   GDestroyNotify      destroy_notify;
   guint8              recv_buff[MAX_BUFFER_SIZE];
@@ -89,25 +90,28 @@ static gboolean socket_send_more (GSocket *gsocket, GIOCondition condition,
                                   gpointer data);
 static gboolean socket_recv_more (GSocket *gsocket, GIOCondition condition,
                                   gpointer data);
-static int socket_get_tx_queue_size (NiceSocket *sock);
+static gint socket_get_tx_queue_size (NiceSocket *sock);
 
 NiceSocket *
-nice_tcp_established_socket_new (GSocket *gsock,
-                                 NiceAddress *local_addr, const NiceAddress *remote_addr, GMainContext *ctx,
-                                 SocketRecvCallback cb, gpointer userdata, GDestroyNotify destroy_notify,
-                                 gboolean connect_pending, guint max_tcp_queue_size)
+nice_tcp_established_socket_new (GSocket *gsock, NiceAddress *local_addr,
+    const NiceAddress *remote_addr, GMainContext *ctx,
+    SocketRXCallback rxcb, SocketTXCallback txcb, gpointer userdata,
+    GDestroyNotify destroy_notify, gboolean connect_pending, guint max_tcp_queue_size)
 {
   NiceSocket *sock;
   TcpEstablishedPriv *priv;
 
   g_return_val_if_fail (G_IS_SOCKET (gsock), NULL);
+  g_return_val_if_fail (rxcb != NULL, NULL);
+  g_return_val_if_fail (txcb != NULL, NULL);
 
   sock = g_slice_new0 (NiceSocket);
   sock->priv = priv = g_slice_new0 (TcpEstablishedPriv);
 
   priv->context = g_main_context_ref (ctx);
   priv->remote_addr = *remote_addr;
-  priv->recv_cb = cb;
+  priv->rxcb = rxcb;
+  priv->txcb = txcb;
   priv->userdata = userdata;
   priv->destroy_notify = destroy_notify;
   priv->recv_offset = 0;
@@ -271,20 +275,26 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
       if (ret < 0) {
         if (g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK)) {
           add_to_be_sent (sock, buff, len, FALSE);
-            ret = len;
-        }
-      } else if ((guint)ret < len)  {
-        add_to_be_sent (sock, buff + ret, len - ret, FALSE);
+          priv->txcb (sock, buff, len, priv->tx_queue_size_bytes, priv->userdata);
           ret = len;
+        }
+      } else {
+        guint rest = len - ret;
+        if (rest > 0) {
+          add_to_be_sent (sock, &buff[ret], rest, FALSE);
+          ret = len;
+        }
       }
-      if (gerr)
-          g_error_free (gerr);
+
+      if (gerr != NULL)
+        g_error_free (gerr);
 
       return ret;
     } else {
       nice_debug ("tcp-est %p: not connected to %s:%u, queueing. queue-size=%u, queue_is_empty=%d max-tcp-queue-size=%d", sock, to_string, 
                   nice_address_get_port (to), priv->send_queue.length, g_queue_is_empty (&priv->send_queue), priv->max_tcp_queue_size);
       add_to_be_sent (sock, buff, len, FALSE);
+      priv->txcb (sock, buff, len, priv->tx_queue_size_bytes, priv->userdata);
       return len;
     }
   } else {
@@ -315,20 +325,12 @@ parse_rfc4571(NiceSocket* sock, NiceAddress* from)
       guint packet_length = data[0] << 8 | data[1];
       nice_debug ("tcp-est %p: socket_recv_more: expecting %u bytes\n", sock, packet_length);
 
-      if ( packet_length + 2 <= priv->recv_offset) {
-        /* 
-         * Have complete packet, deliver it
-         */
-        if (priv->recv_cb) {
-          nice_debug("tcp-est %p: socket_recv_more: received %d bytes, delivering", sock, packet_length);
-          
-          (priv->recv_cb)(sock, from, (gchar *)&data[2], packet_length, priv->userdata);
-        }
-        
-        /*
-         * More data after current packet 
-         */
-        memmove(&priv->recv_buff[0], &priv->recv_buff[packet_length + 2], 
+      if (packet_length + 2 <= priv->recv_offset) {
+        nice_debug ("tcp-est %p: socket_recv_more: received %d bytes, delivering", sock, packet_length);
+        priv->rxcb (sock, from, (gchar *)&data[2], packet_length, priv->userdata);
+
+        /* More data after current packet */
+        memmove (&priv->recv_buff[0], &priv->recv_buff[packet_length + 2],
                 priv->recv_offset - packet_length - 2);
         priv->recv_offset = priv->recv_offset - packet_length - 2;
       } else {
@@ -437,11 +439,14 @@ socket_send_more (
         g_error_free (gerr);
         gerr = NULL;
       }
-    } else if (ret < (int) tbs->length) {
-      add_to_be_sent (sock, tbs->buf + ret, tbs->length - ret, TRUE);
-      g_free (tbs->buf);
-      g_slice_free (struct to_be_sent, tbs);
-      break;
+    } else {
+      guint rest = tbs->length - ret;
+      if (rest > 0) {
+        add_to_be_sent (sock, &tbs->buf[ret], rest, TRUE);
+        g_free (tbs->buf);
+        g_slice_free (struct to_be_sent, tbs);
+        break;
+      }
     }
 
     g_free (tbs->buf);
@@ -453,6 +458,7 @@ socket_send_more (
     g_source_destroy (priv->write_source);
     g_source_unref (priv->write_source);
     priv->write_source = NULL;
+    priv->txcb (sock, NULL, 0, 0, priv->userdata);
     agent_unlock();
     return FALSE;
   }
@@ -520,7 +526,8 @@ free_to_be_sent (struct to_be_sent *tbs)
   g_slice_free (struct to_be_sent, tbs);
 }
 
-static int socket_get_tx_queue_size (NiceSocket *sock)
+static gint
+socket_get_tx_queue_size (NiceSocket *sock)
 {
   TcpEstablishedPriv *priv = sock->priv;
 
