@@ -128,13 +128,15 @@ nice_tcp_established_socket_new (GSocket *gsock, NiceAddress *local_addr,
   sock->attach = socket_attach;
   sock->get_tx_queue_size = socket_get_tx_queue_size;
 
-  /*
-   * Reduce the tx queue size so the minimum number of packets
-   * are queued in the kernel
-   */
-  int fd = g_socket_get_fd (gsock);
-  int sendbuff = 2048;
-  setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sendbuff, sizeof(sendbuff));
+  if (max_tcp_queue_size > 0) {
+    /*
+     * Reduce the tx queue size so the minimum number of packets
+     * are queued in the kernel
+     */
+    gint fd = g_socket_get_fd (gsock);
+    gint sendbuff = 2048;
+    setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sendbuff, sizeof (gint));
+  }
 
   priv->read_source = g_socket_create_source(sock->fileno, G_IO_IN | G_IO_ERR, NULL);
   g_source_set_callback (priv->read_source, (GSourceFunc) socket_recv_more, sock, NULL);
