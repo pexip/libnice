@@ -706,11 +706,10 @@ nice_agent_class_init (NiceAgentClass *klass)
           0,
           NULL,
           NULL,
-          agent_marshal_VOID__UINT_UINT_STRING_STRING,
+          agent_marshal_VOID__UINT_UINT_BOXED_BOXED,
           G_TYPE_NONE,
           4,
-          G_TYPE_UINT, G_TYPE_UINT, G_TYPE_STRING, G_TYPE_STRING,
-          G_TYPE_INVALID);
+          G_TYPE_UINT, G_TYPE_UINT, NICE_TYPE_CANDIDATE, NICE_TYPE_CANDIDATE);
 
   /**
    * NiceAgent::new-candidate
@@ -1475,8 +1474,6 @@ void agent_signal_new_selected_pair (NiceAgent *agent, guint stream_id, guint co
 {
   Component *component;
   Stream *stream;
-  gchar *lf_copy;
-  gchar *rf_copy;
 
   if (!agent_find_component (agent, stream_id, component_id,
           &stream, &component))
@@ -1506,14 +1503,8 @@ void agent_signal_new_selected_pair (NiceAgent *agent, guint stream_id, guint co
              candidate_transport_to_string(lcandidate->transport), 
              candidate_transport_to_string(rcandidate->transport));
 
-  lf_copy = g_strdup (lcandidate->foundation);
-  rf_copy = g_strdup (rcandidate->foundation);
-
   g_signal_emit (agent, signals[SIGNAL_NEW_SELECTED_PAIR], 0,
-      stream_id, component_id, lf_copy, rf_copy);
-
-  g_free (lf_copy);
-  g_free (rf_copy);
+      stream_id, component_id, lcandidate, rcandidate);
 }
 
 void agent_signal_new_candidate (NiceAgent *agent, NiceCandidate *candidate)

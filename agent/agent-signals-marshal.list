@@ -1,7 +1,7 @@
 # component-status-changed
 VOID:UINT,UINT,UINT
 # new-selected-pair
-VOID:UINT,UINT,STRING,STRING
+VOID:UINT,UINT,BOXED,BOXED
 # new-candidate
 VOID:UINT,UINT,STRING
 # candidate-gathering-done
