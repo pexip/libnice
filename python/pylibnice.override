@@ -28,7 +28,7 @@ override nice_agent_new kwargs
 static int
 _wrap_nice_agent_new(PyGObject *self, PyObject *args, PyObject *kwargs)
 {
-    PyObject* maincontext;
+  PyObject* maincontext;
 	PyObject* compatibility_obj;
 	PyObject* turncompatibility_obj;
 	gint compatibility;
@@ -45,8 +45,10 @@ _wrap_nice_agent_new(PyGObject *self, PyObject *args, PyObject *kwargs)
 	if (pyg_enum_get_value(NICE_TYPE_COMPATIBILITY, turncompatibility_obj, &turn_compatibility))
 	    return -1;
 
+  Py_BEGIN_ALLOW_THREADS
 	self->obj = (GObject *)nice_agent_new(pyg_boxed_get(maincontext, GMainContext), compatibility, turn_compatibility);
-    return 0;
+  Py_END_ALLOW_THREADS
+  return 0;
 }
 %%
 override-slot NiceCandidate.tp_getattr
