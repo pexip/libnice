@@ -2003,7 +2003,7 @@ int conn_check_send (NiceAgent *agent, CandidateCheckPair *pair)
     buffer_len = stun_usage_ice_conncheck_create (&agent->stun_agent,
                                                   &pair->stun_message, pair->stun_buffer, sizeof(pair->stun_buffer),
                                                   uname, uname_len, password, password_len,
-                                                  cand_use, controlling, priority,
+                                                  pair->nominated, controlling, priority,
                                                   agent->tie_breaker,
                                                   pair->local->foundation,
                                                   agent_to_ice_compatibility (agent));
