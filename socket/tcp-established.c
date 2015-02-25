@@ -358,6 +358,15 @@ socket_recv_more (
   TcpEstablishedPriv *priv = sock->priv;
   NiceAddress from;
   
+  agent_lock();
+
+  if (g_source_is_destroyed (g_main_current_source ())) {
+    nice_debug ("tcp-est %p: Source was destroyed. "
+                "Avoided race condition in tcp-established.c:socket_recv_more", sock);
+    agent_unlock();
+    return FALSE;
+  }
+
   len = socket_recv (sock, &from, MAX_BUFFER_SIZE-priv->recv_offset, (gchar *)&priv->recv_buff[priv->recv_offset]);
   if (len > 0) {
     priv->recv_offset += len;
@@ -368,8 +377,11 @@ socket_recv_more (
     g_source_unref (priv->read_source);
     priv->read_source = NULL;
     priv->error = TRUE;
+    agent_unlock();
     return FALSE;
   }
+
+  agent_unlock();
   return TRUE;
 }
 
