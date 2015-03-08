@@ -272,6 +272,24 @@ static gboolean priv_add_local_candidate_pruned (NiceAgent *agent, guint stream_
         nice_debug ("Candidate %p (component-id %u) redundant, ignoring.", candidate, component->id);
         return FALSE;
       }
+
+      /*
+       * Special case for server reflexive candidates. Although we should include two UDP server
+       * reflexive candidates if they have the same address but different ports doing so upsets
+       * some endpoints (notably Lync). As having two server reflexives with the same address is
+       * pointless in any real network scenario we'll prune them here
+       */
+      if (c->type == NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE && 
+          candidate->type == NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE &&
+          nice_address_equal_full (&c->base_addr, &candidate->base_addr, FALSE) &&
+          nice_address_equal_full (&c->addr, &candidate->addr, FALSE)) {
+        gchar addrstr[INET6_ADDRSTRLEN];
+        nice_address_to_string (&c->addr, addrstr);
+
+        nice_debug ("Agent %p %u/%u: Pruning duplicate server reflexive candidate for srflx address %s (%s %s)",
+                    agent, stream_id, component->id, addrstr, candidate->foundation, c->foundation);
+        return FALSE;
+      }
     }
   }
 
@@ -337,21 +355,26 @@ static void priv_assign_foundation (NiceAgent *agent, NiceCandidate *candidate)
       for (k = component->local_candidates; k; k = k->next) {
         NiceCandidate *n = k->data;
         NiceAddress temp = n->base_addr;
-        
+
         /* note: candidate must not on the local candidate list */
         g_assert (candidate != n);
         
         /* note: ports are not to be compared */
         nice_address_set_port (&temp,
                                nice_address_get_port (&candidate->base_addr));
-        
+
+        /* 
+         * For server reflexive candidates only assign the same foundation if they have
+         * the same apparent address. This is OK because we will be pruning one of them
+         * later and avoids a race when STUN/TURN results are returned in a different
+         * order for different components 
+         */
         if (candidate->type == n->type &&
             candidate->transport == n->transport &&
-            nice_address_equal (&candidate->base_addr, &temp)) {
-          /* note: currently only one STUN/TURN server per stream at a
-           *       time is supported, so there is no need to check
-           *       for candidates that would otherwise share the
-           *       foundation, but have different STUN/TURN servers */
+            nice_address_equal (&candidate->base_addr, &temp) &&
+            (candidate->type != NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE ||
+             nice_address_equal_full (&candidate->addr, &n->addr, FALSE))) {
+          candidate->local_foundation = n->local_foundation;
           g_strlcpy (candidate->foundation, n->foundation,
                      NICE_CANDIDATE_MAX_FOUNDATION);
           if (n->username) {
@@ -368,8 +391,9 @@ static void priv_assign_foundation (NiceAgent *agent, NiceCandidate *candidate)
     }
   }
   
+  candidate->local_foundation = agent->next_candidate_id++;
   g_snprintf (candidate->foundation, NICE_CANDIDATE_MAX_FOUNDATION,
-              "%u", agent->next_candidate_id++);
+              "%u", candidate->local_foundation);
 }
 
 static void priv_assign_remote_foundation (NiceAgent *agent, NiceCandidate *candidate)
@@ -556,7 +580,8 @@ discovery_add_server_reflexive_candidate (
   }
   else {
     /* error: duplicate candidate */
-    nice_candidate_free (candidate), candidate = NULL;
+    nice_candidate_free (candidate);
+    candidate = NULL;
   }
 
   return candidate;

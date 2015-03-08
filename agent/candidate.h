@@ -215,6 +215,7 @@ struct _NiceCandidate
   gchar *password;        /* pointer to a NULL-terminated password string */
   TurnServer *turn;
   gpointer sockptr;
+  guint local_foundation;
 };
 
 /**

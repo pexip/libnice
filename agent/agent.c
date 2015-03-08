@@ -246,11 +246,11 @@ agent_candidate_ice_priority (NiceAgent *agent, const NiceCandidate *candidate, 
   guint other_preference = 0;
   guint direction_preference = 0;
   guint local_preference = 0;
-
+  
   if (nice_address_is_ipv6(&candidate->base_addr)) {
-    other_preference = 8190;
+    other_preference = (candidate->local_foundation << 1);
   } else {
-    other_preference = 8191;
+    other_preference = (candidate->local_foundation << 1) | 1;;
   }
 
   type_preference = priv_agent_candidate_type_preference (agent, type, candidate->transport);
@@ -1598,7 +1598,6 @@ priv_add_new_candidate_discovery_stun (NiceAgent *agent,
   cdisco->agent = agent;
   stun_agent_init (&cdisco->stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
                    STUN_COMPATIBILITY_RFC5389,
-                   STUN_AGENT_USAGE_USE_FINGERPRINT |
                    (agent->turn_compatibility == NICE_COMPATIBILITY_OC2007R2 ?
                     STUN_AGENT_USAGE_NO_ALIGNED_ATTRIBUTES : 0));
 
@@ -1764,146 +1763,6 @@ nice_agent_set_relay_info(NiceAgent *agent,
   return TRUE;
 }
 
-#ifdef HAVE_GUPNP
-
-static gboolean priv_upnp_timeout_cb (gpointer user_data)
-{
-  NiceAgent *agent = (NiceAgent*)user_data;
-  GSList *i;
-
-  agent_lock();
-
-  if (g_source_is_destroyed (g_main_current_source ())) {
-    agent_unlock ();
-    return FALSE;
-  }
-
-  nice_debug ("Agent %p : UPnP port mapping timed out", agent);
-
-  for (i = agent->upnp_mapping; i; i = i->next) {
-    NiceAddress *a = i->data;
-    nice_address_free (a);
-  }
-  g_slist_free (agent->upnp_mapping);
-  agent->upnp_mapping = NULL;
-
-  if (agent->upnp_timer_source != NULL) {
-    g_source_destroy (agent->upnp_timer_source);
-    g_source_unref (agent->upnp_timer_source);
-    agent->upnp_timer_source = NULL;
-  }
-
-  agent_gathering_done (agent);
-
-  agent_unlock();
-  return FALSE;
-}
-
-static void _upnp_mapped_external_port (GUPnPSimpleIgd *self, gchar *proto,
-    gchar *external_ip, gchar *replaces_external_ip, guint external_port,
-    gchar *local_ip, guint local_port, gchar *description, gpointer user_data)
-{
-  NiceAgent *agent = (NiceAgent*)user_data;
-  NiceAddress localaddr;
-  NiceAddress externaddr;
-
-  GSList *i, *j, *k;
-
-  agent_lock();
-
-  nice_debug ("Agent %p : Successfully mapped %s:%d to %s:%d", agent, local_ip,
-      local_port, external_ip, external_port);
-
-  if (!nice_address_set_from_string (&localaddr, local_ip))
-    goto end;
-  nice_address_set_port (&localaddr, local_port);
-
-  for (i = agent->upnp_mapping; i; i = i->next) {
-    NiceAddress *addr = i->data;
-    if (nice_address_equal (&localaddr, addr)) {
-      agent->upnp_mapping = g_slist_remove (agent->upnp_mapping, addr);
-      nice_address_free (addr);
-      break;
-    }
-  }
-
-  if (!nice_address_set_from_string (&externaddr, external_ip))
-    goto end;
-  nice_address_set_port (&externaddr, external_port);
-
-  for (i = agent->streams; i; i = i->next) {
-    Stream *stream = i->data;
-    for (j = stream->components; j; j = j->next) {
-      Component *component = j->data;
-      for (k = component->local_candidates; k; k = k->next) {
-        NiceCandidate *local_candidate = k->data;
-
-        if (nice_address_equal (&localaddr, &local_candidate->base_addr)) {
-          discovery_add_server_reflexive_candidate (
-              agent,
-              stream->id,
-              component->id,
-              &externaddr,
-              local_candidate->sockptr,
-              NICE_CANDIDATE_TRANSPORT_UDP);
-          goto end;
-        }
-      }
-    }
-  }
-
- end:
-  if (g_slist_length (agent->upnp_mapping) == 0) {
-    if (agent->upnp_timer_source != NULL) {
-      g_source_destroy (agent->upnp_timer_source);
-      g_source_unref (agent->upnp_timer_source);
-      agent->upnp_timer_source = NULL;
-    }
-    agent_gathering_done (agent);
-  }
-
-  agent_unlock();
-}
-
-static void _upnp_error_mapping_port (GUPnPSimpleIgd *self, GError *error,
-    gchar *proto, guint external_port, gchar *local_ip, guint local_port,
-    gchar *description, gpointer user_data)
-{
-  NiceAgent *agent = (NiceAgent*)user_data;
-  NiceAddress localaddr;
-  GSList *i;
-
-  agent_lock();
-
-  nice_debug ("Agent %p : Error mapping %s:%d to %d (%d) : %s", agent, local_ip,
-      local_port, external_port, error->domain, error->message);
-  if (nice_address_set_from_string (&localaddr, local_ip)) {
-    nice_address_set_port (&localaddr, local_port);
-
-    for (i = agent->upnp_mapping; i; i = i->next) {
-      NiceAddress *addr = i->data;
-      if (nice_address_equal (&localaddr, addr)) {
-        agent->upnp_mapping = g_slist_remove (agent->upnp_mapping, addr);
-        nice_address_free (addr);
-        break;
-      }
-    }
-
-    if (g_slist_length (agent->upnp_mapping) == 0) {
-      if (agent->upnp_timer_source != NULL) {
-        g_source_destroy (agent->upnp_timer_source);
-        g_source_unref (agent->upnp_timer_source);
-        agent->upnp_timer_source = NULL;
-      }
-      agent_gathering_done (agent);
-    }
-  }
-
-  agent_unlock();
-}
-
-#endif
-
 NICEAPI_EXPORT gboolean
 nice_agent_gather_candidates (
   NiceAgent *agent,
@@ -1925,30 +1784,6 @@ nice_agent_gather_candidates (
 
   nice_debug ("Agent %p : In %s mode, starting candidate gathering.", agent,
       agent->full_mode ? "ICE-FULL" : "ICE-LITE");
-
-#ifdef HAVE_GUPNP
-  priv_free_upnp (agent);
-
-  if (agent->upnp_enabled) {
-    agent->upnp = gupnp_simple_igd_thread_new ();
-
-    agent->upnp_timer_source = agent_timeout_add_with_context (agent,
-        agent->upnp_timeout, priv_upnp_timeout_cb, agent);
-
-    if (agent->upnp) {
-      g_signal_connect (agent->upnp, "mapped-external-port",
-          G_CALLBACK (_upnp_mapped_external_port), agent);
-      g_signal_connect (agent->upnp, "error-mapping-port",
-          G_CALLBACK (_upnp_error_mapping_port), agent);
-    } else {
-      nice_debug ("Agent %p : Error creating UPnP Simple IGD agent", agent);
-    }
-  } else {
-    nice_debug ("Agent %p : UPnP property Disabled", agent);
-  }
-#else
-  nice_debug ("Agent %p : libnice compiled without UPnP support", agent);
-#endif
 
   /* if no local addresses added, generate them ourselves */
   if (agent->local_addresses == NULL) {
@@ -2585,6 +2420,7 @@ _nice_agent_recv (
   GList *item;
   gboolean has_padding = _nice_should_have_padding(agent->compatibility);
   NiceAddress stun_server;
+  gboolean found_server = FALSE;
 
   len = nice_socket_recv (socket, from,  buf_len, buf);
 
@@ -2609,50 +2445,76 @@ _nice_agent_recv (
       return 0;
     }
 
+  /*
+   * If the packet comes from a relayed candidate then let the turn socket
+   * have first crack at it
+   */
+  for (item = component->turn_servers; item; item = g_list_next (item)) {
+    TurnServer *turn = item->data;
+
+    if (nice_address_equal (from, &turn->server)) {
+      GSList * i = NULL;
+
+#ifndef NDEBUG
+      nice_debug ("Agent %p    : Packet received from TURN server candidate", agent);
+#endif
+      for (i = component->local_candidates; i; i = i->next) {
+        NiceCandidate *cand = i->data;
+        if (cand->type == NICE_CANDIDATE_TYPE_RELAYED &&
+            cand->stream_id == stream->id &&
+            cand->component_id == component->id) {
+          len = nice_turn_socket_parse_recv (cand->sockptr, &socket,
+                                             from, len, buf, from, buf, len);
+        }
+      }
+      break;
+    }
+  }
+
+  /*
+   * Now that the packet has been decapsulated from any data indication figure out the correct
+   * padding based on compatibility mode
+   */
   if (agent->stun_server_ip && nice_address_set_from_string (&stun_server, agent->stun_server_ip)) {
     nice_address_set_port (&stun_server, agent->stun_server_port);
     if (nice_address_equal (from, &stun_server)) {
       has_padding = _nice_should_have_padding(agent->turn_compatibility);
-    }
-  } else {
-    for (item = component->turn_servers; item; item = g_list_next (item)) {
-      TurnServer *turn = item->data;
-      if (nice_address_equal (from, &turn->server)) {
-        GSList * i = NULL;
-        has_padding = _nice_should_have_padding(agent->turn_compatibility);
-
 #ifndef NDEBUG
-        nice_debug ("Agent %p    : Packet received from TURN server candidate, has_padding=%d",
-                    agent, has_padding);
+      nice_debug ("Agent %p    : Packet received from STUN server, has_padding=%d",
+                  agent, has_padding);
 #endif
-        for (i = component->local_candidates; i; i = i->next) {
-          NiceCandidate *cand = i->data;
-          if (cand->type == NICE_CANDIDATE_TYPE_RELAYED &&
-              cand->stream_id == stream->id &&
-              cand->component_id == component->id) {
-            len = nice_turn_socket_parse_recv (cand->sockptr, &socket,
-                                               from, len, buf, from, buf, len);
-          }
-        }
-        break;
-      }
+      found_server = TRUE;
     }
   }
 
-  agent->media_after_tick = TRUE;
+  if (!found_server) {
+    for (item = component->turn_servers; item; item = g_list_next (item)) {
+      TurnServer *turn = item->data;
 
+      if (nice_address_equal (from, &turn->server)) {
+        has_padding = _nice_should_have_padding(agent->turn_compatibility);
+#ifndef NDEBUG
+        nice_debug ("Agent %p    : Packet received from TURN server, has_padding=%d",
+                    agent, has_padding);
+#endif
+      }
+    } 
+  }
+
+  agent->media_after_tick = TRUE;
+  
   if (len > 0) {
-    if (stun_message_validate_buffer_length ((uint8_t *) buf, (size_t) len, has_padding) != len)
+    if (stun_message_validate_buffer_length ((uint8_t *) buf, (size_t) len, has_padding) != len) {
       /* If the retval is no 0, its not a valid stun packet, probably data */
       return len;
-    
+    }
     
     if (conn_check_handle_inbound_stun (agent, stream, component, socket,
                                         from, buf, len))
       /* handled STUN message*/
       return 0;
   }
-
+  
   /* unhandled STUN, pass to client */
   return len;
 }

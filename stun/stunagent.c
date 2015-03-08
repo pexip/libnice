@@ -708,3 +708,31 @@ void stun_agent_set_software (StunAgent *agent, const char *software)
 {
   agent->software_attribute = software;
 }
+
+bool stun_agent_find_transaction (StunAgent *agent, StunMethod method, StunTransactionId msg_id)
+{
+  char tmpbuf[STUN_MAX_TRANSACTION_STR_LENGTH];
+  int sent_id_idx;
+
+  transaction_id_to_str (msg_id, tmpbuf);
+  stun_debug ("Received response: method=%d transaction id %s", method, tmpbuf);
+
+  for (sent_id_idx = 0; sent_id_idx < STUN_AGENT_MAX_SAVED_IDS; sent_id_idx++) {
+
+    if (agent->sent_ids[sent_id_idx].valid) {
+      transaction_id_to_str (agent->sent_ids[sent_id_idx].id, tmpbuf);
+      stun_debug ("Checking sent msg idx:%d valid=%d method=%d transaction-id:%s", sent_id_idx, agent->sent_ids[sent_id_idx].valid,
+                  agent->sent_ids[sent_id_idx].method, tmpbuf);
+    }
+      
+    if (agent->sent_ids[sent_id_idx].valid == TRUE &&
+        agent->sent_ids[sent_id_idx].method == method &&
+        memcmp (msg_id, agent->sent_ids[sent_id_idx].id,
+                  sizeof(StunTransactionId)) == 0) {
+      return true;
+    }
+  }
+  
+  return FALSE;
+}
+

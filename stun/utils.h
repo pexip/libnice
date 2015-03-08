@@ -68,10 +68,13 @@ void *stun_setw (uint8_t *ptr, uint16_t value);
 StunMethod stun_get_type (uint8_t *h);
 void stun_set_type (uint8_t *h, StunClass c, StunMethod m);
 
+StunClass stun_get_class (uint8_t *h);
+
 StunMessageReturn stun_xor_address (const StunMessage *msg,
     struct sockaddr *addr, socklen_t addrlen,
     uint32_t magic_cookie);
 
+bool stun_get_transaction_id (uint8_t *buf, size_t len, StunTransactionId msg_id);
 
 # ifdef __cplusplus
 }

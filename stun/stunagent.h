@@ -486,6 +486,15 @@ bool stun_agent_forget_transaction (StunAgent *agent, StunTransactionId id);
 
 
 /**
+ * stun_agent_find_transaction:
+ * @agent: The #StunAgent
+ *
+ * Returns: %TRUE if the transaction was found, %FALSE otherwise
+ */
+bool stun_agent_find_transaction (StunAgent *agent, StunMethod method, StunTransactionId id);
+
+
+/**
  * stun_agent_set_software:
  * @agent: The #StunAgent
  * @software: The value of the SOFTWARE attribute to add.

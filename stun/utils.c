@@ -102,6 +102,21 @@ void stun_set_type (uint8_t *h, StunClass c, StunMethod m)
 /*   assert (stun_get_method (h) == m); */
 }
 
+StunClass stun_get_class (uint8_t *h)
+{
+  uint16_t t = stun_getw (h);
+  /* HACK HACK HACK
+     A google/msn data indication is 0x0115 which is contrary to the RFC 5389
+     which states that 8th and 12th bits are for the class and that 0x01 is
+     for indications...
+     So 0x0115 is reported as a "connect error response", while it should be
+     a data indication, which message type should actually be 0x0017
+     This should fix the issue, and it's considered safe since the "connect"
+     method doesn't exist anymore */
+  if (t == 0x0115)
+    t = 0x0017;
+  return (StunClass)(((t & 0x0100) >> 7) | ((t & 0x0010) >> 4));
+}
 
 StunMessageReturn stun_xor_address (const StunMessage *msg,
     struct sockaddr *addr, socklen_t addrlen,
@@ -136,3 +151,14 @@ StunMessageReturn stun_xor_address (const StunMessage *msg,
   }
   return STUN_MESSAGE_RETURN_UNSUPPORTED_ADDRESS;
 }
+
+bool stun_get_transaction_id (uint8_t *buf, size_t len, StunTransactionId msg_id)
+{
+  if (len < STUN_MESSAGE_TRANS_ID_POS + STUN_MESSAGE_TRANS_ID_LEN) {
+    return FALSE;
+  } else {
+    memcpy (msg_id, buf + STUN_MESSAGE_TRANS_ID_POS, STUN_MESSAGE_TRANS_ID_LEN);
+    return TRUE;
+  }
+}
+

@@ -997,14 +997,16 @@ static gboolean priv_conn_keepalive_tick_unlocked (NiceAgent *agent)
           nice_address_set_port (&stun_server, agent->stun_server_port);
 
           stun_agent_init (&stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
-                           STUN_COMPATIBILITY_RFC3489, 0);
+                           STUN_COMPATIBILITY_RFC5389, 
+                           (agent->turn_compatibility == NICE_COMPATIBILITY_OC2007R2 ?
+                            STUN_AGENT_USAGE_NO_ALIGNED_ATTRIBUTES : 0));
 
           buffer_len = stun_usage_bind_create (&stun_agent,
                                                &stun_message, stun_buffer, sizeof(stun_buffer));
 
           for (k = component->local_candidates; k; k = k->next) {
             NiceCandidate *candidate = (NiceCandidate *) k->data;
-            if (candidate->type == NICE_CANDIDATE_TYPE_HOST) {
+            if (candidate->type == NICE_CANDIDATE_TYPE_HOST && candidate->transport == NICE_CANDIDATE_TRANSPORT_UDP) {
               /* send the conncheck */
               nice_debug ("Agent %p %u/%u: resending STUN on %s to keep the candidate alive.",
                           agent, candidate->stream_id, candidate->component_id,
@@ -1956,6 +1958,50 @@ size_t priv_get_password (NiceAgent *agent, Stream *stream,
 }
 
 /*
+ * Attempt to locate a suitable candidate identifier to use when communicating 
+ * with a remote Lync client. Contrary to the MS-ICE2 documentation this is not
+ * always the foundation of the local candidate we are sending from (or it's base
+ * in the case of a peer-derived candidate). Instead it appears that we must 
+ * set it to the foundation of the server reflexive candidate that corresponds with
+ * this base
+ */
+static gchar *priv_get_candidate_identifier (NiceAgent *agent, CandidateCheckPair *pair)
+{
+  if (agent->compatibility == NICE_COMPATIBILITY_OC2007R2 &&
+      pair->local->type == NICE_CANDIDATE_TYPE_HOST &&
+      pair->remote->type == NICE_CANDIDATE_TYPE_RELAYED &&
+      pair->local->transport == NICE_CANDIDATE_TRANSPORT_UDP)
+  {
+    Stream *stream = NULL;
+    Component *component = NULL;
+    GSList *k;
+    
+    agent_find_component (agent, pair->local->stream_id, pair->local->component_id,
+                       &stream, &component);
+    
+    g_assert (stream != NULL);
+    g_assert (component != NULL);
+
+    for (k = component->local_candidates; k; k = k->next) 
+    {
+      NiceCandidate *candidate = k->data;
+    
+      if (candidate->type == NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE &&
+          nice_address_equal (&candidate->base_addr, &pair->local->addr)) 
+      {
+        nice_debug ("Agent %p %u/%u: Using server reflexive candidate identifier %s rather than local identifier %s",
+                    agent, stream->id, component->id,
+                    candidate->foundation,
+                    pair->local->foundation);
+        return candidate->foundation;
+      }
+    }
+  }
+  
+  return pair->local->foundation;
+}
+
+/*
  * Sends a connectivity check over candidate pair 'pair'.
  *
  * @return zero on success, non-zero on error
@@ -2005,7 +2051,7 @@ int conn_check_send (NiceAgent *agent, CandidateCheckPair *pair)
                                                   uname, uname_len, password, password_len,
                                                   pair->nominated, controlling, priority,
                                                   agent->tie_breaker,
-                                                  pair->local->foundation,
+                                                  priv_get_candidate_identifier (agent, pair),
                                                   agent_to_ice_compatibility (agent));
 
     if (buffer_len > 0) {
@@ -3229,6 +3275,77 @@ static bool conncheck_stun_validater (StunAgent *agent,
   return FALSE;
 }
 
+static StunAgent* priv_find_stunagent_for_message (NiceAgent *agent, Stream *stream,
+                                                   Component *component, NiceSocket *socket, 
+                                                   const NiceAddress *from, gchar *buf, guint len)
+{
+  GSList *i;
+  StunMethod method = stun_get_type ((uint8_t *)buf);
+  StunTransactionId msg_id;
+  gchar fromstr[INET6_ADDRSTRLEN];
+
+  nice_address_to_string (from, fromstr);
+
+  /*
+   * If the incoming message is a response (or an error) then we must have a matching
+   * transaction ID in one of our existing stun agents. All requests and indications must
+   * come from the remote UA and hence should use the global stun agent
+   */
+  switch (stun_get_class ((uint8_t *)buf)) {
+  case STUN_ERROR:
+  case STUN_RESPONSE:
+    if (stun_get_transaction_id ((uint8_t *)buf, len, msg_id)) {
+      if (stun_agent_find_transaction (&agent->stun_agent, method, msg_id)) {
+          nice_debug ("Agent %p %u/%u: inbound STUN response from [%s]:%u (%u octets) matches global stun agent:",
+                      agent, stream->id, component->id, 
+                      fromstr, nice_address_get_port (from), len);
+          return &agent->stun_agent;
+      }
+
+      for (i = agent->discovery_list; i; i = i->next)
+      {
+        CandidateDiscovery *d = i->data;
+        if (stun_agent_find_transaction (&d->stun_agent, method, msg_id)) {
+          nice_debug ("Agent %p %u/%u: inbound STUN response from [%s]:%u (%u octets) matches discovery stun agent:",
+                      agent, stream->id, component->id, 
+                      fromstr, nice_address_get_port (from), len);
+          return &d->stun_agent;
+        }
+      }
+      
+      /* Try and match against the refresh list */
+      for (i = agent->refresh_list; i; i = i->next)
+      {
+        CandidateRefresh *r = i->data;
+        
+        if (stun_agent_find_transaction (&r->stun_agent, method, msg_id)) {
+          nice_debug ("Agent %p %u/%u: inbound STUN response from [%s]:%u (%u octets) matches refresh stun agent:",
+                      agent, stream->id, component->id, 
+                      fromstr, nice_address_get_port (from), len);
+          return &r->stun_agent;
+        }
+      }
+      
+      nice_debug ("Agent %p %u/%u: *** ERROR *** unmatched stun response from [%s]:%u (%u octets):",
+                  agent, stream->id, component->id, 
+                  fromstr, nice_address_get_port (from), len);
+    } else {
+      nice_debug ("Agent %p %u/%u: *** ERROR *** no transaction ID in stun response from [%s]:%u (%u octets):",
+                  agent, stream->id, component->id, 
+                  fromstr, nice_address_get_port (from), len);
+    }
+    break;
+
+  case STUN_REQUEST:
+  case STUN_INDICATION:
+    nice_debug ("Agent %p %u/%u: inbound STUN request/indication packet from [%s]:%u (%u octets) using global stun agent:",
+                agent, stream->id, component->id, 
+                fromstr, nice_address_get_port (from), len);
+    return &agent->stun_agent;
+  }
+
+  return NULL;
+}
 
 /*
  * Processing an incoming STUN message.
@@ -3275,106 +3392,15 @@ gboolean conn_check_handle_inbound_stun (NiceAgent *agent, Stream *stream,
    * peer and should use the global stun agent, all other requests/responses come from the TURN server
    * and should use either a discovery agent or refresh agent for validation.
    */
-  StunAgent* stunagent = NULL;
-
-  if (stun_get_type((uint8_t *)buf) != STUN_BINDING) {
-    for (i = agent->discovery_list; i; i = i->next)
-    {
-      CandidateDiscovery *d = i->data;
-      if (d->stream == stream && d->component == component &&
-          d->nicesock == socket)
-      {
-        gchar tmpbuf[INET6_ADDRSTRLEN];
-        nice_address_to_string (from, tmpbuf);
-        nice_debug ("Agent %p %u/%u: inbound STUN packet from [%s]:%u (%u octets) using discovery stun agent:",
-                    agent, stream->id, component->id, 
-                    tmpbuf, nice_address_get_port (from), len);
-        stunagent = &d->stun_agent;
-        break;
-      }
-    }
-
-    if (stunagent == NULL) {
-      /* Try and match against the refresh list */
-      for (i = agent->refresh_list; i; i = i->next)
-      {
-        CandidateRefresh *r = i->data;
-        if (r->stream == stream && r->component == component &&
-            r->nicesock == socket)
-        {
-          gchar tmpbuf[INET6_ADDRSTRLEN];
-          nice_address_to_string (from, tmpbuf);
-          nice_debug ("Agent %p %u/%u: inbound STUN packet from [%s]:%u (%u octets) using refresh stun agent:",
-                      agent, stream->id, component->id, 
-                      tmpbuf, nice_address_get_port (from), len);
-          stunagent = &r->stun_agent;
-          break;
-        }
-      }
-    }
-  } else {
-    for (i = agent->discovery_list; i; i = i->next)
-    {
-      CandidateDiscovery *d = i->data;
-      if (d->type == NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE &&
-          d->stream == stream && d->component == component &&
-          d->nicesock == socket)
-      {
-        gchar tmpbuf[INET6_ADDRSTRLEN];
-        nice_address_to_string (from, tmpbuf);
-        nice_debug ("Agent %p %u/%u: inbound STUN packet from [%s]:%u (%u octets) using stun server agent:",
-                    agent, stream->id, component->id, 
-                    tmpbuf, nice_address_get_port (from), len);
-        stunagent = &d->stun_agent;
-        break;
-      }
-    }
-  }
+  StunAgent* stunagent = priv_find_stunagent_for_message (agent, stream, component, socket, from, buf, len);
 
   if (stunagent == NULL) {
-    gchar tmpbuf[INET6_ADDRSTRLEN];
-    nice_address_to_string (from, tmpbuf);
-    nice_debug ("Agent %p %u/%u: inbound STUN packet from [%s]:%u (%u octets) using global stun agent:",
-                agent, stream->id, component->id, 
-                tmpbuf, nice_address_get_port (from), len);
-    stunagent = &agent->stun_agent;
+    /* Already logged bu priv_find_stunagent_for_message */
+    return FALSE;
   }
 
   valid = stun_agent_validate (stunagent, &req,
                                (uint8_t *) buf, len, conncheck_stun_validater, &validater_data);
-
-  /* Check for discovery candidates stun agents */
-  if (valid == STUN_VALIDATION_BAD_REQUEST ||
-      valid == STUN_VALIDATION_UNMATCHED_RESPONSE) {
-    for (i = agent->discovery_list; i; i = i->next) {
-      CandidateDiscovery *d = i->data;
-      if (d->stream == stream && d->component == component &&
-          d->nicesock == socket) {
-        valid = stun_agent_validate (&d->stun_agent, &req,
-                                     (uint8_t *) buf, len, conncheck_stun_validater, &validater_data);
-
-        if (valid == STUN_VALIDATION_UNMATCHED_RESPONSE)
-          continue;
-
-        break;
-      }
-    }
-  }
-  /* Check for relay refresh stun agents */
-  if (valid == STUN_VALIDATION_BAD_REQUEST ||
-      valid == STUN_VALIDATION_UNMATCHED_RESPONSE) {
-    for (i = agent->refresh_list; i; i = i->next) {
-      CandidateRefresh *r = i->data;
-      if (r->stream == stream && r->component == component &&
-          (r->nicesock == socket || r->relay_socket == socket)) {
-        valid = stun_agent_validate (&r->stun_agent, &req,
-                                     (uint8_t *) buf, len, conncheck_stun_validater, &validater_data);
-        if (valid == STUN_VALIDATION_UNMATCHED_RESPONSE)
-          continue;
-        break;
-      }
-    }
-  }
 
   g_free (validater_data.password);
 
