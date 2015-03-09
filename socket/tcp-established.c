@@ -355,7 +355,7 @@ socket_recv_more (
 {
   gint len;
   NiceSocket* sock = (NiceSocket *)data;
-  TcpEstablishedPriv *priv = sock->priv;
+  TcpEstablishedPriv *priv = NULL;
   NiceAddress from;
   
   agent_lock();
@@ -366,6 +366,8 @@ socket_recv_more (
     agent_unlock();
     return FALSE;
   }
+  
+  priv = sock->priv;
 
   len = socket_recv (sock, &from, MAX_BUFFER_SIZE-priv->recv_offset, (gchar *)&priv->recv_buff[priv->recv_offset]);
   if (len > 0) {
