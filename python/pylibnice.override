@@ -22,7 +22,6 @@ ignore nice_candidate_ice_priority_full
 ignore nice_candidate_msn_priority
 ignore nice_candidate_jingle_priority
 ignore nice_agent_attach_recv
-ignore nice_agent_new_reliable
 %%
 override nice_agent_new kwargs
 static int

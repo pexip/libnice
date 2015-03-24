@@ -62,7 +62,6 @@ component_new (guint id)
   component->id = id;
   component->state = NICE_COMPONENT_STATE_DISCONNECTED;
   component->restart_candidate = NULL;
-  component->tcp = NULL;
   component->enable_udp = FALSE;
   component->enable_tcp_passive = FALSE;
   component->enable_tcp_active = FALSE;
@@ -125,21 +124,6 @@ component_free (Component *cmp)
     g_source_destroy (cmp->selected_pair.keepalive.tick_source);
     g_source_unref (cmp->selected_pair.keepalive.tick_source);
     cmp->selected_pair.keepalive.tick_source = NULL;
-  }
-
-  if (cmp->tcp_clock) {
-    g_source_destroy (cmp->tcp_clock);
-    g_source_unref (cmp->tcp_clock);
-    cmp->tcp_clock = NULL;
-  }
-  if (cmp->tcp) {
-    pseudo_tcp_socket_close (cmp->tcp, TRUE);
-    g_object_unref (cmp->tcp);
-    cmp->tcp = NULL;
-  }
-  if (cmp->tcp_data != NULL) {
-    g_slice_free (TcpUserData, cmp->tcp_data);
-    cmp->tcp_data = NULL;
   }
 
   if (cmp->ctx != NULL) {

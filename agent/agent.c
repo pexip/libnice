@@ -70,8 +70,6 @@
 #include "stream.h"
 #include "interfaces.h"
 
-#include "pseudotcp.h"
-
 /* This is the max size of a UDP packet
  * will it work tcp relaying??
  */
@@ -132,15 +130,6 @@ static GStaticRecMutex agent_mutex = G_STATIC_REC_MUTEX_INIT;
 #endif
 
 static void priv_free_upnp (NiceAgent *agent);
-
-static void pseudo_tcp_socket_opened (PseudoTcpSocket *sock, gpointer user_data);
-static void pseudo_tcp_socket_readable (PseudoTcpSocket *sock, gpointer user_data);
-static void pseudo_tcp_socket_writable (PseudoTcpSocket *sock, gpointer user_data);
-static void pseudo_tcp_socket_closed (PseudoTcpSocket *sock, guint32 err,
-    gpointer user_data);
-static PseudoTcpWriteResult pseudo_tcp_socket_write_packet (PseudoTcpSocket *sock,
-    const gchar *buffer, guint32 len, gpointer user_data);
-static void adjust_tcp_clock (NiceAgent *agent, Stream *stream, Component *component);
 
 static void nice_agent_dispose (GObject *object);
 static void nice_agent_get_property (GObject *object,
@@ -589,23 +578,6 @@ nice_agent_class_init (NiceAgentClass *klass)
 	DEFAULT_UPNP_TIMEOUT,
         G_PARAM_READWRITE | G_PARAM_CONSTRUCT));
 
-  /**
-   * NiceAgent:reliable:
-   *
-   * Whether the agent is providing a reliable transport of messages (through ICE-TCP or
-   * PseudoTCP over ICE-UDP)
-   *
-   * Since: 0.0.11
-   */
-   g_object_class_install_property (gobject_class, PROP_RELIABLE,
-      g_param_spec_boolean (
-        "reliable",
-        "reliable mode",
-        "Whether the agent provides a reliable transport"
-        "of messages",
-	FALSE,
-        G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
-
   g_object_class_install_property (gobject_class, PROP_CONNCHECK_TIMEOUT,
       g_param_spec_uint (
         "connectivity-check-timeout",
@@ -870,7 +842,6 @@ nice_agent_init (NiceAgent *agent)
   agent->software_attribute = NULL;
 
   agent->compatibility = NICE_COMPATIBILITY_RFC5245;
-  agent->reliable = FALSE;
 
   stun_agent_init (&agent->stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
       STUN_COMPATIBILITY_RFC5389,
@@ -891,21 +862,6 @@ nice_agent_new (GMainContext *ctx, NiceCompatibility compat, NiceCompatibility t
       "compatibility", compat,
       "turn-compatibility", turn_compat,
       "main-context", ctx,
-      "reliable", FALSE,
-      NULL);
-
-  return agent;
-}
-
-
-NICEAPI_EXPORT NiceAgent *
-nice_agent_new_reliable (GMainContext *ctx, NiceCompatibility compat, NiceCompatibility turn_compat)
-{
-  NiceAgent *agent = g_object_new (NICE_TYPE_AGENT,
-      "compatibility", compat,
-      "turn-compatibility", turn_compat,
-      "main-context", ctx,
-      "reliable", TRUE,
       NULL);
 
   return agent;
@@ -1016,10 +972,6 @@ nice_agent_get_property (
 #else
       g_value_set_uint (value, DEFAULT_UPNP_TIMEOUT);
 #endif
-      break;
-
-    case PROP_RELIABLE:
-      g_value_set_boolean (value, agent->reliable);
       break;
 
     default:
@@ -1151,247 +1103,12 @@ nice_agent_set_property (
 #endif
       break;
 
-    case PROP_RELIABLE:
-      agent->reliable = g_value_get_boolean (value);
-      break;
-
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
     }
 
   agent_unlock();
 
-}
-
-
-static void
-pseudo_tcp_socket_create (NiceAgent *agent, Stream *stream, Component *component)
-{
-  TcpUserData *data = g_slice_new0 (TcpUserData);
-  PseudoTcpCallbacks tcp_callbacks = {data,
-                                      pseudo_tcp_socket_opened,
-                                      pseudo_tcp_socket_readable,
-                                      pseudo_tcp_socket_writable,
-                                      pseudo_tcp_socket_closed,
-                                      pseudo_tcp_socket_write_packet};
-  data->agent = agent;
-  data->stream = stream;
-  data->component = component;
-  component->tcp_data = data;
-  component->tcp = pseudo_tcp_socket_new (0, &tcp_callbacks);
-  nice_debug ("Agent %p: Create Pseudo Tcp Socket for component %d",
-      agent, component->id);
-}
-
-static void priv_destroy_component_tcp (Component *component)
-{
-    if (component->tcp_clock) {
-      g_source_destroy (component->tcp_clock);
-      g_source_unref (component->tcp_clock);
-      component->tcp_clock = NULL;
-    }
-    if (component->tcp) {
-      pseudo_tcp_socket_close (component->tcp, TRUE);
-      g_object_unref (component->tcp);
-      component->tcp = NULL;
-    }
-    if (component->tcp_data != NULL) {
-      g_slice_free (TcpUserData, component->tcp_data);
-      component->tcp_data = NULL;
-    }
-}
-
-static void priv_pseudo_tcp_error (NiceAgent *agent, Stream *stream,
-    Component *component)
-{
-  if (component->tcp) {
-    agent_signal_component_state_change (agent, stream->id,
-        component->id, NICE_COMPONENT_STATE_FAILED);
-    priv_detach_stream_component (stream, component);
-  }
-  priv_destroy_component_tcp (component);
-}
-
-static void
-pseudo_tcp_socket_opened (PseudoTcpSocket *sock, gpointer user_data)
-{
-  TcpUserData *data = (TcpUserData *)user_data;
-  NiceAgent *agent = data->agent;
-  Component *component = data->component;
-  Stream *stream = data->stream;
-
-  nice_debug ("Agent %p: s%d:%d pseudo Tcp socket Opened", data->agent,
-      stream->id, component->id);
-  g_signal_emit (agent, signals[SIGNAL_RELIABLE_TRANSPORT_WRITABLE], 0,
-      stream->id, component->id);
-}
-
-static void
-pseudo_tcp_socket_readable (PseudoTcpSocket *sock, gpointer user_data)
-{
-  TcpUserData *data = (TcpUserData *)user_data;
-  NiceAgent *agent = data->agent;
-  Component *component = data->component;
-  Stream *stream = data->stream;
-  gchar buf[MAX_BUFFER_SIZE];
-  gint len;
-
-  nice_debug ("Agent %p: s%d:%d pseudo Tcp socket readable", agent,
-      stream->id, component->id);
-
-  component->tcp_readable = TRUE;
-
-  g_object_add_weak_pointer (G_OBJECT (sock), (gpointer *)&sock);
-  g_object_add_weak_pointer (G_OBJECT (agent), (gpointer *)&agent);
-
-  do {
-    if (component->g_source_io_cb)
-      len = pseudo_tcp_socket_recv (sock, buf, sizeof(buf));
-    else
-      len = 0;
-
-    if (len > 0) {
-      gpointer data = component->data;
-      gint sid = stream->id;
-      gint cid = component->id;
-      NiceAgentRecvFunc callback = component->g_source_io_cb;
-      /* Unlock the agent before calling the callback */
-      agent_unlock();
-      callback (agent, sid, cid, len, buf, data, NULL, NULL);
-      agent_lock();
-      if (sock == NULL) {
-        nice_debug ("PseudoTCP socket got destroyed in readable callback!");
-        break;
-      }
-    } else if (len < 0 &&
-        pseudo_tcp_socket_get_error (sock) != EWOULDBLOCK) {
-      /* Signal error */
-      priv_pseudo_tcp_error (agent, stream, component);
-    } else if (len < 0 &&
-        pseudo_tcp_socket_get_error (sock) == EWOULDBLOCK){
-      component->tcp_readable = FALSE;
-    }
-  } while (len > 0);
-
-  if (agent) {
-    adjust_tcp_clock (agent, stream, component);
-    g_object_remove_weak_pointer (G_OBJECT (agent), (gpointer *)&agent);
-  } else {
-    nice_debug ("Not calling adjust_tcp_clock.. agent got destroyed!");
-  }
-  if (sock)
-    g_object_remove_weak_pointer (G_OBJECT (sock), (gpointer *)&sock);
-}
-
-static void
-pseudo_tcp_socket_writable (PseudoTcpSocket *sock, gpointer user_data)
-{
-  TcpUserData *data = (TcpUserData *)user_data;
-  NiceAgent *agent = data->agent;
-  Component *component = data->component;
-  Stream *stream = data->stream;
-
-  nice_debug ("Agent %p: s%d:%d pseudo Tcp socket writable", data->agent,
-      data->stream->id, data->component->id);
-  g_signal_emit (agent, signals[SIGNAL_RELIABLE_TRANSPORT_WRITABLE], 0,
-      stream->id, component->id);
-}
-
-static void
-pseudo_tcp_socket_closed (PseudoTcpSocket *sock, guint32 err,
-    gpointer user_data)
-{
-  TcpUserData *data = (TcpUserData *)user_data;
-  NiceAgent *agent = data->agent;
-  Component *component = data->component;
-  Stream *stream = data->stream;
-
-  nice_debug ("Agent %p: s%d:%d pseudo Tcp socket closed",  agent,
-      stream->id, component->id);
-  priv_pseudo_tcp_error (agent, stream, component);
-}
-
-
-static PseudoTcpWriteResult
-pseudo_tcp_socket_write_packet (PseudoTcpSocket *sock,
-    const gchar *buffer, guint32 len, gpointer user_data)
-{
-  TcpUserData *data = (TcpUserData *)user_data;
-  Component *component = data->component;
-
-  if (component->selected_pair.local != NULL) {
-    NiceSocket *sock;
-    NiceAddress *addr;
-
-#ifndef NDEBUG
-    gchar tmpbuf[INET6_ADDRSTRLEN];
-    nice_address_to_string (&component->selected_pair.remote->addr, tmpbuf);
-
-    nice_debug ("Agent %p : s%d:%d: sending %d bytes to [%s]:%d", data->agent,
-        data->stream->id, component->id, len, tmpbuf,
-        nice_address_get_port (&component->selected_pair.remote->addr));
-#endif
-
-    sock = component->selected_pair.local->sockptr;
-    addr = &component->selected_pair.remote->addr;
-    if (nice_socket_send (sock, addr, len, buffer) == (gint) len) {
-      return WR_SUCCESS;
-    }
-  }
-
-  return WR_FAIL;
-}
-
-
-static gboolean
-notify_pseudo_tcp_socket_clock (gpointer user_data)
-{
-  TcpUserData *data = (TcpUserData *)user_data;
-  Component *component = data->component;
-  Stream *stream = data->stream;
-  NiceAgent *agent = data->agent;
-
-  agent_lock();
-
-  if (g_source_is_destroyed (g_main_current_source ())) {
-    nice_debug ("Source was destroyed. "
-        "Avoided race condition in notify_pseudo_tcp_socket_clock");
-    agent_unlock ();
-    return FALSE;
-  }
-  if (component->tcp_clock) {
-    g_source_destroy (component->tcp_clock);
-    g_source_unref (component->tcp_clock);
-    component->tcp_clock = NULL;
-  }
-
-  pseudo_tcp_socket_notify_clock (component->tcp);
-  adjust_tcp_clock (agent, stream, component);
-
-  agent_unlock();
-
-  return FALSE;
-}
-
-static void
-adjust_tcp_clock (NiceAgent *agent, Stream *stream, Component *component)
-{
-  long timeout = 0;
-  if (component->tcp) {
-    if (pseudo_tcp_socket_get_next_clock (component->tcp, &timeout)) {
-      if (component->tcp_clock) {
-        g_source_destroy (component->tcp_clock);
-        g_source_unref (component->tcp_clock);
-        component->tcp_clock = NULL;
-      }
-      component->tcp_clock = agent_timeout_add_with_context (agent,
-          timeout, notify_pseudo_tcp_socket_clock, component->tcp_data);
-    } else {
-      nice_debug ("Agent %p: component %d pseudo tcp socket should be destroyed",
-          agent, component->id);
-      priv_pseudo_tcp_error (agent, stream, component);
-    }
-  }
 }
 
 
@@ -1481,19 +1198,6 @@ void agent_signal_new_selected_pair (NiceAgent *agent, guint stream_id, guint co
 
   if (lcandidate->type == NICE_CANDIDATE_TYPE_RELAYED) {
     nice_turn_socket_set_peer (lcandidate->sockptr, &rcandidate->addr);
-  }
-
-  if(agent->reliable) {
-    priv_destroy_component_tcp (component);
-    if (lcandidate->transport == NICE_CANDIDATE_TRANSPORT_UDP) {
-      pseudo_tcp_socket_create (agent, stream, component);
-      pseudo_tcp_socket_connect (component->tcp);
-      pseudo_tcp_socket_notify_mtu (component->tcp, MAX_TCP_MTU);
-      adjust_tcp_clock (agent, stream, component);
-    } else {
-      nice_debug ("ICE-TCP not yet supported");
-      return;
-    }
   }
 
   nice_debug("Agent %p %u/%u: signalling new-selected-pair (%s:%s) local-candidate-type=%s remote-candidate-type=%s local-transport=%s remote-transport=%s", agent, stream_id, component_id,
@@ -2534,12 +2238,11 @@ nice_agent_send (
 
   agent_lock();
 
-  if (!agent_find_component (agent, stream_id, component_id,
-          &stream, &component)) {
-    goto done;
-  }
+  if (agent_find_component (agent, stream_id, component_id, &stream, &component) &&
+      component->selected_pair.local != NULL) {
+    NiceSocket *sock = component->selected_pair.local->sockptr;
+    NiceAddress *addr= &component->selected_pair.remote->addr;
 
-  if (component->selected_pair.local != NULL) {
 #ifndef NDEBUG
     gchar tmpbuf[INET6_ADDRSTRLEN];
     nice_address_to_string (&component->selected_pair.remote->addr, tmpbuf);
@@ -2548,27 +2251,9 @@ nice_agent_send (
         len, tmpbuf,
         nice_address_get_port (&component->selected_pair.remote->addr));
 #endif
-
-    if(agent->reliable) {
-      if (component->tcp != NULL) {
-        ret = pseudo_tcp_socket_send (component->tcp, buf, len);
-        adjust_tcp_clock (agent, stream, component);
-        /* In case of -1, the error is either EWOULDBLOCK or ENOTCONN, which both
-           need the user to wait for the reliable-transport-writable signal */
-      } else {
-        nice_debug ("Unsupported ice-tcp");
-        goto done;
-      }
-    } else {
-      NiceSocket *sock = component->selected_pair.local->sockptr;
-      NiceAddress *addr= &component->selected_pair.remote->addr;
-
-      ret = nice_socket_send (sock, addr, len, buf);
-    }
-    goto done;
+    ret = nice_socket_send (sock, addr, len, buf);
   }
 
- done:
   agent_unlock();
   return ret;
 }
@@ -2581,19 +2266,15 @@ nice_agent_get_local_candidates (
   guint component_id)
 {
   Component *component;
-  GSList * ret = NULL;
-  GSList * item = NULL;
+  GSList *ret = NULL, *item = NULL;
 
   agent_lock();
 
-  if (!agent_find_component (agent, stream_id, component_id, NULL, &component)) {
-    goto done;
+  if (agent_find_component (agent, stream_id, component_id, NULL, &component)) {
+    for (item = component->local_candidates; item; item = item->next)
+      ret = g_slist_append (ret, nice_candidate_copy (item->data));
   }
 
-  for (item = component->local_candidates; item; item = item->next)
-    ret = g_slist_append (ret, nice_candidate_copy (item->data));
-
- done:
   agent_unlock();
   return ret;
 }
@@ -2609,15 +2290,11 @@ nice_agent_get_remote_candidates (
   GSList *ret = NULL, *item = NULL;
 
   agent_lock();
-  if (!agent_find_component (agent, stream_id, component_id, NULL, &component))
-    {
-      goto done;
-    }
+  if (agent_find_component (agent, stream_id, component_id, NULL, &component)) {
+    for (item = component->remote_candidates; item; item = item->next)
+      ret = g_slist_append (ret, nice_candidate_copy (item->data));
+  }
 
-  for (item = component->remote_candidates; item; item = item->next)
-    ret = g_slist_append (ret, nice_candidate_copy (item->data));
-
- done:
   agent_unlock();
   return ret;
 }
@@ -2867,7 +2544,7 @@ nice_agent_socket_tx_cb (NiceSocket* socket, gchar* buf, gint len, gsize queued,
   }
   g_mutex_unlock (&agent->mutex);
 }
-                      
+
 static gboolean
 nice_agent_g_source_cb (
   GSocket *gsocket,
@@ -2892,18 +2569,7 @@ nice_agent_g_source_cb (
   len = _nice_agent_recv (agent, stream, component, ctx->socket,
 			  MAX_BUFFER_SIZE, buf, &from);
 
-  if (len > 0 && component->tcp) {
-    g_object_add_weak_pointer (G_OBJECT (agent), (gpointer *)&agent);
-    pseudo_tcp_socket_notify_packet (component->tcp, buf, len);
-    if (agent) {
-      adjust_tcp_clock (agent, stream, component);
-      g_object_remove_weak_pointer (G_OBJECT (agent), (gpointer *)&agent);
-    } else {
-      nice_debug ("Our agent got destroyed in notify_packet!!");
-    }
-  } else if(len > 0 && agent->reliable) {
-    nice_debug ("unsupported ice-tcp");
-  } else if (len > 0 && component->g_source_io_cb) {
+  if (len > 0 && component->g_source_io_cb) {
     gpointer data = component->data;
     gint sid = stream->id;
     gint cid = component->id;
@@ -3050,16 +2716,6 @@ nice_agent_attach_recv (
       g_main_context_ref (ctx);
 
     priv_attach_stream_component (agent, stream, component);
-
-    /* If we got detached, maybe our readable callback didn't finish reading
-     * all available data in the pseudotcp, so we need to make sure we free
-     * our recv window, so the readable callback can be triggered again on the
-     * next incoming data.
-     * but only do this if we know we're already readable, otherwise we might
-     * trigger an error in the initial, pre-connection attach. */
-    if (component->tcp && component->tcp_data && component->tcp_readable)
-      pseudo_tcp_socket_readable (component->tcp, component->tcp_data);
-
   }
 
  done:

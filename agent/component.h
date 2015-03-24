@@ -48,7 +48,6 @@ typedef struct _Component Component;
 #include "candidate.h"
 #include "stun/stunagent.h"
 #include "stun/usages/timer.h"
-#include "pseudotcp.h"
 #include "stream.h"
 #include "socket.h"
 
@@ -119,10 +118,6 @@ struct _Component
   gpointer data;                    /**< data passed to the io function */
   GMainContext *ctx;                /**< context for data callbacks for this
                                        component */
-  PseudoTcpSocket *tcp;
-  GSource* tcp_clock;
-  TcpUserData *tcp_data;
-  gboolean tcp_readable;
   guint min_port;
   guint max_port;
   gboolean enable_udp;

@@ -54,13 +54,8 @@
  * <para>By default, the debug messages are disabled, unless the environment
  * variable NICE_DEBUG is set, in which case, it must contain a comma separated
  * list of flags specifying which debug to enable.</para>
- * <para> The currently available flags are "nice", "stun", "pseudotcp",
- * "pseudotcp-verbose" or "all" to enable all debug messages.</para>
- * <para> If the 'pseudotcp' flag is enabled, then 'pseudotcp-verbose' gets
- * automatically disabled. This is to allow the use of the 'all' flag without
- * having verbose messages from pseudotcp. You can enable verbose debug messages
- * from the pseudotcp layer by specifying 'pseudotcp-verbose' without the
- * 'pseudotcp' flag.</para>
+ * <para> The currently available flags are "nice", "stun" or "all" to enable
+ * all debug messages.</para>
  *
  *
  * <para>This API is unstable and is subject to change at any time...

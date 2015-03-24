@@ -22,7 +22,6 @@ COMMON_LDADD = $(top_builddir)/agent/libagent.la $(top_builddir)/socket/libsocke
 
 check_PROGRAMS = \
 	test-tcp \
-	test-pseudotcp \
 	test-bsd \
 	test \
 	test-address \
@@ -37,14 +36,11 @@ check_PROGRAMS = \
         test-new-dribble
 
 dist_check_SCRIPTS = \
-	check-test-fullmode-with-stun.sh \
-	test-pseudotcp-random.sh
+	check-test-fullmode-with-stun.sh
 
 TESTS = $(check_PROGRAMS) $(dist_check_SCRIPTS)
 
 test_tcp_LDADD = $(COMMON_LDADD)
-
-test_pseudotcp_LDADD = $(COMMON_LDADD)
 
 test_bsd_LDADD = $(COMMON_LDADD)
 
@@ -72,4 +68,3 @@ test_new_dribble_LDADD = $(COMMON_LDADD)
 
 all-local:
 	chmod a+x $(srcdir)/check-test-fullmode-with-stun.sh
-	chmod a+x $(srcdir)/test-pseudotcp-random.sh

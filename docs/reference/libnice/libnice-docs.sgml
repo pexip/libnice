@@ -39,13 +39,6 @@
     </chapter>
   </part>
 
-  <part>
-    <title>Pseudo TCP Socket implementation</title>
-    <chapter>
-      <xi:include href="xml/pseudotcp.xml"/>
-    </chapter>
-  </part>
-
   <para>The libnice library contains the ICE library and the
     STUN library as well as a Pseudo TCP socket implementation.
   </para>

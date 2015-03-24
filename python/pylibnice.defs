@@ -89,15 +89,6 @@
   )
 )
 
-(define-function nice_agent_new_reliable
-  (c-name "nice_agent_new_reliable")
-  (return-type "NiceAgent*")
-  (parameters
-    '("GMainContext*" "ctx")
-    '("NiceCompatibility" "compat")
-  )
-)
-
 (define-method add_local_address
   (of-object "NiceAgent")
   (unblock-threads t)

@@ -48,7 +48,6 @@
 #define USE_LOOPBACK 1
 #define USE_PROXY 0
 #define USE_UPNP 0
-#define USE_RELIABLE 1
 #define TEST_GOOGLE 0
 
 #define PROXY_IP "127.0.0.1"
@@ -459,22 +458,6 @@ static int run_full_test (NiceAgent *lagent, NiceAgent *ragent, NiceAddress *bas
   /* note: test payload send and receive */
   global_ragent_read = 0;
   ret = nice_agent_send (lagent, ls_id, 1, 16, "1234567812345678");
-  if (ret == -1)
-  {
-    gboolean reliable = FALSE;
-    g_object_get (G_OBJECT (lagent), "reliable", &reliable, NULL);
-    g_debug ("Sending data returned -1 in %s mode", reliable?"Reliable":"Non-reliable");
-    if (reliable) {
-      gulong signal_handler;
-      signal_handler = g_signal_connect (G_OBJECT (lagent),
-          "reliable-transport-writable", G_CALLBACK (cb_writable), NULL);
-      g_debug ("Running mainloop until transport is writable");
-      g_main_loop_run (global_mainloop);
-      g_signal_handler_disconnect(G_OBJECT (lagent), signal_handler);
-
-      ret = nice_agent_send (lagent, ls_id, 1, 16, "1234567812345678");
-    }
-  }
   g_debug ("Sent %d bytes", ret);
   g_assert (ret == 16);
   g_main_loop_run (global_mainloop);
@@ -589,19 +572,6 @@ static int run_full_test_delayed_answer (NiceAgent *lagent, NiceAgent *ragent, N
   /* note: test payload send and receive */
   global_ragent_read = 0;
   ret = nice_agent_send (lagent, ls_id, 1, 16, "1234567812345678");
-  {
-    gboolean reliable = FALSE;
-    g_object_get (G_OBJECT (lagent), "reliable", &reliable, NULL);
-    if (reliable) {
-      gulong signal_handler;
-      signal_handler = g_signal_connect (G_OBJECT (lagent),
-          "reliable-transport-writable", G_CALLBACK (cb_writable), NULL);
-      g_main_loop_run (global_mainloop);
-      g_signal_handler_disconnect(G_OBJECT (lagent), signal_handler);
-
-      ret = nice_agent_send (lagent, ls_id, 1, 16, "1234567812345678");
-    }
-  }
   global_ragent_read = 0;
   g_assert (ret == 16);
   g_main_loop_run (global_mainloop);
@@ -821,17 +791,10 @@ int main (void)
    */
 
   /* step: create the agents L and R */
-#if USE_RELIABLE
-  lagent = nice_agent_new_reliable (g_main_loop_get_context (global_mainloop),
-      NICE_COMPATIBILITY);
-  ragent = nice_agent_new_reliable (g_main_loop_get_context (global_mainloop),
-      NICE_COMPATIBILITY);
-#else
   lagent = nice_agent_new (g_main_loop_get_context (global_mainloop),
       NICE_COMPATIBILITY);
   ragent = nice_agent_new (g_main_loop_get_context (global_mainloop),
       NICE_COMPATIBILITY);
-#endif
 
   nice_agent_set_software (lagent, "Test-fullmode, Left Agent");
   nice_agent_set_software (ragent, "Test-fullmode, Right Agent");

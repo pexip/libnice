@@ -9,7 +9,6 @@ NiceCompatibility
 NiceAgentRecvFunc
 NICE_AGENT_MAX_REMOTE_CANDIDATES
 nice_agent_new
-nice_agent_new_reliable
 nice_agent_add_local_address
 nice_agent_set_port_range
 nice_agent_add_stream
@@ -223,25 +222,4 @@ stun_usage_bind_create
 stun_usage_bind_process
 stun_usage_bind_keepalive
 stun_usage_bind_run
-</SECTION>
-
-<SECTION>
-<FILE>pseudotcp</FILE>
-<TITLE>Pseudo TCP Socket</TITLE>
-PseudoTcpSocket
-PseudoTcpState
-PseudoTcpWriteResult
-PseudoTcpCallbacks
-PseudoTcpDebugLevel
-pseudo_tcp_socket_new
-pseudo_tcp_socket_connect
-pseudo_tcp_socket_recv
-pseudo_tcp_socket_send
-pseudo_tcp_socket_close
-pseudo_tcp_socket_get_error
-pseudo_tcp_socket_get_next_clock
-pseudo_tcp_socket_notify_clock
-pseudo_tcp_socket_notify_mtu
-pseudo_tcp_socket_notify_packet
-pseudo_tcp_set_debug_level
 </SECTION>

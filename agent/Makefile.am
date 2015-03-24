@@ -80,8 +80,6 @@ libagent_la_SOURCES = \
 	discovery.h \
 	interfaces.c \
 	interfaces.h \
-	pseudotcp.h \
-	pseudotcp.c \
 	$(BUILT_SOURCES)
 
 libagent_la_LIBADD = \
@@ -99,7 +97,6 @@ pkginclude_HEADERS = \
 	debug.h \
 	address.h \
 	interfaces.h \
-	pseudotcp.h \
 	$(top_srcdir)/stun/stunagent.h \
 	$(top_srcdir)/stun/constants.h \
 	$(top_srcdir)/stun/stunmessage.h

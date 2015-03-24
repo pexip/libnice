@@ -276,11 +276,6 @@ NiceAgent
 
 </para>
 
-<!-- ##### ARG NiceAgent:reliable ##### -->
-<para>
-
-</para>
-
 <!-- ##### ARG NiceAgent:stun-pacing-timer ##### -->
 <para>
 
@@ -356,11 +351,6 @@ NiceAgent
 
 </para>
 
-<!-- ##### ARG NiceAgent:reliable ##### -->
-<para>
-
-</para>
-
 <!-- ##### ARG NiceAgent:stun-pacing-timer ##### -->
 <para>
 
@@ -432,11 +422,6 @@ NiceAgent
 </para>
 
 <!-- ##### ARG NiceAgent:proxy-username ##### -->
-<para>
-
-</para>
-
-<!-- ##### ARG NiceAgent:reliable ##### -->
 <para>
 
 </para>
@@ -532,16 +517,6 @@ NiceAgent
 
 
 <!-- ##### FUNCTION nice_agent_new ##### -->
-<para>
-
-</para>
-
-@ctx: 
-@compat: 
-@Returns: 
-
-
-<!-- ##### FUNCTION nice_agent_new_reliable ##### -->
 <para>
 
 </para>

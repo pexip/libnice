@@ -41,7 +41,6 @@
 #include "debug.h"
 
 #include "stunagent.h"
-#include "pseudotcp.h"
 
 static int debug_enabled = 0;
 
@@ -53,8 +52,6 @@ static int debug_enabled = 0;
 static const GDebugKey keys[] = {
   { (gchar *)"stun",  NICE_DEBUG_STUN },
   { (gchar *)"nice",  NICE_DEBUG_NICE },
-  { (gchar *)"pseudotcp",  NICE_DEBUG_PSEUDOTCP },
-  { (gchar *)"pseudotcp-verbose",  NICE_DEBUG_PSEUDOTCP_VERBOSE },
   { NULL, 0},
 };
 
@@ -79,14 +76,6 @@ void nice_debug_init ()
         nice_debug_enable (FALSE);
       if (flags & NICE_DEBUG_STUN)
         stun_debug_enable ();
-
-      /* Set verbose before normal so that if we use 'all', then only
-         normal debug is enabled, we'd need to set pseudotcp-verbose without the
-         pseudotcp flag in order to actually enable verbose pseudotcp */
-      if (flags & NICE_DEBUG_PSEUDOTCP_VERBOSE)
-        pseudo_tcp_set_debug_level (PSEUDO_TCP_DEBUG_VERBOSE);
-      if (flags & NICE_DEBUG_PSEUDOTCP)
-        pseudo_tcp_set_debug_level (PSEUDO_TCP_DEBUG_NORMAL);
     }
   }
 }
