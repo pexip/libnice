@@ -65,7 +65,6 @@
 #include "discovery.h"
 #include "agent.h"
 #include "agent-priv.h"
-#include "agent-signals-marshal.h"
 
 #include "stream.h"
 #include "interfaces.h"
@@ -632,7 +631,7 @@ nice_agent_class_init (NiceAgentClass *klass)
           0,
           NULL,
           NULL,
-          agent_marshal_VOID__UINT_UINT_UINT,
+          g_cclosure_marshal_generic,
           G_TYPE_NONE,
           3,
           G_TYPE_UINT, G_TYPE_UINT, G_TYPE_UINT,
@@ -654,7 +653,7 @@ nice_agent_class_init (NiceAgentClass *klass)
           0,
           NULL,
           NULL,
-          agent_marshal_VOID__UINT,
+          g_cclosure_marshal_generic,
           G_TYPE_NONE,
           1,
           G_TYPE_UINT, G_TYPE_INVALID);
@@ -678,7 +677,7 @@ nice_agent_class_init (NiceAgentClass *klass)
           0,
           NULL,
           NULL,
-          agent_marshal_VOID__UINT_UINT_BOXED_BOXED,
+          g_cclosure_marshal_generic,
           G_TYPE_NONE,
           4,
           G_TYPE_UINT, G_TYPE_UINT, NICE_TYPE_CANDIDATE, NICE_TYPE_CANDIDATE);
@@ -701,7 +700,7 @@ nice_agent_class_init (NiceAgentClass *klass)
           0,
           NULL,
           NULL,
-          agent_marshal_VOID__UINT_UINT_STRING,
+          g_cclosure_marshal_generic,
           G_TYPE_NONE,
           3,
           G_TYPE_UINT, G_TYPE_UINT, G_TYPE_STRING,
@@ -725,7 +724,7 @@ nice_agent_class_init (NiceAgentClass *klass)
           0,
           NULL,
           NULL,
-          agent_marshal_VOID__UINT_UINT_STRING,
+          g_cclosure_marshal_generic,
           G_TYPE_NONE,
           3,
           G_TYPE_UINT, G_TYPE_UINT, G_TYPE_STRING,
@@ -747,7 +746,7 @@ nice_agent_class_init (NiceAgentClass *klass)
           0,
           NULL,
           NULL,
-          agent_marshal_VOID__UINT,
+          g_cclosure_marshal_generic,
           G_TYPE_NONE,
           1,
           G_TYPE_UINT,
@@ -775,7 +774,7 @@ nice_agent_class_init (NiceAgentClass *klass)
           0,
           NULL,
           NULL,
-          agent_marshal_VOID__UINT_UINT,
+          g_cclosure_marshal_generic,
           G_TYPE_NONE,
           2,
           G_TYPE_UINT, G_TYPE_UINT,
@@ -800,7 +799,7 @@ nice_agent_class_init (NiceAgentClass *klass)
           0,
           NULL,
           NULL,
-          agent_marshal_VOID__UINT_UINT,
+          g_cclosure_marshal_generic,
           G_TYPE_NONE,
           2,
           G_TYPE_UINT, G_TYPE_UINT,
@@ -811,7 +810,8 @@ nice_agent_class_init (NiceAgentClass *klass)
   nice_debug_init ();
 }
 
-static void priv_generate_tie_breaker (NiceAgent *agent) 
+static void
+priv_generate_tie_breaker (NiceAgent *agent)
 {
   nice_rng_generate_bytes (agent->rng, 8, (gchar*)&agent->tie_breaker);
 }

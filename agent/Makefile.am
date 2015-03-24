@@ -36,16 +36,7 @@ if WINDOWS
   AM_CFLAGS += -DWINVER=0x0501 # _WIN32_WINNT_WINXP
 endif
 
-dist_noinst_DATA = agent-signals-marshal.list
 noinst_LTLIBRARIES = libagent.la
-
-agent-signals-marshal.h: agent-signals-marshal.list
-	glib-genmarshal --header --prefix=agent_marshal $? > $@
-
-agent-signals-marshal.c: agent-signals-marshal.list
-	echo '#include "agent-signals-marshal.h"' > $@
-	glib-genmarshal --body --prefix=agent_marshal $? | \
-	sed -e 's/^}$$/(void)return_value;(void)invocation_hint;}/' >> $@
 
 nodist_libagentinclude_HEADERS = \
 		agent-enumtypes.h
@@ -54,8 +45,6 @@ nodist_libagent_la_SOURCES = \
 	agent-enumtypes.c
 
 BUILT_SOURCES = \
-	agent-signals-marshal.h \
-	agent-signals-marshal.c \
 	$(nodist_libagentinclude_HEADERS)
 
 CLEANFILES += $(BUILT_SOURCES)
