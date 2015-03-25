@@ -296,7 +296,9 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
       nice_debug ("tcp-est %p: not connected to %s:%u, queueing. queue-size=%u, queue_is_empty=%d max-tcp-queue-size=%d", sock, to_string, 
                   nice_address_get_port (to), priv->send_queue.length, g_queue_is_empty (&priv->send_queue), priv->max_tcp_queue_size);
       add_to_be_sent (sock, buff, len, FALSE);
-      priv->txcb (sock, buff, len, priv->tx_queue_size_bytes, priv->userdata);
+      if (g_socket_is_connected (sock->fileno)) {
+        priv->txcb (sock, buff, len, priv->tx_queue_size_bytes, priv->userdata);
+      }
       return len;
     }
   } else {
