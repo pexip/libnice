@@ -404,11 +404,6 @@ priv_has_sent_permission_for_peer (TurnPriv *priv, const NiceAddress *peer)
 static void
 priv_add_permission_for_peer (TurnPriv *priv, const NiceAddress *peer)
 {
-  gchar addrstring[INET6_ADDRSTRLEN];
-  nice_address_to_string (peer, addrstring);
-  
-  nice_debug ("added permission for peer %s:%u", addrstring, nice_address_get_port(peer));
-
   priv->permissions =
       g_list_append (priv->permissions, nice_address_dup (peer));
 }
@@ -469,33 +464,6 @@ socket_enqueue_data(TurnPriv *priv, const NiceAddress *to,
   data->data = g_memdup(buf, len);
   data->data_len = len;
   g_queue_push_tail (queue, data);
-}
-
-static void
-check_for_pending_create_permissions (TurnPriv *priv)
-{
-  /*
-   * Iterate over any queued requests and send createpermissions request
-   */
-  GHashTableIter iter;
-  gpointer key, value;
-
-  if (priv->current_create_permission_msg == NULL) {
-
-    g_hash_table_iter_init (&iter, priv->send_data_queues);
-    while (g_hash_table_iter_next (&iter, &key, &value)) {
-      NiceAddress *to = key;
-      gchar addrstring[INET6_ADDRSTRLEN];
-      
-      nice_address_to_string (to, addrstring);
-      nice_debug ("starting pending createpermission request for address : %s:%u", addrstring, nice_address_get_port (to));
-      
-      priv_send_create_permission (priv, NULL, to);
-      break;
-    }
-  } else {
-    nice_debug ("can't start pending transactions as createpermission in progress");
-  }
 }
 
 static void
@@ -625,15 +593,8 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
   if (msg_len > 0) {
     if (priv->compatibility == NICE_TURN_SOCKET_COMPATIBILITY_RFC5766 &&
         !priv_has_permission_for_peer (priv, to)) {
-      gchar addrstring[INET6_ADDRSTRLEN];
-      nice_address_to_string (to, addrstring);
-      
-      nice_debug ("Dont have permission for peer %s:%u", addrstring, nice_address_get_port(to));
-
-      if (priv->current_create_permission_msg == NULL) {
+      if (!priv_has_sent_permission_for_peer (priv, to)) {
         priv_send_create_permission (priv, NULL, to);
-      } else {
-        nice_debug ("Create permission in flight, not creating another");
       }
 
       /* enque data */
@@ -1061,8 +1022,6 @@ nice_turn_socket_parse_recv (NiceSocket *sock, NiceSocket **from_sock,
 
             g_free (priv->current_create_permission_msg);
             priv->current_create_permission_msg = NULL;
-
-            check_for_pending_create_permissions(priv);
           }
         }
 
@@ -1260,7 +1219,6 @@ priv_retransmissions_create_permission_tick_unlocked (TurnPriv *priv)
 
           socket_dequeue_all_data (priv, &to);
 
-          check_for_pending_create_permissions(priv);
           break;
         }
       case STUN_USAGE_TIMER_RETURN_RETRANSMIT:
@@ -1444,12 +1402,8 @@ priv_send_create_permission(TurnPriv *priv, StunMessage *resp,
         STUN_TIMER_DEFAULT_MAX_RETRANSMISSIONS);
     }
 
-    if (priv->current_create_permission_msg)
-    {
-      g_free (priv->current_create_permission_msg);
-    }
-    priv->current_create_permission_msg = msg;
     priv_schedule_tick (priv);
+    priv->current_create_permission_msg = msg;
   } else {
     g_free(msg);
   }
