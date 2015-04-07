@@ -162,8 +162,6 @@ gst_nice_sink_dispose (GObject *object)
   GstNiceSink *sink = GST_NICE_SINK (object);
 
   if (sink->agent != NULL) {
-    g_signal_handler_disconnect (sink->agent, sink->overflow_hid);
-    g_signal_handler_disconnect (sink->agent, sink->writable_hid);
     g_object_unref (sink->agent);
     sink->agent = NULL;
   }
@@ -235,14 +233,6 @@ gst_nice_sink_set_property (
             "Changing the agent on a nice sink not allowed");
       } else {
         sink->agent = g_value_dup_object (value);
-        if (G_LIKELY (sink->agent != NULL)) {
-          sink->overflow_hid = g_signal_connect_swapped (sink->agent,
-              "reliable-transport-overflow",
-              G_CALLBACK (gst_nice_sink_on_overflow), sink);
-          sink->writable_hid = g_signal_connect_swapped (sink->agent,
-              "reliable-transport-writable",
-              G_CALLBACK (gst_nice_sink_on_writable), sink);
-        }
       }
       break;
 
@@ -299,12 +289,24 @@ gst_nice_sink_change_state (GstElement * element, GstStateChange transition)
 
   switch (transition) {
     case GST_STATE_CHANGE_NULL_TO_READY:
-      if (sink->agent == NULL)
-        {
+      if (sink->agent == NULL) {
           GST_ERROR_OBJECT (element,
               "Trying to start Nice sink without an agent set");
           return GST_STATE_CHANGE_FAILURE;
-        }
+      } else {
+        sink->overflow_hid = g_signal_connect_swapped (sink->agent,
+            "reliable-transport-overflow",
+            G_CALLBACK (gst_nice_sink_on_overflow), sink);
+        sink->writable_hid = g_signal_connect_swapped (sink->agent,
+            "reliable-transport-writable",
+            G_CALLBACK (gst_nice_sink_on_writable), sink);
+      }
+      break;
+    case GST_STATE_CHANGE_READY_TO_NULL:
+      if (sink->agent != NULL) {
+        g_signal_handler_disconnect (sink->agent, sink->overflow_hid);
+        g_signal_handler_disconnect (sink->agent, sink->writable_hid);
+      }
       break;
     default:
       break;
