@@ -300,8 +300,9 @@ typedef enum
   /* 0x802B-0x804F */      /* reserved */
   STUN_ATTRIBUTE_MS_SEQUENCE_NUMBER=0x8050,     /* MS-TURN */
   /* 0x8051-0x8053 */      /* reserved */
-  STUN_ATTRIBUTE_CANDIDATE_IDENTIFIER=0x8054    /* MS-ICE2 */
+  STUN_ATTRIBUTE_CANDIDATE_IDENTIFIER=0x8054,    /* MS-ICE2 */
   /* 0x8055-0xFFFF */      /* reserved */
+  STUN_ATTRIBUTE_IMPLEMENTATION_VERSION=0x8070    /* MS-ICE2 */
 } StunAttribute;
 
 

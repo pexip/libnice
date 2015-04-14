@@ -630,8 +630,7 @@ size_t stun_agent_finish_message (StunAgent *agent, StunMessage *msg,
       return 0;
     }
 
-    fpr = stun_fingerprint (msg->buffer, stun_message_length (msg),
-        agent->compatibility == STUN_COMPATIBILITY_WLM2009);
+    fpr = stun_fingerprint (msg->buffer, stun_message_length (msg), FALSE);
     memcpy (ptr, &fpr, sizeof (fpr));
   }
 
