@@ -359,7 +359,7 @@ gst_nice_src_dispose (GObject *object)
   src->mainctx = NULL;
 
   if (src->outbufs)
-    g_queue_free (src->outbufs);
+    g_queue_free_full (src->outbufs, (GDestroyNotify)gst_buffer_unref);
   src->outbufs = NULL;
 
   G_OBJECT_CLASS (gst_nice_src_parent_class)->dispose (object);
