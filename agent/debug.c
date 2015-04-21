@@ -52,7 +52,6 @@ static int debug_enabled = 0;
 static const GDebugKey keys[] = {
   { (gchar *)"stun",  NICE_DEBUG_STUN },
   { (gchar *)"nice",  NICE_DEBUG_NICE },
-  { NULL, 0},
 };
 
 
@@ -70,7 +69,7 @@ void nice_debug_init ()
     nice_debug_disable (TRUE);
 
     if (flags_string != NULL) {
-      flags = g_parse_debug_string (flags_string, keys,  4);
+      flags = g_parse_debug_string (flags_string, keys,  (sizeof(keys)/sizeof(keys[0])));
 
       if (flags & NICE_DEBUG_NICE)
         nice_debug_enable (FALSE);
