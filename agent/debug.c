@@ -69,7 +69,7 @@ void nice_debug_init ()
     nice_debug_disable (TRUE);
 
     if (flags_string != NULL) {
-      flags = g_parse_debug_string (flags_string, keys,  (sizeof(keys)/sizeof(keys[0])));
+      flags = g_parse_debug_string (flags_string, keys,  G_N_ELEMENTS(keys));
 
       if (flags & NICE_DEBUG_NICE)
         nice_debug_enable (FALSE);
