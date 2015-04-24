@@ -185,7 +185,7 @@ typedef enum {
 typedef struct {
   StunTransactionId id;
   StunMethod method;
-  uint8_t *key;
+  uint8_t key[STUN_MAX_PWD];
   size_t key_len;
   uint8_t long_term_key[16];
   bool long_term_valid;

@@ -82,4 +82,9 @@
 #define FALSE (0 == 1)
 #endif
 
+/*
+ * Max password length as defined in RFC 5245 15.4
+ */
+#define STUN_MAX_PWD    256 + 1
+
 #endif /* _STUN_CONSTANTS_H */

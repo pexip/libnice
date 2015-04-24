@@ -636,14 +636,16 @@ size_t stun_agent_finish_message (StunAgent *agent, StunMessage *msg,
 
 
   if (stun_message_get_class (msg) == STUN_REQUEST) {
-    stun_message_id (msg, agent->sent_ids[saved_id_idx].id);
-    agent->sent_ids[saved_id_idx].method = stun_message_get_method (msg);
-    agent->sent_ids[saved_id_idx].key = (uint8_t *) key;
-    agent->sent_ids[saved_id_idx].key_len = key_len;
-    memcpy (agent->sent_ids[saved_id_idx].long_term_key, msg->long_term_key,
-        sizeof(msg->long_term_key));
-    agent->sent_ids[saved_id_idx].long_term_valid = msg->long_term_valid;
-    agent->sent_ids[saved_id_idx].valid = TRUE;
+    StunAgentSavedIds *saved = &agent->sent_ids[saved_id_idx];
+
+    stun_message_id (msg, saved->id);
+    saved->method = stun_message_get_method (msg);
+    saved->key_len = MIN(key_len, sizeof (saved->key) - 1);
+    memcpy (saved->key, (uint8_t *) key, saved->key_len);
+    saved->key[saved->key_len] = '\0';
+    memcpy (saved->long_term_key, msg->long_term_key, sizeof(msg->long_term_key));
+    saved->long_term_valid = msg->long_term_valid;
+    saved->valid = TRUE;
   }
 
   msg->key = (uint8_t *) key;
