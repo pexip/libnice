@@ -236,9 +236,9 @@ agent_candidate_ice_priority (NiceAgent *agent, const NiceCandidate *candidate, 
   guint local_preference = 0;
   
   if (nice_address_is_ipv6(&candidate->base_addr)) {
-    other_preference = (candidate->local_foundation << 1);
+    other_preference = candidate->local_foundation;
   } else {
-    other_preference = (candidate->local_foundation << 1) | 1;;
+    other_preference = (1 << 10) | candidate->local_foundation;
   }
 
   type_preference = priv_agent_candidate_type_preference (agent, type, candidate->transport);
