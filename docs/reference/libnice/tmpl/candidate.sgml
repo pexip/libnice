@@ -1,0 +1,111 @@
+<!-- ##### SECTION Title ##### -->
+NiceCandidate
+
+<!-- ##### SECTION Short_Description ##### -->
+
+
+<!-- ##### SECTION Long_Description ##### -->
+<para>
+
+</para>
+
+
+<!-- ##### SECTION See_Also ##### -->
+<para>
+
+</para>
+
+
+<!-- ##### SECTION Stability_Level ##### -->
+
+
+<!-- ##### SECTION Image ##### -->
+
+
+<!-- ##### STRUCT NiceCandidate ##### -->
+<para>
+
+</para>
+
+@type: 
+@transport: 
+@addr: 
+@base_addr: 
+@priority: 
+@stream_id: 
+@component_id: 
+@foundation: 
+@username: 
+@password: 
+@turn: 
+@sockptr: 
+
+<!-- ##### ENUM NiceCandidateType ##### -->
+<para>
+
+</para>
+
+@NICE_CANDIDATE_TYPE_HOST: 
+@NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE: 
+@NICE_CANDIDATE_TYPE_PEER_REFLEXIVE: 
+@NICE_CANDIDATE_TYPE_RELAYED: 
+
+<!-- ##### ENUM NiceCandidateTransport ##### -->
+<para>
+
+</para>
+
+@NICE_CANDIDATE_TRANSPORT_UDP: 
+
+<!-- ##### STRUCT TurnServer ##### -->
+<para>
+
+</para>
+
+@server: 
+@username: 
+@password: 
+@type: 
+
+<!-- ##### ENUM NiceRelayType ##### -->
+<para>
+
+</para>
+
+@NICE_RELAY_TYPE_TURN_UDP: 
+@NICE_RELAY_TYPE_TURN_TCP: 
+@NICE_RELAY_TYPE_TURN_TLS: 
+
+<!-- ##### MACRO NICE_CANDIDATE_MAX_FOUNDATION ##### -->
+<para>
+
+</para>
+
+
+
+<!-- ##### FUNCTION nice_candidate_new ##### -->
+<para>
+
+</para>
+
+@type: 
+@Returns: 
+
+
+<!-- ##### FUNCTION nice_candidate_free ##### -->
+<para>
+
+</para>
+
+@candidate: 
+
+
+<!-- ##### FUNCTION nice_candidate_copy ##### -->
+<para>
+
+</para>
+
+@candidate: 
+@Returns: 
+
+

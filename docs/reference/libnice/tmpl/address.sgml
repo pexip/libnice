@@ -1,0 +1,172 @@
+<!-- ##### SECTION Title ##### -->
+NiceAddress
+
+<!-- ##### SECTION Short_Description ##### -->
+
+
+<!-- ##### SECTION Long_Description ##### -->
+<para>
+
+</para>
+
+
+<!-- ##### SECTION See_Also ##### -->
+<para>
+
+</para>
+
+
+<!-- ##### SECTION Stability_Level ##### -->
+
+
+<!-- ##### SECTION Image ##### -->
+
+
+<!-- ##### STRUCT NiceAddress ##### -->
+<para>
+
+</para>
+
+
+<!-- ##### MACRO NICE_ADDRESS_STRING_LEN ##### -->
+<para>
+
+</para>
+
+
+
+<!-- ##### FUNCTION nice_address_init ##### -->
+<para>
+
+</para>
+
+@addr: 
+
+
+<!-- ##### FUNCTION nice_address_new ##### -->
+<para>
+
+</para>
+
+@void: 
+@Returns: 
+
+
+<!-- ##### FUNCTION nice_address_free ##### -->
+<para>
+
+</para>
+
+@addr: 
+
+
+<!-- ##### FUNCTION nice_address_dup ##### -->
+<para>
+
+</para>
+
+@addr: 
+@Returns: 
+
+
+<!-- ##### FUNCTION nice_address_set_ipv4 ##### -->
+<para>
+
+</para>
+
+@addr: 
+@addr_ipv4: 
+
+
+<!-- ##### FUNCTION nice_address_set_ipv6 ##### -->
+<para>
+
+</para>
+
+@addr: 
+@addr_ipv6: 
+
+
+<!-- ##### FUNCTION nice_address_set_port ##### -->
+<para>
+
+</para>
+
+@addr: 
+@port: 
+
+
+<!-- ##### FUNCTION nice_address_get_port ##### -->
+<para>
+
+</para>
+
+@addr: 
+@Returns: 
+
+
+<!-- ##### FUNCTION nice_address_set_from_string ##### -->
+<para>
+
+</para>
+
+@addr: 
+@str: 
+@Returns: 
+
+
+<!-- ##### FUNCTION nice_address_set_from_sockaddr ##### -->
+<para>
+
+</para>
+
+@addr: 
+@sin: 
+
+
+<!-- ##### FUNCTION nice_address_copy_to_sockaddr ##### -->
+<para>
+
+</para>
+
+@addr: 
+@sin: 
+
+
+<!-- ##### FUNCTION nice_address_equal ##### -->
+<para>
+
+</para>
+
+@a: 
+@b: 
+@Returns: 
+
+
+<!-- ##### FUNCTION nice_address_to_string ##### -->
+<para>
+
+</para>
+
+@addr: 
+@dst: 
+
+
+<!-- ##### FUNCTION nice_address_is_private ##### -->
+<para>
+
+</para>
+
+@addr: 
+@Returns: 
+
+
+<!-- ##### FUNCTION nice_address_is_valid ##### -->
+<para>
+
+</para>
+
+@addr: 
+@Returns: 
+
+
