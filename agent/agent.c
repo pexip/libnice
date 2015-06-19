@@ -2816,10 +2816,10 @@ nice_agent_set_selected_remote_candidate (
   if (!lcandidate)
     goto done;
 
+  agent_signal_new_selected_pair (agent, stream_id, component_id, lcandidate, candidate);
+
   /* step: change component state */
   agent_signal_component_state_change (agent, stream_id, component_id, NICE_COMPONENT_STATE_READY);
-
-  agent_signal_new_selected_pair (agent, stream_id, component_id, lcandidate, candidate);
 
   ret = TRUE;
 
