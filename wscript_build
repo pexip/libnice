@@ -1,8 +1,0 @@
-#!/usr/bin/env python
-
-bld(features="autotools", name="libnice",
-    target=bld.path.abspath(),
-    install_from_autotools_pkg=['lib/libnice.so*',
-                                'lib/python2.7/site-packages/libnice.so'],
-    depends_on='gstreamer gst-plugins-base gst-python',
-    autotools_source='autogen.sh common.mk configure.ac Makefile.am m4/as-check-python-headers.m4 gst/Makefile.am')

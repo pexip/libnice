@@ -41,7 +41,11 @@
 #include <string.h>
 
 #include "gstnicesrc.h"
+#if GST_CHECK_VERSION (1,0,0)
+#include <gst/net/gstnetaddressmeta.h>
+#else
 #include <gst/netbuffer/gstnetbuffer.h>
+#endif
 
 GST_DEBUG_CATEGORY_STATIC (nicesrc_debug);
 #define GST_CAT_DEFAULT nicesrc_debug
@@ -197,7 +201,9 @@ gst_nice_src_read_callback (NiceAgent *agent,
 {
   GstBaseSrc *basesrc = GST_BASE_SRC (data);
   GstNiceSrc *nicesrc = GST_NICE_SRC (basesrc);
+#if !GST_CHECK_VERSION (1,0,0)
   GstNetBuffer *netbuffer = NULL;
+#endif
   GstBuffer *buffer = NULL;
 
   (void)stream_id;
@@ -206,8 +212,30 @@ gst_nice_src_read_callback (NiceAgent *agent,
   GST_LOG_OBJECT (agent, "Got buffer, getting out of the main loop");
 
 #if GST_CHECK_VERSION (1,0,0)
+  (void)to;
   buffer = gst_buffer_new_allocate (NULL, len, NULL);
   gst_buffer_fill (buffer, 0, buf, len);
+
+  if (from != NULL) {
+    GSocketAddress * saddr;
+    switch (from->s.addr.sa_family) {
+      case AF_INET:
+        if ((saddr = g_socket_address_new_from_native ((gpointer)&from->s.ip4, sizeof (from->s.ip4))) != NULL) {
+          gst_buffer_add_net_address_meta (buffer, saddr);
+          g_object_unref (saddr);
+        }
+        break;
+      case AF_INET6:
+        if ((saddr = g_socket_address_new_from_native ((gpointer)&from->s.ip6, sizeof (from->s.ip6))) != NULL) {
+          gst_buffer_add_net_address_meta (buffer, saddr);
+          g_object_unref (saddr);
+        }
+        break;
+      default:
+        GST_ERROR_OBJECT (nicesrc, "Unknown address family");
+        break;
+    }
+  }
 #else
   if (from != NULL && to != NULL) {
     netbuffer = gst_netbuffer_new();

@@ -127,6 +127,7 @@ AS_IF([test "$with_gstreamer" != no], [
 	PKG_CHECK_MODULES(GST, [
 		gstreamer-1.0 >= 0.11.91
 		gstreamer-base-1.0 >= 0.11.91
+		gstreamer-net-1.0 >= 0.11.91
 		],
 		[
 		with_gstreamer=yes

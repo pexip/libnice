@@ -7,7 +7,6 @@ ERROR_CFLAGS = \
 	-Wnested-externs \
 	-Wwrite-strings \
 	-Wpointer-arith \
-	-Wbad-function-cast \
 	-Wmissing-declarations \
 	-Wmissing-prototypes \
 	-Wstrict-prototypes \

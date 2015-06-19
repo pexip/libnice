@@ -200,8 +200,13 @@ gst_nice_sink_on_overflow (GstNiceSink * sink,
   (void) component_id;
   (void) agent;
 
+#if GST_CHECK_VERSION (1,0,0)
+  gst_pad_push_event (GST_BASE_SINK_PAD (sink),
+      gst_event_new_qos (GST_QOS_TYPE_OVERFLOW, 0.5, -1, GST_CLOCK_TIME_NONE));
+#else
   gst_pad_push_event (GST_BASE_SINK_PAD (sink),
       gst_event_new_qos (0.5, -1, GST_CLOCK_TIME_NONE));
+#endif
 }
 
 static void
@@ -212,8 +217,13 @@ gst_nice_sink_on_writable (GstNiceSink * sink,
   (void) component_id;
   (void) agent;
 
+#if GST_CHECK_VERSION (1,0,0)
+  gst_pad_push_event (GST_BASE_SINK_PAD (sink),
+      gst_event_new_qos (GST_QOS_TYPE_UNDERFLOW, 1.0, 1, GST_CLOCK_TIME_NONE));
+#else
   gst_pad_push_event (GST_BASE_SINK_PAD (sink),
       gst_event_new_qos (1.0, 1, GST_CLOCK_TIME_NONE));
+#endif
 }
 
 static void
