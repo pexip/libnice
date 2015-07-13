@@ -66,6 +66,10 @@ static gboolean
 gst_nice_src_unlock_stop (
     GstBaseSrc *basesrc);
 
+static gboolean
+gst_nice_src_negotiate (
+    GstBaseSrc * src);
+
 static void
 gst_nice_src_set_property (
   GObject *object,
@@ -123,6 +127,7 @@ gst_nice_src_class_init (GstNiceSrcClass *klass)
   gstbasesrc_class = (GstBaseSrcClass *) klass;
   gstbasesrc_class->unlock = GST_DEBUG_FUNCPTR (gst_nice_src_unlock);
   gstbasesrc_class->unlock_stop = GST_DEBUG_FUNCPTR (gst_nice_src_unlock_stop);
+  gstbasesrc_class->negotiate = GST_DEBUG_FUNCPTR (gst_nice_src_negotiate);
 
   gobject_class = (GObjectClass *) klass;
   gobject_class->set_property = gst_nice_src_set_property;
@@ -329,6 +334,41 @@ gst_nice_src_unlock_stop (GstBaseSrc *src)
   GST_OBJECT_UNLOCK (src);
 
   return TRUE;
+}
+
+/* Similar to gst_base_src_default_negotiate except that it always queries
+ * downstream for allowed caps. This is because the default behavior never
+ * sends a caps-event if the template caps is any. */
+static gboolean
+gst_nice_src_negotiate (GstBaseSrc * basesrc)
+{
+  GstCaps *caps;
+  gboolean result = FALSE;
+
+  caps = gst_pad_get_allowed_caps (GST_BASE_SRC_PAD (basesrc));
+  if (!caps)
+    caps = gst_pad_get_pad_template_caps (GST_BASE_SRC_PAD (basesrc));
+
+  if (caps && !gst_caps_is_empty (caps)) {
+    if (gst_caps_is_any (caps)) {
+      GST_DEBUG_OBJECT (basesrc, "any caps, negotiation not needed");
+      result = TRUE;
+    } else {
+      GstBaseSrcClass *bclass = GST_BASE_SRC_GET_CLASS (basesrc);
+      if (bclass->fixate)
+        caps = bclass->fixate (basesrc, caps);
+      GST_DEBUG_OBJECT (basesrc, "fixated to: %" GST_PTR_FORMAT, caps);
+      if (gst_caps_is_fixed (caps)) {
+        result = gst_base_src_set_caps (basesrc, caps);
+      }
+    }
+    gst_caps_unref (caps);
+  } else {
+    if (caps)
+      gst_caps_unref (caps);
+    GST_DEBUG_OBJECT (basesrc, "no common caps");
+  }
+  return result;
 }
 
 static GstFlowReturn
