@@ -242,6 +242,7 @@
 
 (define-method restart
   (of-object "NiceAgent")
+  (unblock-threads t)
   (c-name "nice_agent_restart")
   (return-type "gboolean")
 )
