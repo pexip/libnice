@@ -399,7 +399,7 @@ socket_send_more (
   gpointer data)
 {
   NiceSocket *sock = (NiceSocket *) data;
-  TcpEstablishedPriv *priv = sock->priv;
+  TcpEstablishedPriv *priv = NULL;
   struct to_be_sent *tbs = NULL;
   GError *gerr = NULL;
 
@@ -413,6 +413,8 @@ socket_send_more (
     agent_unlock();
     return FALSE;
   }
+
+  priv = sock->priv;
 
   if (priv->connect_pending) {
     /* 
