@@ -1514,7 +1514,8 @@ static void priv_update_check_list_state_for_ready (NiceAgent *agent, Stream *st
    */
   for (i = stream->valid_list; i; i = i->next) {
     CandidateCheckPair *p = i->data;
-    if (p->component_id == component->id) {
+    if (p->component_id == component->id &&
+        p->state == NICE_CHECK_SUCCEEDED) {
       ++succeeded;
       if (p->nominated == TRUE) {
         ++nominated;
