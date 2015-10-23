@@ -93,8 +93,7 @@ nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr,
   }
 
   tmp_addr = *addr;
-  /* Make sure we don't bind to any local port */
-  nice_address_set_port (&tmp_addr, 0);
+  nice_debug("tcp-act: binding to port %d", nice_address_get_port(addr));
   nice_address_copy_to_sockaddr (&tmp_addr, (struct sockaddr *)&name);
 
   gaddr = g_socket_address_new_from_native (&name, sizeof (name));

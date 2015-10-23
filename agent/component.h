@@ -120,6 +120,8 @@ struct _Component
                                        component */
   guint min_port;
   guint max_port;
+  guint min_tcp_active_port;
+  guint max_tcp_active_port;
   gboolean enable_udp;
   gboolean enable_tcp_passive;
   gboolean enable_tcp_active;

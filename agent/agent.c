@@ -1632,7 +1632,7 @@ nice_agent_gather_candidates (
       
       tcp_active_host_candidate = NULL;
       if (component->enable_tcp_active) {
-        current_port = component->min_port;
+        current_port = component->min_tcp_active_port;
 
         while (tcp_active_host_candidate == NULL) {
           nice_debug ("Agent %p: Trying to create TCP-ACTIVE host candidate on port %d", agent, current_port);
@@ -1641,7 +1641,7 @@ nice_agent_gather_candidates (
                                                                n + 1, addr, NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE);
           if (current_port > 0)
             current_port++;
-          if (current_port == 0 || current_port > component->max_port)
+          if (current_port == 0 || current_port > component->max_tcp_active_port)
             break;
         }
 
@@ -1841,6 +1841,22 @@ nice_agent_set_port_range (NiceAgent *agent, guint stream_id, guint component_id
   if (agent_find_component (agent, stream_id, component_id, NULL, &component)) {
     component->min_port = min_port;
     component->max_port = max_port;
+  }
+
+  agent_unlock();
+}
+
+NICEAPI_EXPORT void
+nice_agent_set_tcp_active_port_range (NiceAgent *agent, guint stream_id, guint component_id,
+    guint min_port, guint max_port)
+{
+  Component *component;
+
+  agent_lock();
+
+  if (agent_find_component (agent, stream_id, component_id, NULL, &component)) {
+    component->min_tcp_active_port = min_port;
+    component->max_tcp_active_port = max_port;
   }
 
   agent_unlock();
@@ -2281,10 +2297,17 @@ nice_agent_get_local_candidates (
   agent_lock();
 
   if (agent_find_component (agent, stream_id, component_id, NULL, &component)) {
-    for (item = component->local_candidates; item; item = item->next)
-      ret = g_slist_append (ret, nice_candidate_copy (item->data));
+    for (item = component->local_candidates; item; item = item->next) {
+      NiceCandidate *copy = nice_candidate_copy (item->data);
+      
+      if (copy->transport == NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE) {
+        nice_address_set_port (&copy->addr, component->min_port);
+        nice_address_set_port (&copy->base_addr, component->min_port);
+      }
+      ret = g_slist_append (ret, copy);
+    }
   }
-
+  
   agent_unlock();
   return ret;
 }

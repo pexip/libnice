@@ -368,6 +368,14 @@ nice_agent_set_port_range (
     guint max_port);
 
 void
+nice_agent_set_tcp_active_port_range (
+    NiceAgent *agent,
+    guint stream_id,
+    guint component_id,
+    guint min_port,
+    guint max_port);
+
+void
 nice_agent_set_transport (
     NiceAgent *agent,
     guint stream_id,
