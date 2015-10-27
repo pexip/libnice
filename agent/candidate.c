@@ -129,6 +129,30 @@ nice_candidate_copy (const NiceCandidate *candidate)
   return copy;
 }
 
+static gboolean
+_set_addr (NiceAddress *dst_addr, const gchar *addr, guint port)
+{
+  NiceAddress new_addr;
+  nice_address_init (&new_addr);
+  if (!nice_address_set_from_string (&new_addr, addr))
+    return FALSE;
+  nice_address_set_port (&new_addr, port);
+  *dst_addr = new_addr;
+  return TRUE;
+}
+
+NICEAPI_EXPORT gboolean
+nice_candidate_set_addr (NiceCandidate *candidate, const gchar *addr, guint port)
+{
+  return _set_addr (&candidate->addr, addr, port);
+}
+
+NICEAPI_EXPORT gboolean
+nice_candidate_set_base_addr (NiceCandidate *candidate, const gchar *addr, guint port)
+{
+  return _set_addr (&candidate->base_addr, addr, port);
+}
+
 const char *candidate_type_to_string(NiceCandidateType type)
 {
   switch (type) {

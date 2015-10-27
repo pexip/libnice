@@ -16,6 +16,7 @@ nice_address_set_ipv6
 nice_address_set_port
 nice_address_to_string
 nice_agent_add_local_address
+nice_agent_add_local_address_from_string
 nice_agent_add_stream
 nice_agent_attach_recv
 nice_agent_gather_candidates
@@ -40,6 +41,8 @@ nice_agent_set_stream_tos
 nice_candidate_copy
 nice_candidate_free
 nice_candidate_new
+nice_candidate_set_addr
+nice_candidate_set_base_addr
 nice_debug_disable
 nice_debug_enable
 nice_interfaces_get_ip_for_interface

@@ -167,10 +167,10 @@ typedef struct _TurnServer TurnServer;
  */
 struct _TurnServer
 {
-  NiceAddress server;       /**< TURN server address */
-  gchar *username;           /**< TURN username */
-  gchar *password;           /**< TURN password */
-  NiceRelayType type;             /**< TURN type */
+  NiceAddress server;
+  gchar *username;
+  gchar *password;
+  NiceRelayType type;
 };
 
 /**
@@ -249,6 +249,31 @@ nice_candidate_free (NiceCandidate *candidate);
 NiceCandidate *
 nice_candidate_copy (const NiceCandidate *candidate);
 
+/**
+ * nice_candidate_set_addr:
+ * @candidate: The candidate to modify
+ * @addr: The address to set
+ * @port: The port to set
+ *
+ * Sets addr of @candidate
+ *
+ * Returns: %TRUE on success, %FALSE on failure
+ */
+gboolean
+nice_candidate_set_addr (NiceCandidate *candidate, const gchar *addr, guint port);
+
+/**
+ * nice_candidate_set_base_addr:
+ * @candidate: The candidate to modify
+ * @addr: The address to set
+ * @port: The port to set
+ *
+ * Sets base_addr of @candidate
+ *
+ * Returns: %TRUE on success, %FALSE on failure
+ */
+gboolean
+nice_candidate_set_base_addr (NiceCandidate *candidate, const gchar *addr, guint port);
 
 guint64
 nice_candidate_pair_priority (guint32 o_prio, guint32 a_prio);

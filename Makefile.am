@@ -12,7 +12,7 @@ if WANT_PYTHON
 PYTHON_SUBDIR = python
 endif
 
-ACLOCAL_AMFLAGS = -I m4
+ACLOCAL_AMFLAGS = -I m4 ${ACLOCAL_FLAGS}
 
 SUBDIRS = \
 	stun \
@@ -25,7 +25,7 @@ SUBDIRS = \
 	tests \
 	$(PYTHON_SUBDIR)
 
-DISTCHECK_CONFIGURE_FLAGS = --disable-assert -enable-gtk-doc
+DISTCHECK_CONFIGURE_FLAGS = --disable-assert -enable-gtk-doc --enable-introspection
 
 EXTRA_DIST = \
 	COPYING.LGPL \
@@ -34,7 +34,8 @@ EXTRA_DIST = \
 	common.mk \
 	scripts/lcov.mk \
 	scripts/lcov.sh \
-	scripts/valgrind.sh
+	scripts/valgrind.sh \
+	m4/introspection.m4
 
 dist_check_SCRIPTS = \
 	scripts/check-symbols.sh \

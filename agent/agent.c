@@ -1909,6 +1909,16 @@ nice_agent_add_local_address (NiceAgent *agent, NiceAddress *addr)
   return TRUE;
 }
 
+NICEAPI_EXPORT gboolean
+nice_agent_add_local_address_from_string (NiceAgent *agent, const gchar *addr)
+{
+  NiceAddress nice_addr;
+  nice_address_init (&nice_addr);
+  if (!nice_address_set_from_string (&nice_addr, addr))
+    return FALSE;
+  return nice_agent_add_local_address (agent, &nice_addr);
+}
+
 static gboolean priv_add_remote_candidate (
   NiceAgent *agent,
   guint stream_id,

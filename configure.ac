@@ -1,5 +1,5 @@
 
-AC_PREREQ(2.59c)
+AC_PREREQ(2.62)
 
 dnl releases only do -Wall, cvs and prerelease does -Werror too
 dnl use a three digit version number for releases, and four for cvs/prerelease
@@ -10,7 +10,7 @@ AC_CANONICAL_SYSTEM
 
 AC_CONFIG_SRCDIR([agent/agent.c])
 AC_CONFIG_HEADERS([config.h])
-AM_INIT_AUTOMAKE([-Wall])
+AM_INIT_AUTOMAKE([-Wall -Wno-portability])
 
 AC_CONFIG_FILES([
 	Makefile
@@ -242,6 +242,8 @@ GTK_DOC_CHECK(1.9)
 AM_CONDITIONAL([ENABLE_GTK_DOC], false)
 ])
 AC_CONFIG_MACRO_DIR(m4)
+
+GOBJECT_INTROSPECTION_CHECK([1.30.0])
 
 AC_OUTPUT
 

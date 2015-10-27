@@ -43,8 +43,7 @@
 /**
  * SECTION:agent
  * @short_description:  ICE agent API implementation
- * @see_also: #NiceCandidate
- * @see_also: #NiceAddress
+ * @see_also: #NiceCandidate, #NiceAddress
  * @include: agent.h
  * @stability: Stable
  *
@@ -53,50 +52,50 @@
  * It will take care of discovering your local candidates and do
  *  connectivity checks to create a stream of data between you and your peer.
  *
- <example>
-   <title>Simple example on how to use libnice</title>
-   <programlisting>
-   guint stream_id;
-   gchar buffer[] = "hello world!";
-   GSList *lcands = NULL;
-
-   // Create a nice agent
-   NiceAgent *agent = nice_agent_new (NULL, NICE_COMPATIBILITY_RFC5245);
-
-   // Connect the signals
-   g_signal_connect (G_OBJECT (agent), "candidate-gathering-done",
-                     G_CALLBACK (cb_candidate_gathering_done), NULL);
-   g_signal_connect (G_OBJECT (agent), "component-state-changed",
-                     G_CALLBACK (cb_component_state_changed), NULL);
-   g_signal_connect (G_OBJECT (agent), "new-selected-pair",
-                     G_CALLBACK (cb_new_selected_pair), NULL);
-
-   // Create a new stream with one component and start gathering candidates
-   stream_id = nice_agent_add_stream (agent, 1);
-   nice_agent_gather_candidates (agent, stream_id);
-
-   // Attach to the component to receive the data
-   nice_agent_attach_recv (agent, stream_id, 1, NULL,
-                          cb_nice_recv, NULL);
-
-   // ... Wait until the signal candidate-gathering-done is fired ...
-   lcands = nice_agent_get_local_candidates(agent, stream_id, 1);
-
-   // ... Send local candidates to the peer and set the peer's remote candidates
-   nice_agent_set_remote_candidates (agent, stream_id, 1, rcands);
-
-   // ... Wait until the signal new-selected-pair is fired ...
-   // Send our message!
-   nice_agent_send (agent, stream_id, 1, sizeof(buffer), buffer);
-
-   // Anything received will be received through the cb_nice_recv callback
-
-   // Destroy the object
-   g_object_unref(agent);
-
-   </programlisting>
- </example>
- */
+ *<example>
+ *  <title>Simple example on how to use libnice</title>
+ *  <programlisting>
+ *  guint stream_id;
+ *  gchar buffer[] = "hello world!";
+ *  GSList *lcands = NULL;
+ *
+ *  // Create a nice agent
+ *  NiceAgent *agent = nice_agent_new (NULL, NICE_COMPATIBILITY_RFC5245);
+ *
+ *  // Connect the signals
+ *  g_signal_connect (G_OBJECT (agent), "candidate-gathering-done",
+ *                    G_CALLBACK (cb_candidate_gathering_done), NULL);
+ *  g_signal_connect (G_OBJECT (agent), "component-state-changed",
+ *                    G_CALLBACK (cb_component_state_changed), NULL);
+ *  g_signal_connect (G_OBJECT (agent), "new-selected-pair",
+ *                    G_CALLBACK (cb_new_selected_pair), NULL);
+ *
+ *  // Create a new stream with one component and start gathering candidates
+ *  stream_id = nice_agent_add_stream (agent, 1);
+ *  nice_agent_gather_candidates (agent, stream_id);
+ *
+ *  // Attach to the component to receive the data
+ *  nice_agent_attach_recv (agent, stream_id, 1, NULL,
+ *                         cb_nice_recv, NULL);
+ *
+ *  // ... Wait until the signal candidate-gathering-done is fired ...
+ *  lcands = nice_agent_get_local_candidates(agent, stream_id, 1);
+ *
+ *  // ... Send local candidates to the peer and set the peer's remote candidates
+ *  nice_agent_set_remote_candidates (agent, stream_id, 1, rcands);
+ *
+ *  // ... Wait until the signal new-selected-pair is fired ...
+ *  // Send our message!
+ *  nice_agent_send (agent, stream_id, 1, sizeof(buffer), buffer);
+ *
+ *  // Anything received will be received through the cb_nice_recv callback
+ *
+ *  // Destroy the object
+ *  g_object_unref(agent);
+ *
+ *  </programlisting>
+ *</example>
+ **/
 
 
 #include <glib-object.h>
@@ -298,6 +297,21 @@ nice_agent_new (GMainContext *ctx, NiceCompatibility compat, NiceCompatibility t
 gboolean
 nice_agent_add_local_address (NiceAgent *agent, NiceAddress *addr);
 
+/**
+ * nice_agent_add_local_address_from_string:
+ * @agent: The #NiceAgent Object
+ * @addr: The address to listen to
+ *
+ * Add a local address from which to derive local host candidates for
+ * candidate gathering.
+ *
+ *
+ * See also: nice_agent_gather_candidates()
+ * Returns: %TRUE on success, %FALSE on fatal (memory allocation) errors
+ */
+gboolean
+nice_agent_add_local_address_from_string (NiceAgent *agent, const gchar *addr);
+
 
 /**
  * nice_agent_add_stream:
@@ -359,7 +373,7 @@ nice_agent_set_transport (
     guint stream_id,
     guint component_id,
     NiceCandidateTransport transport);
-    
+
 /**
  * nice_agent_set_relay_info:
  * @agent: The #NiceAgent Object
@@ -469,7 +483,8 @@ nice_agent_get_local_credentials (
  * @agent: The #NiceAgent Object
  * @stream_id: The ID of the stream the candidates are for
  * @component_id: The ID of the component the candidates are for
- * @candidates: a #GSList of #NiceCandidate items describing each candidate to add
+ * @candidates: (element-type NiceCandidate) (transfer none): a #GSList of
+ * #NiceCandidate items describing each candidate to add
  *
  * Sets, adds or updates the remote candidates for a component of a stream.
  *
@@ -563,8 +578,8 @@ nice_agent_send (
    </para>
  </note>
  *
- * Returns: a #GSList of #NiceCandidate objects representing
- * the local candidates of @agent
+ * Returns: (element-type NiceCandidate) (transfer full): a #GSList of
+ * #NiceCandidate objects representing the local candidates of @agent
  **/
 GSList *
 nice_agent_get_local_candidates (
@@ -593,8 +608,8 @@ nice_agent_get_local_candidates (
    </para>
  </note>
  *
- * Returns: a #GSList of #NiceCandidates objects representing
- * the remote candidates set on the @agent
+ * Returns: (element-type NiceCandidate) (transfer full): a #GSList of
+ * #NiceCandidates objects representing the remote candidates set on the @agent
  **/
 GSList *
 nice_agent_get_remote_candidates (
@@ -619,7 +634,7 @@ nice_agent_restart (
 
 
 /**
- * nice_agent_attach_recv:
+ * nice_agent_attach_recv: (skip)
  * @agent: The #NiceAgent Object
  * @stream_id: The ID of stream
  * @component_id: The ID of the component
@@ -745,7 +760,7 @@ void nice_agent_set_software (NiceAgent *agent, const gchar *software);
  *
  * Returns the current number of bytes queued for transmission on the given
  * stream/component. Only really makes sense for streams using TCP media, for
- * streams using UDP will always return 0. 
+ * streams using UDP will always return 0.
  *
  */
 gint
