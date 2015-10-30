@@ -461,14 +461,15 @@ nice_agent_set_remote_credentials (
  * nice_agent_get_local_credentials:
  * @agent: The #NiceAgent Object
  * @stream_id: The ID of the stream
- * @ufrag: a pointer to a NULL-terminated string containing
- * an ICE username fragment [OUT].
- * This string must be freed with g_free()
- * @pwd: a pointer to a NULL-terminated string containing an ICE
- * password [OUT]
- * This string must be freed with g_free()
+ * @ufrag: (out callee-allocates): return location for a nul-terminated string
+ * containing an ICE username fragment; must be freed with g_free()
+ * @pwd: (out callee-allocates): return location for a nul-terminated string
+ * containing an ICE password; must be freed with g_free()
  *
  * Gets the local credentials for stream @stream_id.
+ *
+ * An error will be returned if this is called for a non-existent stream, or if
+ * either of @ufrag or @pwd are %NULL.
  *
  * Returns: %TRUE on success, %FALSE on error.
  */
