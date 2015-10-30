@@ -263,6 +263,17 @@ gboolean
 nice_candidate_set_addr (NiceCandidate *candidate, const gchar *addr, guint port);
 
 /**
+ * nice_candidate_get_addr:
+ * @candidate: The candidate to get addr from
+ * @dst_addr: (out callee-allocates): @candidate->addr address as string
+ * @dst_port: (out caller-allocates): @candidate->addr port
+ *
+ * Gets addr of @candidate
+ */
+void
+nice_candidate_get_addr (NiceCandidate *candidate, gchar **dst_addr, guint *dst_port);
+
+/**
  * nice_candidate_set_base_addr:
  * @candidate: The candidate to modify
  * @addr: The address to set
@@ -274,6 +285,28 @@ nice_candidate_set_addr (NiceCandidate *candidate, const gchar *addr, guint port
  */
 gboolean
 nice_candidate_set_base_addr (NiceCandidate *candidate, const gchar *addr, guint port);
+
+/**
+ * nice_candidate_get_base_addr:
+ * @candidate: The candidate to get addr from
+ * @dst_addr: (out callee-allocates): @candidate->addr address as string
+ * @dst_port: (out caller-allocates): @candidate->addr port
+ *
+ * Gets base_addr of @candidate
+ */
+void
+nice_candidate_get_base_addr (NiceCandidate *candidate, gchar **dst_addr, guint *dst_port);
+
+/**
+ * nice_candidate_get_component_id:
+ * @candidate: The candidate to get component_id from
+ *
+ * component_id accessor function
+ *
+ * Returns: @candidate->component_id
+ */
+guint
+nice_candidate_get_component_id (const NiceCandidate *candidate);
 
 guint64
 nice_candidate_pair_priority (guint32 o_prio, guint32 a_prio);

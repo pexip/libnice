@@ -141,16 +141,43 @@ _set_addr (NiceAddress *dst_addr, const gchar *addr, guint port)
   return TRUE;
 }
 
+static void
+_get_addr (NiceAddress *addr, gchar **dst_addr, guint *dst_port)
+{
+  gchar *addr_str = g_new0 (gchar, INET6_ADDRSTRLEN);
+  nice_address_to_string (addr, addr_str);
+  *dst_port = nice_address_get_port (addr);
+  *dst_addr = addr_str;
+}
+
 NICEAPI_EXPORT gboolean
 nice_candidate_set_addr (NiceCandidate *candidate, const gchar *addr, guint port)
 {
   return _set_addr (&candidate->addr, addr, port);
 }
 
+NICEAPI_EXPORT void
+nice_candidate_get_addr (NiceCandidate *candidate, gchar **dst_addr, guint *dst_port)
+{
+  _get_addr (&candidate->addr, dst_addr, dst_port);
+}
+
 NICEAPI_EXPORT gboolean
 nice_candidate_set_base_addr (NiceCandidate *candidate, const gchar *addr, guint port)
 {
   return _set_addr (&candidate->base_addr, addr, port);
+}
+
+NICEAPI_EXPORT void
+nice_candidate_get_base_addr (NiceCandidate *candidate, gchar **dst_addr, guint *dst_port)
+{
+  _get_addr (&candidate->base_addr, dst_addr, dst_port);
+}
+
+NICEAPI_EXPORT guint
+nice_candidate_get_component_id (const NiceCandidate *candidate)
+{
+  return candidate->component_id;
 }
 
 const char *candidate_type_to_string(NiceCandidateType type)
