@@ -279,7 +279,7 @@ nice_agent_new (GMainContext *ctx, NiceCompatibility compat, NiceCompatibility t
 
 
 /**
- * nice_agent_add_local_address:
+ * nice_agent_add_local_address: (skip)
  * @agent: The #NiceAgent Object
  * @addr: The address to listen to
  * If the port is 0, then a random port will be chosen by the system
