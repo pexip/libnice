@@ -129,6 +129,30 @@ nice_candidate_copy (const NiceCandidate *candidate)
   return copy;
 }
 
+NICEAPI_EXPORT void
+nice_candidate_set_ctype (NiceCandidate *candidate, NiceCandidateType type)
+{
+  candidate->type = type;
+}
+
+NICEAPI_EXPORT NiceCandidateType
+nice_candidate_get_ctype (const NiceCandidate *candidate)
+{
+  return candidate->type;
+}
+
+NICEAPI_EXPORT void
+nice_candidate_set_transport (NiceCandidate *candidate, NiceCandidateTransport transport)
+{
+  candidate->transport = transport;
+}
+
+NICEAPI_EXPORT NiceCandidateTransport
+nice_candidate_get_transport (const NiceCandidate *candidate)
+{
+  return candidate->transport;
+}
+
 static gboolean
 _set_addr (NiceAddress *dst_addr, const gchar *addr, guint port)
 {
@@ -142,7 +166,7 @@ _set_addr (NiceAddress *dst_addr, const gchar *addr, guint port)
 }
 
 static void
-_get_addr (NiceAddress *addr, gchar **dst_addr, guint *dst_port)
+_get_addr (const NiceAddress *addr, gchar **dst_addr, guint *dst_port)
 {
   gchar *addr_str = g_new0 (gchar, INET6_ADDRSTRLEN);
   nice_address_to_string (addr, addr_str);
@@ -157,7 +181,7 @@ nice_candidate_set_addr (NiceCandidate *candidate, const gchar *addr, guint port
 }
 
 NICEAPI_EXPORT void
-nice_candidate_get_addr (NiceCandidate *candidate, gchar **dst_addr, guint *dst_port)
+nice_candidate_get_addr (const NiceCandidate *candidate, gchar **dst_addr, guint *dst_port)
 {
   _get_addr (&candidate->addr, dst_addr, dst_port);
 }
@@ -169,15 +193,86 @@ nice_candidate_set_base_addr (NiceCandidate *candidate, const gchar *addr, guint
 }
 
 NICEAPI_EXPORT void
-nice_candidate_get_base_addr (NiceCandidate *candidate, gchar **dst_addr, guint *dst_port)
+nice_candidate_get_base_addr (const NiceCandidate *candidate, gchar **dst_addr, guint *dst_port)
 {
   _get_addr (&candidate->base_addr, dst_addr, dst_port);
+}
+
+NICEAPI_EXPORT void
+nice_candidate_set_priority (NiceCandidate *candidate, guint32 priority)
+{
+  candidate->priority = priority;
+}
+
+NICEAPI_EXPORT guint32
+nice_candidate_get_priority (const NiceCandidate *candidate)
+{
+  return candidate->priority;
+}
+
+NICEAPI_EXPORT void
+nice_candidate_set_stream_id (NiceCandidate *candidate, guint stream_id)
+{
+  candidate->stream_id = stream_id;
+}
+
+NICEAPI_EXPORT guint
+nice_candidate_get_stream_id (const NiceCandidate *candidate)
+{
+  return candidate->stream_id;
+}
+
+NICEAPI_EXPORT void
+nice_candidate_set_component_id (NiceCandidate *candidate, guint component_id)
+{
+  candidate->component_id = component_id;
 }
 
 NICEAPI_EXPORT guint
 nice_candidate_get_component_id (const NiceCandidate *candidate)
 {
   return candidate->component_id;
+}
+
+NICEAPI_EXPORT void
+nice_candidate_set_foundation (NiceCandidate *candidate, const gchar *foundation)
+{
+  g_assert_cmpint (g_utf8_strlen(foundation, -1), <, NICE_CANDIDATE_MAX_FOUNDATION);
+  g_strlcpy (candidate->foundation, foundation, NICE_CANDIDATE_MAX_FOUNDATION);
+}
+
+NICEAPI_EXPORT const gchar *
+nice_candidate_get_foundation (const NiceCandidate *candidate)
+{
+  return candidate->foundation;
+}
+
+NICEAPI_EXPORT void
+nice_candidate_set_username (NiceCandidate *candidate, gchar *username)
+{
+  if (candidate->username)
+    g_free (candidate->username);
+  candidate->username = username;
+}
+
+NICEAPI_EXPORT const gchar *
+nice_candidate_get_username (const NiceCandidate *candidate)
+{
+  return candidate->username;
+}
+
+NICEAPI_EXPORT void
+nice_candidate_set_password (NiceCandidate *candidate, gchar *password)
+{
+  if (candidate->password)
+    g_free (candidate->password);
+  candidate->password = password;
+}
+
+NICEAPI_EXPORT const gchar *
+nice_candidate_get_password (const NiceCandidate *candidate)
+{
+  return candidate->password;
 }
 
 const char *candidate_type_to_string(NiceCandidateType type)

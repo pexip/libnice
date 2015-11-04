@@ -175,21 +175,21 @@ struct _TurnServer
 
 /**
  * NiceCandidate:
- * @type: The type of candidate
- * @transport: The transport being used for the candidate
- * @addr: The #NiceAddress of the candidate
- * @base_addr: The #NiceAddress of the base address used by the candidate
- * @priority: The priority of the candidate <emphasis> see note </emphasis>
- * @stream_id: The ID of the stream to which belongs the candidate
- * @component_id: The ID of the component to which belongs the candidate
- * @foundation: The foundation of the candidate
- * @username: The candidate-specific username to use (overrides the one set
+ * @type: (skip): The type of candidate
+ * @transport: (skip): The transport being used for the candidate
+ * @addr: (skip): The #NiceAddress of the candidate
+ * @base_addr: (skip): The #NiceAddress of the base address used by the candidate
+ * @priority: (skip): The priority of the candidate <emphasis> see note </emphasis>
+ * @stream_id: (skip): The ID of the stream to which belongs the candidate
+ * @component_id: (skip): The ID of the component to which belongs the candidate
+ * @foundation: (skip): The foundation of the candidate
+ * @username: (skip): The candidate-specific username to use (overrides the one set
  * by nice_agent_set_local_credentials() or nice_agent_set_remote_credentials())
- * @password: The candidate-specific password to use (overrides the one set
+ * @password: (skip): The candidate-specific password to use (overrides the one set
  * by nice_agent_set_local_credentials() or nice_agent_set_remote_credentials())
- * @turn: The #TurnServer settings if the candidate is
+ * @turn: (skip): The #TurnServer settings if the candidate is
  * of type %NICE_CANDIDATE_TYPE_RELAYED
- * @sockptr: The underlying socket
+ * @sockptr: (skip): The underlying socket
  *
  * A structure to represent an ICE candidate
  <note>
@@ -250,6 +250,40 @@ NiceCandidate *
 nice_candidate_copy (const NiceCandidate *candidate);
 
 /**
+ * nice_candidate_set_ctype:
+ * @candidate: The candidate to set the @type to
+ * @type:
+ */
+void
+nice_candidate_set_ctype (NiceCandidate *candidate, NiceCandidateType type);
+
+/**
+ * nice_candidate_get_ctype:
+ * @candidate: The candidate to get type from
+ *
+ * Returns: @candidate type field
+ */
+NiceCandidateType
+nice_candidate_get_ctype (const NiceCandidate *candidate);
+
+/**
+ * nice_candidate_set_transport:
+ * @candidate: The candidate to set @transport to
+ * @transport:
+ */
+void
+nice_candidate_set_transport (NiceCandidate *candidate, NiceCandidateTransport transport);
+
+/**
+ * nice_candidate_get_transport:
+ * @candidate: The candidate to get transport from
+ *
+ * Returns: @candidate transport field
+ */
+NiceCandidateTransport
+nice_candidate_get_transport (const NiceCandidate *candidate);
+
+/**
  * nice_candidate_set_addr:
  * @candidate: The candidate to modify
  * @addr: The address to set
@@ -271,7 +305,7 @@ nice_candidate_set_addr (NiceCandidate *candidate, const gchar *addr, guint port
  * Gets addr of @candidate
  */
 void
-nice_candidate_get_addr (NiceCandidate *candidate, gchar **dst_addr, guint *dst_port);
+nice_candidate_get_addr (const NiceCandidate *candidate, gchar **dst_addr, guint *dst_port);
 
 /**
  * nice_candidate_set_base_addr:
@@ -295,18 +329,109 @@ nice_candidate_set_base_addr (NiceCandidate *candidate, const gchar *addr, guint
  * Gets base_addr of @candidate
  */
 void
-nice_candidate_get_base_addr (NiceCandidate *candidate, gchar **dst_addr, guint *dst_port);
+nice_candidate_get_base_addr (const NiceCandidate *candidate, gchar **dst_addr, guint *dst_port);
+
+/**
+ * nice_candidate_set_priority:
+ * @candidate: The candidate to set @priority to
+ * @priority:
+ */
+void
+nice_candidate_set_priority (NiceCandidate *candidate, guint32 priority);
+
+/**
+ * nice_candidate_get_priority:
+ * @candidate: The candidate to get priority from
+ *
+ * Returns: @candidate priority field
+ */
+guint32
+nice_candidate_get_priority (const NiceCandidate *candidate);
+
+/**
+ * nice_candidate_set_stream_id:
+ * @candidate: The candidate to set @stream_id to
+ * @stream_id:
+ */
+void
+nice_candidate_set_stream_id (NiceCandidate *candidate, guint stream_id);
+
+/**
+ * nice_candidate_get_stream_id:
+ * @candidate: The candidate to get stream_id from
+ *
+ * Returns: @candidate stream_id field
+ */
+guint
+nice_candidate_get_stream_id (const NiceCandidate *candidate);
+
+/**
+ * nice_candidate_set_component_id:
+ * @candidate: The candidate to set @component_id to
+ * @component_id:
+ */
+void
+nice_candidate_set_component_id (NiceCandidate *candidate, guint component_id);
 
 /**
  * nice_candidate_get_component_id:
  * @candidate: The candidate to get component_id from
  *
- * component_id accessor function
- *
- * Returns: @candidate->component_id
+ * Returns: @candidate component_id field
  */
 guint
 nice_candidate_get_component_id (const NiceCandidate *candidate);
+
+/**
+ * nice_candidate_set_foundation:
+ * @candidate: The candidate to set @foundation to
+ * @foundation:
+ */
+void
+nice_candidate_set_foundation (NiceCandidate *candidate, const gchar *foundation);
+
+/**
+ * nice_candidate_get_foundation:
+ * @candidate: The candidate to get foundation from
+ *
+ * Returns: @candidate foundation field
+ */
+const gchar *
+nice_candidate_get_foundation (const NiceCandidate *candidate);
+
+/**
+ * nice_candidate_set_username:
+ * @candidate: The candidate to set @username to
+ * @username: (transfer full):
+ */
+void
+nice_candidate_set_username (NiceCandidate *candidate, gchar *username);
+
+/**
+ * nice_candidate_get_username:
+ * @candidate: The candidate to get username from
+ *
+ * Returns: @candidate username field
+ */
+const gchar *
+nice_candidate_get_username (const NiceCandidate *candidate);
+
+/**
+ * nice_candidate_set_password:
+ * @candidate: The candidate to set @password to
+ * @password: (transfer full):
+ */
+void
+nice_candidate_set_password (NiceCandidate *candidate, gchar *password);
+
+/**
+ * nice_candidate_get_password:
+ * @candidate: The candidate to get password from
+ *
+ * Returns: @candidate password field
+ */
+const gchar *
+nice_candidate_get_password (const NiceCandidate *candidate);
 
 guint64
 nice_candidate_pair_priority (guint32 o_prio, guint32 a_prio);
