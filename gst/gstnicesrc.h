@@ -55,6 +55,8 @@ G_BEGIN_DECLS
   (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_NICE_SRC))
 #define GST_IS_NICE_SRC_CLASS(klass) \
   (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_NICE_SRC))
+#define GST_NICE_SRC_CAST(obj) \
+  ((GstNiceSrc *)(obj))
 
 typedef struct _GstNiceSrc GstNiceSrc;
 
@@ -70,6 +72,7 @@ struct _GstNiceSrc
   GQueue *outbufs;
   gboolean unlocked;
   GSource *idle_source;
+  GstCaps *caps;
 };
 
 typedef struct _GstNiceSrcClass GstNiceSrcClass;

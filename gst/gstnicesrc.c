@@ -106,7 +106,8 @@ enum
 {
   PROP_AGENT = 1,
   PROP_STREAM,
-  PROP_COMPONENT
+  PROP_COMPONENT,
+  PROP_CAPS
 };
 
 
@@ -176,6 +177,14 @@ gst_nice_src_class_init (GstNiceSrcClass *klass)
          G_MAXUINT,
          0,
          G_PARAM_READWRITE));
+
+  g_object_class_install_property (gobject_class, PROP_CAPS,
+      g_param_spec_boxed (
+          "caps",
+          "Caps",
+          "The caps of the source pad",
+          GST_TYPE_CAPS,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 static void
@@ -192,6 +201,7 @@ gst_nice_src_init (GstNiceSrc *src)
   src->unlocked = FALSE;
   src->idle_source = NULL;
   src->outbufs = g_queue_new ();
+  src->caps = gst_caps_new_any ();
 }
 
 static void
@@ -342,14 +352,21 @@ gst_nice_src_unlock_stop (GstBaseSrc *src)
 static gboolean
 gst_nice_src_negotiate (GstBaseSrc * basesrc)
 {
-  GstCaps *caps;
+  GstCaps *caps, *intersect;
+  GstNiceSrc *src = GST_NICE_SRC_CAST (basesrc);
   gboolean result = FALSE;
 
   caps = gst_pad_get_allowed_caps (GST_BASE_SRC_PAD (basesrc));
   if (!caps)
     caps = gst_pad_get_pad_template_caps (GST_BASE_SRC_PAD (basesrc));
 
-  if (caps && !gst_caps_is_empty (caps)) {
+  GST_OBJECT_LOCK (src);
+  intersect = gst_caps_intersect (src->caps, caps);
+  GST_OBJECT_UNLOCK (src);
+
+  gst_caps_take (&caps, intersect);
+
+  if (!gst_caps_is_empty (caps)) {
     if (gst_caps_is_any (caps)) {
       GST_DEBUG_OBJECT (basesrc, "any caps, negotiation not needed");
       result = TRUE;
@@ -364,8 +381,6 @@ gst_nice_src_negotiate (GstBaseSrc * basesrc)
     }
     gst_caps_unref (caps);
   } else {
-    if (caps)
-      gst_caps_unref (caps);
     GST_DEBUG_OBJECT (basesrc, "no common caps");
   }
   return result;
@@ -430,6 +445,8 @@ gst_nice_src_dispose (GObject *object)
     g_queue_free_full (src->outbufs, (GDestroyNotify)gst_buffer_unref);
   src->outbufs = NULL;
 
+  gst_caps_replace (&src->caps, NULL);
+
   G_OBJECT_CLASS (gst_nice_src_parent_class)->dispose (object);
 }
 
@@ -460,6 +477,25 @@ gst_nice_src_set_property (
       src->component_id = g_value_get_uint (value);
       break;
 
+    case PROP_CAPS:
+    {
+      const GstCaps *new_caps_val = gst_value_get_caps (value);
+      GstCaps *new_caps;
+
+      if (new_caps_val == NULL) {
+        new_caps = gst_caps_new_any ();
+      } else {
+        new_caps = gst_caps_copy (new_caps_val);
+      }
+
+      GST_OBJECT_LOCK (src);
+      gst_caps_replace (&src->caps, new_caps);
+      GST_OBJECT_UNLOCK (src);
+
+      gst_pad_mark_reconfigure (GST_BASE_SRC_PAD (src));
+      break;
+    }
+
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -487,6 +523,12 @@ gst_nice_src_get_property (
 
     case PROP_COMPONENT:
       g_value_set_uint (value, src->component_id);
+      break;
+
+    case PROP_CAPS:
+      GST_OBJECT_LOCK (src);
+      gst_value_set_caps (value, src->caps);
+      GST_OBJECT_UNLOCK (src);
       break;
 
     default:
