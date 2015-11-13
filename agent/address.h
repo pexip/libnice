@@ -98,7 +98,7 @@ typedef struct _NiceAddress NiceAddress;
 
 /**
  * nice_address_init:
- * @addr: The #NiceAddress to init
+ * @addr: (skip): The #NiceAddress to init
  *
  * Initialize a #NiceAddress into an undefined address
  */
@@ -106,7 +106,7 @@ void
 nice_address_init (NiceAddress *addr);
 
 /**
- * nice_address_new:
+ * nice_address_new: (skip)
  *
  * Create a new #NiceAddress with undefined address
  * You must free it with nice_address_free()
@@ -118,7 +118,7 @@ nice_address_new (void);
 
 /**
  * nice_address_free:
- * @addr: The #NiceAddress to free
+ * @addr: (skip): The #NiceAddress to free
  *
  * Frees a #NiceAddress created with nice_address_new() or nice_address_dup()
  */
@@ -126,7 +126,7 @@ void
 nice_address_free (NiceAddress *addr);
 
 /**
- * nice_address_dup:
+ * nice_address_dup: (skip)
  * @addr: The #NiceAddress to dup
  *
  * Creates a new #NiceAddress with the same address as @addr
