@@ -63,7 +63,8 @@ nice_turn_socket_set_peer (NiceSocket *sock, NiceAddress *peer);
 NiceSocket *
 nice_turn_socket_new (GMainContext *ctx, NiceAddress *addr,
     NiceSocket *base_socket, NiceAddress *server_addr,
-    gchar *username, gchar *password, NiceTurnSocketCompatibility compatibility);
+    gchar *username, gchar *password, NiceTurnSocketCompatibility compatibility,
+    NiceAgent * nice_agent);
 
 void
 nice_turn_socket_set_ms_realm(NiceSocket *sock, StunMessage *msg);

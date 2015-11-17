@@ -621,7 +621,7 @@ discovery_add_relay_candidate (
   relay_socket = nice_turn_socket_new (agent->main_context, address,
       base_socket, &turn->server,
       turn->username, turn->password,
-      agent_to_turn_socket_compatibility (agent));
+      agent_to_turn_socket_compatibility (agent), agent);
   if (!relay_socket)
     goto errors;
 
@@ -1034,11 +1034,11 @@ static gboolean priv_discovery_tick (gpointer pointer)
   NiceAgent *agent = pointer;
   gboolean ret;
 
-  agent_lock();
+  NICE_AGENT_LOCK (agent);
   if (g_source_is_destroyed (g_main_current_source ())) {
     nice_debug ("Source was destroyed. "
         "Avoided race condition in priv_discovery_tick");
-    agent_unlock ();
+    NICE_AGENT_UNLOCK (agent);
     return FALSE;
   }
 
@@ -1050,7 +1050,7 @@ static gboolean priv_discovery_tick (gpointer pointer)
       agent->discovery_timer_source = NULL;
     }
   }
-  agent_unlock();
+  NICE_AGENT_UNLOCK (agent);
 
   return ret;
 }

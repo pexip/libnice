@@ -80,10 +80,14 @@
  * MTU and estimated typical sizes of ICE STUN packet */
 #define MAX_STUN_DATAGRAM_PAYLOAD    1300
 
+#define NICE_AGENT_LOCK(agent)   g_mutex_lock   (&(agent)->lock)
+#define NICE_AGENT_UNLOCK(agent) g_mutex_unlock (&(agent)->lock)
+
 struct _NiceAgent
 {
   GObject parent;                 /* gobject pointer */
 
+  GMutex lock;
   GMutex mutex;
 
   gboolean full_mode;             /* property: full-mode */
@@ -147,7 +151,6 @@ agent_find_component (
 Stream *agent_find_stream (NiceAgent *agent, guint stream_id);
 
 void agent_gathering_done (NiceAgent *agent);
-void agent_signal_gathering_done (NiceAgent *agent);
 
 void agent_lock (void);
 void agent_unlock (void);
