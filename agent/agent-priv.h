@@ -150,8 +150,8 @@ Stream *agent_find_stream (NiceAgent *agent, guint stream_id);
 void agent_gathering_done (NiceAgent *agent);
 void agent_signal_gathering_done (NiceAgent *agent);
 
-void agent_lock (void);
-void agent_unlock (void);
+void agent_lock (NiceAgent *agent);
+void agent_unlock (NiceAgent *agent);
 
 void agent_signal_new_selected_pair (
   NiceAgent *agent,

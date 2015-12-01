@@ -924,6 +924,7 @@ static gboolean priv_conn_check_tick_unlocked (gpointer pointer)
 
 static gboolean priv_conn_check_tick (gpointer pointer)
 {
+  NiceAgent *agent = pointer;
   gboolean ret;
 
   agent_lock (agent);
@@ -1058,6 +1059,7 @@ static gboolean priv_conn_keepalive_tick (gpointer pointer)
 static gboolean priv_turn_allocate_refresh_retransmissions_tick (gpointer pointer)
 {
   CandidateRefresh *cand = (CandidateRefresh *) pointer;
+  NiceAgent *agent = cand->agent;
 
   agent_lock (agent);
 
@@ -1189,6 +1191,7 @@ static void priv_turn_allocate_refresh_tick_unlocked (CandidateRefresh *cand)
 static gboolean priv_turn_allocate_refresh_tick (gpointer pointer)
 {
   CandidateRefresh *cand = (CandidateRefresh *) pointer;
+  NiceAgent *agent = cand->agent;
 
   agent_lock (agent);
   if (g_source_is_destroyed (g_main_current_source ())) {

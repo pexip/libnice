@@ -72,6 +72,7 @@ typedef struct {
 
 typedef struct {
   GMainContext *ctx;
+  NiceAgent *nice_agent;
   StunAgent agent;
   GList *channels;
   GList *pending_bindings;
@@ -161,7 +162,8 @@ priv_send_data_queue_destroy (gpointer data)
 }
 
 NiceSocket *
-nice_turn_socket_new (GMainContext *ctx, NiceAddress *addr,
+nice_turn_socket_new (GMainContext *ctx,
+    GObject *nice_agent, NiceAddress *addr,
     NiceSocket *base_socket, NiceAddress *server_addr,
     gchar *username, gchar *password,
     NiceTurnSocketCompatibility compatibility)
@@ -204,6 +206,7 @@ nice_turn_socket_new (GMainContext *ctx, NiceAddress *addr,
   priv->base_socket = base_socket;
   if (ctx)
     priv->ctx = g_main_context_ref (ctx);
+  priv->nice_agent = NICE_AGENT (nice_agent);
 
   if (compatibility == NICE_TURN_SOCKET_COMPATIBILITY_MSN ||
       compatibility == NICE_TURN_SOCKET_COMPATIBILITY_OC2007) {
@@ -660,6 +663,7 @@ static gboolean
 priv_forget_send_request (gpointer pointer)
 {
   SendRequest *req = pointer;
+  NiceAgent *agent = req->priv->nice_agent;
 
   agent_lock (agent);
 
@@ -689,6 +693,7 @@ static gboolean
 priv_permission_timeout (gpointer data)
 {
   TurnPriv *priv = (TurnPriv *) data;
+  NiceAgent *agent = priv->nice_agent;
 
   nice_debug ("Permission is about to timeout, schedule renewal");
 
@@ -705,6 +710,7 @@ static gboolean
 priv_binding_expired_timeout (gpointer data)
 {
   TurnPriv *priv = (TurnPriv *) data;
+  NiceAgent *agent = priv->nice_agent;
   GList *i;
   GSource *source = NULL;
 
@@ -763,6 +769,7 @@ static gboolean
 priv_binding_timeout (gpointer data)
 {
   TurnPriv *priv = (TurnPriv *) data;
+  NiceAgent *agent = priv->nice_agent;
   GList *i;
   GSource *source = NULL;
 
@@ -1285,6 +1292,7 @@ static gboolean
 priv_retransmissions_tick (gpointer pointer)
 {
   TurnPriv *priv = pointer;
+  NiceAgent *agent = priv->nice_agent;
 
   agent_lock (agent);
   if (g_source_is_destroyed (g_main_current_source ())) {
@@ -1310,6 +1318,7 @@ static gboolean
 priv_retransmissions_create_permission_tick (gpointer pointer)
 {
   TurnPriv *priv = pointer;
+  NiceAgent *agent = priv->nice_agent;
 
   agent_lock (agent);
   if (g_source_is_destroyed (g_main_current_source ())) {

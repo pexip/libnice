@@ -122,12 +122,6 @@ enum
 
 static guint signals[N_SIGNALS];
 
-#if GLIB_CHECK_VERSION(2,31,8)
-static GRecMutex agent_mutex;    /* Mutex used for thread-safe lib */
-#else
-static GStaticRecMutex agent_mutex = G_STATIC_REC_MUTEX_INIT;
-#endif
-
 static void priv_free_upnp (NiceAgent *agent);
 
 static void nice_agent_dispose (GObject *object);
@@ -1327,7 +1321,8 @@ priv_add_new_candidate_discovery_turn (NiceAgent *agent,
         agent->proxy_ip != NULL &&
         nice_address_set_from_string (&proxy_server, agent->proxy_ip)) {
       nice_address_set_port (&proxy_server, agent->proxy_port);
-      socket = nice_tcp_bsd_socket_new (agent->main_context, &proxy_server);
+      socket = nice_tcp_bsd_socket_new (agent->main_context,
+          G_OBJECT (agent), &proxy_server);
 
       if (socket) {
         _priv_set_socket_tos (agent, socket, stream->tos);
@@ -1345,7 +1340,8 @@ priv_add_new_candidate_discovery_turn (NiceAgent *agent,
 
     }
     if (socket == NULL) {
-      socket = nice_tcp_bsd_socket_new (agent->main_context, &turn->server);
+      socket = nice_tcp_bsd_socket_new (agent->main_context,
+          G_OBJECT (agent), &turn->server);
 
       if (socket)
         _priv_set_socket_tos (agent, socket, stream->tos);

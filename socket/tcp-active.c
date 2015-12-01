@@ -56,7 +56,7 @@ typedef struct {
   GMainContext       *context;
   SocketRXCallback    rxcb;
   SocketTXCallback    txcb;
-  gpointer            userdata;
+  TcpUserData        *userdata;
   GDestroyNotify      destroy_notify;
   GSList             *established_sockets; /**< list of NiceSocket objs */
   GSList             *gsources;            /**< list of GSource objs */
@@ -323,7 +323,9 @@ nice_tcp_active_socket_connect (NiceSocket *socket, const NiceAddress *addr)
 
   nice_address_set_from_sockaddr (&local_addr, (struct sockaddr *)&name);
 
-  return nice_tcp_established_socket_new (gsock, &local_addr, addr, priv->context,
+  return nice_tcp_established_socket_new (gsock,
+      G_OBJECT (priv->userdata->agent),
+      &local_addr, addr, priv->context,
       tcp_active_established_socket_rx_cb, tcp_active_established_socket_tx_cb,
       (gpointer)socket, NULL, connect_pending, priv->max_tcp_queue_size);
 }

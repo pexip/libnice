@@ -618,7 +618,8 @@ discovery_add_relay_candidate (
   candidate->turn = turn;
 
   /* step: link to the base candidate+socket */
-  relay_socket = nice_turn_socket_new (agent->main_context, address,
+  relay_socket = nice_turn_socket_new (agent->main_context,
+      G_OBJECT (agent), address,
       base_socket, &turn->server,
       turn->username, turn->password,
       agent_to_turn_socket_compatibility (agent));

@@ -53,6 +53,7 @@
 #define MAX_BUFFER_SIZE 65535
 
 typedef struct {
+  NiceAgent          *nice_agent;
   NiceAddress         remote_addr;
   GQueue              send_queue;
   GMainContext       *context;
@@ -93,8 +94,8 @@ static gboolean socket_recv_more (GSocket *gsocket, GIOCondition condition,
 static gint socket_get_tx_queue_size (NiceSocket *sock);
 
 NiceSocket *
-nice_tcp_established_socket_new (GSocket *gsock, NiceAddress *local_addr,
-    const NiceAddress *remote_addr, GMainContext *ctx,
+nice_tcp_established_socket_new (GSocket *gsock, GObject *nice_agent,
+    NiceAddress *local_addr, const NiceAddress *remote_addr, GMainContext *ctx,
     SocketRXCallback rxcb, SocketTXCallback txcb, gpointer userdata,
     GDestroyNotify destroy_notify, gboolean connect_pending, guint max_tcp_queue_size)
 {
@@ -108,6 +109,7 @@ nice_tcp_established_socket_new (GSocket *gsock, NiceAddress *local_addr,
   sock = g_slice_new0 (NiceSocket);
   sock->priv = priv = g_slice_new0 (TcpEstablishedPriv);
 
+  priv->nice_agent = NICE_AGENT (nice_agent);
   priv->context = g_main_context_ref (ctx);
   priv->remote_addr = *remote_addr;
   priv->rxcb = rxcb;
@@ -357,9 +359,10 @@ socket_recv_more (
 {
   gint len;
   NiceSocket* sock = (NiceSocket *)data;
-  TcpEstablishedPriv *priv = NULL;
+  TcpEstablishedPriv *priv = sock->priv;
   NiceAddress from;
-  
+  NiceAgent *agent = priv->nice_agent;
+
   agent_lock (agent);
 
   if (g_source_is_destroyed (g_main_current_source ())) {
@@ -368,8 +371,6 @@ socket_recv_more (
     agent_unlock (agent);
     return FALSE;
   }
-  
-  priv = sock->priv;
 
   len = socket_recv (sock, &from, MAX_BUFFER_SIZE-priv->recv_offset, (gchar *)&priv->recv_buff[priv->recv_offset]);
   if (len > 0) {
@@ -399,9 +400,10 @@ socket_send_more (
   gpointer data)
 {
   NiceSocket *sock = (NiceSocket *) data;
-  TcpEstablishedPriv *priv = NULL;
+  TcpEstablishedPriv *priv = sock->priv;
   struct to_be_sent *tbs = NULL;
   GError *gerr = NULL;
+  NiceAgent *agent = priv->nice_agent;
 
   nice_debug("tcp-est %p: socket_send_more, condition=%u", sock, condition);
 
@@ -413,8 +415,6 @@ socket_send_more (
     agent_unlock (agent);
     return FALSE;
   }
-
-  priv = sock->priv;
 
   if (priv->connect_pending) {
     /* 
@@ -492,6 +492,7 @@ add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len, gboolean add_to_h
 {
   TcpEstablishedPriv *priv = sock->priv;
   struct to_be_sent *tbs = NULL;
+  NiceAgent *agent = priv->nice_agent;
 
   if (len <= 0)
     return;

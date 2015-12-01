@@ -57,7 +57,7 @@ typedef struct {
   GMainContext       *context;
   SocketRXCallback    rxcb;
   SocketTXCallback    txcb;
-  gpointer            userdata;
+  TcpUserData        *userdata;
   GDestroyNotify      destroy_notify;
   GSList             *established_sockets;             /**< list of NiceSocket objs */
   GSList             *gsources;            /**< list of GSource objs */
@@ -304,7 +304,9 @@ nice_tcp_passive_socket_accept (NiceSocket *socket)
 
   nice_address_set_from_sockaddr (&remote_addr, (struct sockaddr *)&name);
 
-  return nice_tcp_established_socket_new (gsock, &socket->addr, &remote_addr, priv->context,
+  return nice_tcp_established_socket_new (gsock,
+      G_OBJECT (priv->userdata->agent),
+      &socket->addr, &remote_addr, priv->context,
       tcp_passive_established_socket_rx_cb, tcp_passive_established_socket_tx_cb,
       (gpointer)socket, NULL, FALSE, priv->max_tcp_queue_size);
 }
