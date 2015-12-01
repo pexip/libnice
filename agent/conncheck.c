@@ -926,13 +926,13 @@ static gboolean priv_conn_check_tick (gpointer pointer)
 {
   gboolean ret;
 
-  agent_lock();
+  agent_lock (agent);
   if (g_source_is_destroyed (g_main_current_source ())) {
-    agent_unlock ();
+    agent_unlock (agent);
     return FALSE;
   }
   ret = priv_conn_check_tick_unlocked (pointer);
-  agent_unlock();
+  agent_unlock (agent);
 
   return ret;
 }
@@ -1036,9 +1036,9 @@ static gboolean priv_conn_keepalive_tick (gpointer pointer)
   NiceAgent *agent = pointer;
   gboolean ret;
 
-  agent_lock();
+  agent_lock (agent);
   if (g_source_is_destroyed (g_main_current_source ())) {
-    agent_unlock ();
+    agent_unlock (agent);
     return FALSE;
   }
 
@@ -1050,7 +1050,7 @@ static gboolean priv_conn_keepalive_tick (gpointer pointer)
       agent->keepalive_timer_source = NULL;
     }
   }
-  agent_unlock();
+  agent_unlock (agent);
   return ret;
 }
 
@@ -1059,14 +1059,14 @@ static gboolean priv_turn_allocate_refresh_retransmissions_tick (gpointer pointe
 {
   CandidateRefresh *cand = (CandidateRefresh *) pointer;
 
-  agent_lock();
+  agent_lock (agent);
 
   /* A race condition might happen where the mutex above waits for the lock
    * and in the meantime another thread destroys the source.
    * In that case, we don't need to run our retransmission tick since it should
    * have been cancelled */
   if (g_source_is_destroyed (g_main_current_source ())) {
-    agent_unlock ();
+    agent_unlock (agent);
     return FALSE;
   }
 
@@ -1110,7 +1110,7 @@ static gboolean priv_turn_allocate_refresh_retransmissions_tick (gpointer pointe
   }
 
 
-  agent_unlock ();
+  agent_unlock (agent);
   return FALSE;
 }
 
@@ -1190,14 +1190,14 @@ static gboolean priv_turn_allocate_refresh_tick (gpointer pointer)
 {
   CandidateRefresh *cand = (CandidateRefresh *) pointer;
 
-  agent_lock();
+  agent_lock (agent);
   if (g_source_is_destroyed (g_main_current_source ())) {
-    agent_unlock ();
+    agent_unlock (agent);
     return FALSE;
   }
 
   priv_turn_allocate_refresh_tick_unlocked (cand);
-  agent_unlock ();
+  agent_unlock (agent);
 
   return FALSE;
 }

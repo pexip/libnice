@@ -360,12 +360,12 @@ socket_recv_more (
   TcpEstablishedPriv *priv = NULL;
   NiceAddress from;
   
-  agent_lock();
+  agent_lock (agent);
 
   if (g_source_is_destroyed (g_main_current_source ())) {
     nice_debug ("tcp-est %p: Source was destroyed. "
                 "Avoided race condition in tcp-established.c:socket_recv_more", sock);
-    agent_unlock();
+    agent_unlock (agent);
     return FALSE;
   }
   
@@ -381,11 +381,11 @@ socket_recv_more (
     g_source_unref (priv->read_source);
     priv->read_source = NULL;
     priv->error = TRUE;
-    agent_unlock();
+    agent_unlock (agent);
     return FALSE;
   }
 
-  agent_unlock();
+  agent_unlock (agent);
   return TRUE;
 }
 
@@ -405,12 +405,12 @@ socket_send_more (
 
   nice_debug("tcp-est %p: socket_send_more, condition=%u", sock, condition);
 
-  agent_lock();
+  agent_lock (agent);
 
   if (g_source_is_destroyed (g_main_current_source ())) {
     nice_debug ("tcp-est %p: Source was destroyed. "
                 "Avoided race condition in tcp-established.c:socket_send_more", sock);
-    agent_unlock();
+    agent_unlock (agent);
     return FALSE;
   }
 
@@ -479,11 +479,11 @@ socket_send_more (
     g_source_unref (priv->write_source);
     priv->write_source = NULL;
     priv->txcb (sock, NULL, 0, 0, priv->userdata);
-    agent_unlock();
+    agent_unlock (agent);
     return FALSE;
   }
 
-  agent_unlock();
+  agent_unlock (agent);
   return TRUE;
 }
 
@@ -496,7 +496,7 @@ add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len, gboolean add_to_h
   if (len <= 0)
     return;
 
-  agent_lock();
+  agent_lock (agent);
 
   /*
    * Check for queue overflow, we'll allow upto priv->max_tcp_queue_size+1 elements
@@ -536,7 +536,7 @@ add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len, gboolean add_to_h
                            sock, NULL);
     g_source_attach (priv->write_source, priv->context);
   }
-  agent_unlock();
+  agent_unlock (agent);
 }
 
 static void

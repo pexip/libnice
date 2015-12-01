@@ -315,12 +315,12 @@ socket_send_more (
   struct to_be_sent *tbs = NULL;
   GError *gerr = NULL;
 
-  agent_lock ();
+  agent_lock (agent);
 
   if (g_source_is_destroyed (g_main_current_source ())) {
     nice_debug ("Source was destroyed. "
         "Avoided race condition in tcp-bsd.c:socket_send_more");
-    agent_unlock ();
+    agent_unlock (agent);
     return FALSE;
   }
 
@@ -360,11 +360,11 @@ socket_send_more (
     g_source_unref (priv->io_source);
     priv->io_source = NULL;
 
-    agent_unlock ();
+    agent_unlock (agent);
     return FALSE;
   }
 
-  agent_unlock ();
+  agent_unlock (agent);
   return TRUE;
 }
 
