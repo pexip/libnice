@@ -84,7 +84,7 @@ struct _NiceAgent
 {
   GObject parent;                 /* gobject pointer */
 
-  GRecMutex agent_mutex;          /* Mutex used for thread-safe lib */
+  GMutex agent_mutex;             /* Mutex used for thread-safe lib */
   GMutex mutex;
 
   gboolean full_mode;             /* property: full-mode */
