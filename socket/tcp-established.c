@@ -324,7 +324,6 @@ parse_rfc4571(NiceSocket* sock, NiceAddress* from)
 {
   TcpEstablishedPriv *priv = sock->priv;
   gboolean done = FALSE;
-  NiceAgent *agent = priv->nice_agent;
 
   while (!done) {
     if (priv->recv_offset > 2) {
@@ -334,11 +333,7 @@ parse_rfc4571(NiceSocket* sock, NiceAddress* from)
 
       if (packet_length + 2 <= priv->recv_offset) {
         nice_debug ("tcp-est %p: socket_recv_more: received %d bytes, delivering", sock, packet_length);
-
-        /* FIXME: hgr: this unlock COULD be dangerous, maybe copy the data */
-        agent_unlock (agent);
         priv->rxcb (sock, from, (gchar *)&data[2], packet_length, priv->userdata);
-        agent_lock (agent);
 
         /* More data after current packet */
         memmove (&priv->recv_buff[0], &priv->recv_buff[packet_length + 2],
@@ -492,18 +487,17 @@ socket_send_more (
   return TRUE;
 }
 
-/* FIXME: we gamble that the lock is always held when this is called... */
 static void
 add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len, gboolean add_to_head)
 {
   TcpEstablishedPriv *priv = sock->priv;
   struct to_be_sent *tbs = NULL;
-  //NiceAgent *agent = priv->nice_agent;
+  NiceAgent *agent = priv->nice_agent;
 
   if (len <= 0)
     return;
 
-  //agent_lock (agent);
+  agent_lock (agent);
 
   /*
    * Check for queue overflow, we'll allow upto priv->max_tcp_queue_size+1 elements
@@ -543,7 +537,7 @@ add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len, gboolean add_to_h
                            sock, NULL);
     g_source_attach (priv->write_source, priv->context);
   }
-  //agent_unlock (agent);
+  agent_unlock (agent);
 }
 
 static void

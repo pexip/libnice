@@ -135,12 +135,12 @@ static void priv_detach_stream_component (Stream *stream, Component *component);
 
 void agent_lock (NiceAgent *agent)
 {
-  g_mutex_lock (&agent->agent_mutex);
+  g_rec_mutex_lock (&agent->agent_mutex);
 }
 
 void agent_unlock (NiceAgent *agent)
 {
-  g_mutex_unlock (&agent->agent_mutex);
+  g_rec_mutex_unlock (&agent->agent_mutex);
 }
 
 /*
@@ -831,7 +831,7 @@ nice_agent_init (NiceAgent *agent)
   priv_generate_tie_breaker (agent);
 
   g_mutex_init (&agent->mutex);
-  g_mutex_init (&agent->agent_mutex);
+  g_rec_mutex_init (&agent->agent_mutex);
 }
 
 
@@ -1148,24 +1148,14 @@ void agent_gathering_done (NiceAgent *agent)
 void agent_signal_gathering_done (NiceAgent *agent)
 {
   GSList *i;
-  GArray *array = g_array_new (FALSE, FALSE, sizeof (gint));
-  guint j;
 
   for (i = agent->streams; i; i = i->next) {
     Stream *stream = i->data;
     if (stream->gathering) {
       stream->gathering = FALSE;
-      g_array_append_val (array, stream->id);
+      g_signal_emit (agent, signals[SIGNAL_CANDIDATE_GATHERING_DONE], 0, stream->id);
     }
   }
-
-  agent_unlock (agent);
-  for (j = 0; j < array->len; j++) {
-    gint id = g_array_index (array, gint, j);
-    g_signal_emit (agent, signals[SIGNAL_CANDIDATE_GATHERING_DONE], 0, id);
-  }
-  g_array_free (array, TRUE);
-  agent_lock (agent);
 }
 
 void agent_signal_initial_binding_request_received (NiceAgent *agent, Stream *stream)
@@ -1197,30 +1187,24 @@ void agent_signal_new_selected_pair (NiceAgent *agent, guint stream_id, guint co
              candidate_transport_to_string(lcandidate->transport), 
              candidate_transport_to_string(rcandidate->transport));
 
-  agent_unlock (agent);
   g_signal_emit (agent, signals[SIGNAL_NEW_SELECTED_PAIR], 0,
       stream_id, component_id, lcandidate, rcandidate);
-  agent_lock (agent);
 }
 
 void agent_signal_new_candidate (NiceAgent *agent, NiceCandidate *candidate)
 {
-  agent_unlock (agent);
   g_signal_emit (agent, signals[SIGNAL_NEW_CANDIDATE], 0,
 		 candidate->stream_id,
 		 candidate->component_id,
 		 candidate->foundation);
-  agent_lock (agent);
 }
 
 void agent_signal_new_remote_candidate (NiceAgent *agent, NiceCandidate *candidate)
 {
-  agent_unlock (agent);
   g_signal_emit (agent, signals[SIGNAL_NEW_REMOTE_CANDIDATE], 0, 
 		 candidate->stream_id, 
 		 candidate->component_id, 
 		 candidate->foundation);
-  agent_lock (agent);
 }
 
 void agent_signal_component_state_change (NiceAgent *agent, guint stream_id, guint component_id, NiceComponentState state)
@@ -2419,7 +2403,7 @@ nice_agent_dispose (GObject *object)
   agent->main_context = NULL;
 
   g_mutex_clear (&agent->mutex);
-  g_mutex_clear (&agent->agent_mutex);
+  g_rec_mutex_clear (&agent->agent_mutex);
 
   if (G_OBJECT_CLASS (nice_agent_parent_class)->dispose)
     G_OBJECT_CLASS (nice_agent_parent_class)->dispose (object);
