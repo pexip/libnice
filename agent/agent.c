@@ -2359,6 +2359,8 @@ nice_agent_dispose (GObject *object)
   GSList *i;
   NiceAgent *agent = NICE_AGENT (object);
 
+  agent_lock (agent);
+
   /* step: free resources for the binding discovery timers */
   discovery_free (agent);
   g_assert (agent->discovery_list == NULL);
@@ -2412,6 +2414,7 @@ nice_agent_dispose (GObject *object)
     g_main_context_unref (agent->main_context);
   agent->main_context = NULL;
 
+  agent_unlock (agent);
   g_mutex_clear (&agent->mutex);
   g_assert (agent->agent_mutex_th == NULL);
   g_rec_mutex_clear (&agent->agent_mutex);
