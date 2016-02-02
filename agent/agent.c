@@ -136,10 +136,20 @@ static void priv_detach_stream_component (Stream *stream, Component *component);
 void agent_lock (NiceAgent *agent)
 {
   g_rec_mutex_lock (&agent->agent_mutex);
+  g_assert (agent->agent_mutex_count >= 0);
+
+  if (agent->agent_mutex_count == 0)
+    agent->agent_mutex_th = g_thread_self();
+  ++agent->agent_mutex_count;
 }
 
 void agent_unlock (NiceAgent *agent)
 {
+  --agent->agent_mutex_count;
+  if (agent->agent_mutex_count == 0)
+    agent->agent_mutex_th = NULL;
+
+  g_assert (agent->agent_mutex_count >= 0);
   g_rec_mutex_unlock (&agent->agent_mutex);
 }
 
@@ -2403,6 +2413,7 @@ nice_agent_dispose (GObject *object)
   agent->main_context = NULL;
 
   g_mutex_clear (&agent->mutex);
+  g_assert (agent->agent_mutex_th == NULL);
   g_rec_mutex_clear (&agent->agent_mutex);
 
   if (G_OBJECT_CLASS (nice_agent_parent_class)->dispose)

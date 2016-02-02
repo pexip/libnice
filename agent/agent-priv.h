@@ -84,6 +84,8 @@ struct _NiceAgent
 {
   GObject parent;                 /* gobject pointer */
 
+  gint agent_mutex_count;
+  GThread *agent_mutex_th;
   GRecMutex agent_mutex;          /* Mutex used for thread-safe lib */
   GMutex mutex;
 

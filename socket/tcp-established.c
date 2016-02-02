@@ -186,6 +186,9 @@ static void
 socket_close (NiceSocket *sock)
 {
   TcpEstablishedPriv *priv = sock->priv;
+  NiceAgent *agent = priv->nice_agent;
+
+  g_assert (agent->agent_mutex_th != NULL);
 
   if (sock->fileno) {
     g_socket_close (sock->fileno, NULL);
@@ -210,6 +213,8 @@ socket_close (NiceSocket *sock)
     g_main_context_unref (priv->context);
 
   g_slice_free(TcpEstablishedPriv, sock->priv);
+
+  g_assert (agent->agent_mutex_th != NULL);
 }
 
 static gint
