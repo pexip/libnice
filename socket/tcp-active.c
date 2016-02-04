@@ -199,10 +199,8 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
       /* 
        * Correct socket but failed 
        */
-      nice_debug("tcp-act %p: Failed to send to %s:%u, destroying socket", sock, to_string, nice_address_get_port (to));
-      nice_socket_free (socket);
-      priv->established_sockets = g_slist_remove(priv->established_sockets, socket);
-      break;
+      nice_debug("tcp-act %p: Failed to send to %s:%u", sock, to_string, nice_address_get_port (to));
+      return sent_len;
     }
   }
 
