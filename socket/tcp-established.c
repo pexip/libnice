@@ -76,6 +76,11 @@ struct to_be_sent {
   gchar *buf;
 };
 
+typedef struct {
+  NiceAgent          *nice_agent;
+  NiceSocket         *sock;
+} TcpEstablishedCallbackData;
+
 static void socket_attach (NiceSocket* sock, GMainContext* ctx);
 static void socket_close (NiceSocket *sock);
 static gint socket_recv (NiceSocket *sock, NiceAddress *from,
@@ -92,6 +97,21 @@ static gboolean socket_send_more (GSocket *gsocket, GIOCondition condition,
 static gboolean socket_recv_more (GSocket *gsocket, GIOCondition condition,
                                   gpointer data);
 static gint socket_get_tx_queue_size (NiceSocket *sock);
+
+static TcpEstablishedCallbackData *
+tcp_established_callback_data_new (NiceAgent *agent, NiceSocket *sock)
+{
+  TcpEstablishedCallbackData *result = g_new0(TcpEstablishedCallbackData, 1);
+  result->nice_agent = agent;
+  result->sock = sock;
+  return result;
+}
+
+static void
+tcp_established_callback_data_free (TcpEstablishedCallbackData *p)
+{
+  g_free (p);
+}
 
 NiceSocket *
 nice_tcp_established_socket_new (GSocket *gsock, GObject *nice_agent,
@@ -141,7 +161,9 @@ nice_tcp_established_socket_new (GSocket *gsock, GObject *nice_agent,
   }
 
   priv->read_source = g_socket_create_source(sock->fileno, G_IO_IN | G_IO_ERR, NULL);
-  g_source_set_callback (priv->read_source, (GSourceFunc) socket_recv_more, sock, NULL);
+  g_source_set_callback (priv->read_source, (GSourceFunc) socket_recv_more,
+                         tcp_established_callback_data_new(priv->nice_agent, sock),
+                         (GDestroyNotify)tcp_established_callback_data_free);
   g_source_attach (priv->read_source, priv->context);
   return sock;
 }
@@ -171,12 +193,15 @@ socket_attach (NiceSocket* sock, GMainContext* ctx)
     g_main_context_ref (priv->context);
 
     priv->read_source = g_socket_create_source(sock->fileno, G_IO_IN | G_IO_ERR, NULL);
-    g_source_set_callback (priv->read_source, (GSourceFunc) socket_recv_more, sock, NULL);
+    g_source_set_callback (priv->read_source, (GSourceFunc) socket_recv_more,
+                           tcp_established_callback_data_new(priv->nice_agent, sock),
+                           (GDestroyNotify)tcp_established_callback_data_free);
     g_source_attach (priv->read_source, priv->context);
     if (write_pending) {
         priv->write_source = g_socket_create_source(sock->fileno, G_IO_OUT, NULL);
         g_source_set_callback (priv->write_source, (GSourceFunc) socket_send_more,
-                               sock, NULL);
+                               tcp_established_callback_data_new(priv->nice_agent, sock),
+                               (GDestroyNotify)tcp_established_callback_data_free);
         g_source_attach (priv->write_source, priv->context);
     }
   }
@@ -368,10 +393,11 @@ socket_recv_more (
   gpointer data)
 {
   gint len;
-  NiceSocket* sock = (NiceSocket *)data;
-  TcpEstablishedPriv *priv = sock->priv;
+  TcpEstablishedCallbackData *cbdata = (TcpEstablishedCallbackData *)data;
+  NiceAgent *agent = cbdata->nice_agent;
+  NiceSocket* sock = NULL;
+  TcpEstablishedPriv *priv = NULL;
   NiceAddress from;
-  NiceAgent *agent = priv->nice_agent;
 
   agent_lock (agent);
 
@@ -380,8 +406,12 @@ socket_recv_more (
                 "Avoided race condition in tcp-established.c:socket_recv_more", sock);
     agent_unlock (agent);
     return FALSE;
+  } else {
+    // Socket still valid
+    sock = cbdata->sock;
+    priv = sock->priv;
   }
-
+  
   len = socket_recv (sock, &from, MAX_BUFFER_SIZE-priv->recv_offset, (gchar *)&priv->recv_buff[priv->recv_offset]);
   if (len > 0) {
     priv->recv_offset += len;
@@ -409,11 +439,12 @@ socket_send_more (
   GIOCondition condition,
   gpointer data)
 {
-  NiceSocket *sock = (NiceSocket *) data;
-  TcpEstablishedPriv *priv = sock->priv;
+  TcpEstablishedCallbackData *cbdata = (TcpEstablishedCallbackData *)data;
+  NiceSocket *sock = NULL;
+  TcpEstablishedPriv *priv = NULL;
   struct to_be_sent *tbs = NULL;
   GError *gerr = NULL;
-  NiceAgent *agent = priv->nice_agent;
+  NiceAgent *agent = cbdata->nice_agent;
 
   nice_debug("tcp-est %p: socket_send_more, condition=%u", sock, condition);
 
@@ -424,6 +455,10 @@ socket_send_more (
                 "Avoided race condition in tcp-established.c:socket_send_more", sock);
     agent_unlock (agent);
     return FALSE;
+  } else {
+    // Socket still valid
+    sock = cbdata->sock;
+    priv = sock->priv;
   }
 
   if (priv->connect_pending) {
@@ -544,7 +579,8 @@ add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len, gboolean add_to_h
   if (priv->write_source == NULL) {
     priv->write_source = g_socket_create_source(sock->fileno, G_IO_OUT, NULL);
     g_source_set_callback (priv->write_source, (GSourceFunc) socket_send_more,
-                           sock, NULL);
+                           tcp_established_callback_data_new(priv->nice_agent, sock),
+                           (GDestroyNotify)tcp_established_callback_data_free);
     g_source_attach (priv->write_source, priv->context);
   }
   agent_unlock (agent);
