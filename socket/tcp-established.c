@@ -340,6 +340,11 @@ parse_rfc4571(NiceSocket* sock, NiceAddress* from)
         nice_debug ("tcp-est %p: socket_recv_more: received %d bytes, delivering", sock, packet_length);
         priv->rxcb (sock, from, (gchar *)&data[2], packet_length, priv->userdata);
 
+        if (g_source_is_destroyed (g_main_current_source ())) {
+          nice_debug ("tcp-est %p: Source was destroyed while reading. ", sock);
+          return;
+        }
+
         /* More data after current packet */
         memmove (&priv->recv_buff[0], &priv->recv_buff[packet_length + 2],
                 priv->recv_offset - packet_length - 2);
