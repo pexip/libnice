@@ -149,40 +149,53 @@ StunValidationStatus stun_agent_validate (StunAgent *agent, StunMessage *msg,
   }
 
   if ((agent->compatibility == STUN_COMPATIBILITY_RFC5389 ||
-          agent->compatibility == STUN_COMPATIBILITY_WLM2009) &&
+       agent->compatibility == STUN_COMPATIBILITY_WLM2009) &&
       agent->usage_flags & STUN_AGENT_USAGE_USE_FINGERPRINT) {
-    /* Looks for FINGERPRINT */
-    if (stun_message_find32 (msg, STUN_ATTRIBUTE_FINGERPRINT, &fpr) !=
-        STUN_MESSAGE_RETURN_SUCCESS) {
-      stun_debug ("STUN demux error: no FINGERPRINT attribute!\n");
-      return STUN_VALIDATION_BAD_REQUEST;
-    }
-    /* Checks FINGERPRINT */
-    crc32 = stun_fingerprint (msg->buffer, stun_message_length (msg),
-        agent->compatibility == STUN_COMPATIBILITY_WLM2009);
-    fpr = ntohl (fpr);
-    if (fpr != crc32) {
-      stun_debug ("STUN demux error: bad fingerprint: 0x%08x,"
-          " expected: 0x%08x!\n", fpr, crc32);
 
-      if (agent->compatibility == STUN_COMPATIBILITY_WLM2009) {
-        /*
-         * Try again with the standard CRC table as that is what Lync 2013 clients will send over 
-         * IPv6 (see MS-ICE2 Footnote 7)
-         */
-        crc32 = stun_fingerprint (msg->buffer, stun_message_length (msg), FALSE);
-        if (fpr != crc32) {
-          stun_debug ("STUN demux error: fingerprint still bad with standard table. fingerprint: 0x%08x,"
-                      " expected: 0x%08x!\n", fpr, crc32);
-          return STUN_VALIDATION_BAD_REQUEST;
+    /* Look for FINGERPRINT */
+    if (stun_message_find32 (msg, STUN_ATTRIBUTE_FINGERPRINT, &fpr) ==
+        STUN_MESSAGE_RETURN_SUCCESS) {
+      /* Checks FINGERPRINT */
+      crc32 = stun_fingerprint (msg->buffer, stun_message_length (msg),
+                                agent->compatibility == STUN_COMPATIBILITY_WLM2009);
+      fpr = ntohl (fpr);
+      if (fpr != crc32) {
+        stun_debug ("STUN demux error: bad fingerprint: 0x%08x,"
+                    " expected: 0x%08x!\n", fpr, crc32);
+
+        if (agent->compatibility == STUN_COMPATIBILITY_WLM2009) {
+          /*
+           * Try again with the standard CRC table as that is what Lync 2013 clients will send over
+           * IPv6 (see MS-ICE2 Footnote 7)
+           */
+          crc32 = stun_fingerprint (msg->buffer, stun_message_length (msg), FALSE);
+          if (fpr != crc32) {
+            stun_debug ("STUN demux error: fingerprint still bad with standard table. fingerprint: 0x%08x,"
+                        " expected: 0x%08x!\n", fpr, crc32);
+            return STUN_VALIDATION_BAD_REQUEST;
+          } else {
+            stun_debug ("STUN demux OK: Lync fingerprint validated with standard CRC table");
+          }
         } else {
-          stun_debug ("STUN demux OK: Lync fingerprint validated with standard CRC table");
+          return STUN_VALIDATION_BAD_REQUEST;
         }
+      }
+    } else {
+      /*
+       * Skype for Business 2016 doesn't include a fingerprint on some responses
+       */
+      if (agent->compatibility == STUN_COMPATIBILITY_WLM2009 &&
+          (stun_message_get_class (msg) == STUN_RESPONSE ||
+           stun_message_get_class (msg) == STUN_ERROR))
+      {
+        stun_debug ("Allowing response with no FINGERPRINT attribute\n");
       } else {
+        stun_debug ("STUN demux error: no FINGERPRINT attribute!\n");
         return STUN_VALIDATION_BAD_REQUEST;
       }
     }
   }
+
 
   if (stun_message_get_class (msg) == STUN_RESPONSE ||
       stun_message_get_class (msg) == STUN_ERROR) {
@@ -725,7 +738,7 @@ bool stun_agent_find_transaction (StunAgent *agent, StunMethod method, StunTrans
       stun_debug ("Checking sent msg idx:%d valid=%d method=%d transaction-id:%s", sent_id_idx, agent->sent_ids[sent_id_idx].valid,
                   agent->sent_ids[sent_id_idx].method, tmpbuf);
     }
-      
+
     if (agent->sent_ids[sent_id_idx].valid == TRUE &&
         agent->sent_ids[sent_id_idx].method == method &&
         memcmp (msg_id, agent->sent_ids[sent_id_idx].id,
@@ -733,7 +746,6 @@ bool stun_agent_find_transaction (StunAgent *agent, StunMethod method, StunTrans
       return true;
     }
   }
-  
+
   return FALSE;
 }
-
