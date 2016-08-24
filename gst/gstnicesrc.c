@@ -100,6 +100,8 @@ GST_STATIC_PAD_TEMPLATE (
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS_ANY);
 
+#define gst_nice_src_parent_class parent_class
+
 G_DEFINE_TYPE (GstNiceSrc, gst_nice_src, GST_TYPE_PUSH_SRC);
 
 enum
@@ -110,6 +112,58 @@ enum
   PROP_CAPS
 };
 
+static gboolean
+gst_nice_src_process_qos (GstNiceSrc *src, GstQOSType type)
+{
+  gboolean ret = FALSE;
+
+  switch (type) {
+  case GST_QOS_TYPE_OVERFLOW:
+    GST_INFO_OBJECT (src, "Suspend TCP receive, QOS received");
+    nice_agent_set_rx_enabled (src->agent, src->stream_id, src->component_id, FALSE);
+    ret = TRUE;
+    break;
+  case GST_QOS_TYPE_UNDERFLOW:
+    GST_INFO_OBJECT (src, "Resume TCP receive, QOS received");
+    nice_agent_set_rx_enabled (src->agent, src->stream_id, src->component_id, TRUE);
+    ret = TRUE;
+    break;
+  default:
+    ret = FALSE;
+  }
+
+  return ret;
+}
+
+static gboolean
+gst_nice_src_handle_event (GstBaseSrc *basesrc, GstEvent * event)
+{
+  GstNiceSrc *src = GST_NICE_SRC_CAST (basesrc);
+  gboolean ret = TRUE;
+
+  GST_LOG_OBJECT (src, "handling %s event", GST_EVENT_TYPE_NAME (event));
+
+  switch (GST_EVENT_TYPE (event)) {
+    case GST_EVENT_QOS:
+    {
+      GstQOSType type = GST_QOS_TYPE_THROTTLE;
+
+      gst_event_parse_qos (event, &type, NULL, NULL, NULL);
+      if ((ret = gst_nice_src_process_qos (src, type)))
+        break;
+      break;
+    }
+
+    default:
+    {
+      GST_LOG_OBJECT (src, "let base class handle event");
+      ret = GST_BASE_SRC_CLASS (parent_class)->event (basesrc, event);
+      break;
+    }
+  }
+
+  return ret;
+}
 
 static void
 gst_nice_src_class_init (GstNiceSrcClass *klass)
@@ -129,6 +183,7 @@ gst_nice_src_class_init (GstNiceSrcClass *klass)
   gstbasesrc_class->unlock = GST_DEBUG_FUNCPTR (gst_nice_src_unlock);
   gstbasesrc_class->unlock_stop = GST_DEBUG_FUNCPTR (gst_nice_src_unlock_stop);
   gstbasesrc_class->negotiate = GST_DEBUG_FUNCPTR (gst_nice_src_negotiate);
+  gstbasesrc_class->event = GST_DEBUG_FUNCPTR (gst_nice_src_handle_event);
 
   gobject_class = (GObjectClass *) klass;
   gobject_class->set_property = gst_nice_src_set_property;
@@ -140,6 +195,7 @@ gst_nice_src_class_init (GstNiceSrcClass *klass)
 
   gst_element_class_add_pad_template (gstelement_class,
       gst_static_pad_template_get (&gst_nice_src_src_template));
+
 #if GST_CHECK_VERSION (1,0,0)
   gst_element_class_set_metadata (gstelement_class,
 #else
@@ -193,6 +249,7 @@ gst_nice_src_init (GstNiceSrc *src)
   gst_base_src_set_live (GST_BASE_SRC (src), TRUE);
   gst_base_src_set_format (GST_BASE_SRC (src), GST_FORMAT_TIME);
   gst_base_src_set_do_timestamp (GST_BASE_SRC (src), TRUE);
+
   src->agent = NULL;
   src->stream_id = 0;
   src->component_id = 0;
@@ -572,5 +629,3 @@ gst_nice_src_change_state (GstElement * element, GstStateChange transition)
 
   return ret;
 }
-
-

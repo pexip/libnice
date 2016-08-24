@@ -71,7 +71,7 @@ static gint socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf);
 static gboolean socket_is_reliable (NiceSocket *sock);
 static gint socket_get_tx_queue_size (NiceSocket *sock);
-
+static void socket_set_rx_enabled (NiceSocket *sock, gboolean enabled);
 
 NiceSocket *
 nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr,
@@ -121,6 +121,8 @@ nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr,
   sock->close = socket_close;
   sock->attach = socket_attach;
   sock->get_tx_queue_size = socket_get_tx_queue_size;
+  sock->set_rx_enabled = socket_set_rx_enabled;
+
   return sock;
 }
 
@@ -170,9 +172,9 @@ socket_close (NiceSocket *sock)
 static gint
 socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
 {
-  /* 
+  /*
    * Should never be called for an active connection, all real data arrives on
-   * established connections 
+   * established connections
    */
   return -1;
 }
@@ -196,8 +198,8 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
       nice_debug("tcp-act %p: Sent on socket, sent %d to %s:%u", sock, sent_len, to_string, nice_address_get_port (to));
       return sent_len;
     } else if (sent_len < 0) {
-      /* 
-       * Correct socket but failed 
+      /*
+       * Correct socket but failed
        */
       nice_debug("tcp-act %p: Failed to send to %s:%u, destroying socket", sock, to_string, nice_address_get_port (to));
       nice_socket_free (socket);
@@ -345,4 +347,16 @@ socket_get_tx_queue_size (NiceSocket *sock)
       ret = queue_len;
   }
   return ret;
+}
+
+static void
+socket_set_rx_enabled (NiceSocket *sock, gboolean enabled)
+{
+  TcpActivePriv *priv = sock->priv;
+  GSList *i;
+
+  for (i = priv->established_sockets; i; i = i->next) {
+    NiceSocket *socket = i->data;
+    nice_socket_set_rx_enabled (socket, enabled);
+  }
 }

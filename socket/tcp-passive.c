@@ -72,6 +72,7 @@ static gint socket_send (NiceSocket *sock, const NiceAddress *to,
 static gint socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf);
 static gboolean socket_is_reliable (NiceSocket *sock);
 static gint socket_get_tx_queue_size (NiceSocket *sock);
+static void socket_set_rx_enabled (NiceSocket *sock, gboolean enabled);
 
 NiceSocket *
 nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr,
@@ -160,6 +161,7 @@ nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr,
   sock->close = socket_close;
   sock->attach = socket_attach;
   sock->get_tx_queue_size = socket_get_tx_queue_size;
+  sock->set_rx_enabled = socket_set_rx_enabled;
 
   return sock;
 }
@@ -216,7 +218,7 @@ socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
   TcpPassivePriv *priv = sock->priv;
 
   /*
-   * Accept new connection, TODO: dos prevention, reconnects etc 
+   * Accept new connection, TODO: dos prevention, reconnects etc
    */
   NiceSocket* new_socket = nice_tcp_passive_socket_accept (sock);
   if (!new_socket) {
@@ -224,7 +226,7 @@ socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
     return -1;
   }
   nice_debug ("tcp-pass %p: Accepted OK, got new established connection tcp-est %p", sock, new_socket);
-  
+
   priv->established_sockets = g_slist_append (priv->established_sockets, new_socket);
   return 0;
 }
@@ -327,3 +329,14 @@ socket_get_tx_queue_size (NiceSocket *sock)
   return ret;
 }
 
+static void
+socket_set_rx_enabled (NiceSocket *sock, gboolean enabled)
+{
+  TcpPassivePriv *priv = sock->priv;
+  GSList *i;
+
+  for (i = priv->established_sockets; i; i = i->next) {
+    NiceSocket *socket = i->data;
+    nice_socket_set_rx_enabled (socket, enabled);
+  }
+}

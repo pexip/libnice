@@ -69,6 +69,7 @@ typedef struct {
   gboolean            connect_pending;
   guint               max_tcp_queue_size;
   gint                tx_queue_size_bytes;
+  gboolean            rx_enabled;
 } TcpEstablishedPriv;
 
 struct to_be_sent {
@@ -97,6 +98,7 @@ static gboolean socket_send_more (GSocket *gsocket, GIOCondition condition,
 static gboolean socket_recv_more (GSocket *gsocket, GIOCondition condition,
                                   gpointer data);
 static gint socket_get_tx_queue_size (NiceSocket *sock);
+static void socket_set_rx_enabled (NiceSocket *sock, gboolean enabled);
 
 static TcpEstablishedCallbackData *
 tcp_established_callback_data_new (NiceAgent *agent, NiceSocket *sock)
@@ -139,6 +141,7 @@ nice_tcp_established_socket_new (GSocket *gsock, GObject *nice_agent,
   priv->recv_offset = 0;
   priv->connect_pending = connect_pending;
   priv->max_tcp_queue_size = max_tcp_queue_size;
+  priv->rx_enabled = TRUE;
 
   sock->type = NICE_SOCKET_TYPE_TCP_ESTABLISHED;
   sock->fileno = gsock;
@@ -149,6 +152,7 @@ nice_tcp_established_socket_new (GSocket *gsock, GObject *nice_agent,
   sock->close = socket_close;
   sock->attach = socket_attach;
   sock->get_tx_queue_size = socket_get_tx_queue_size;
+  sock->set_rx_enabled = socket_set_rx_enabled;
 
   if (max_tcp_queue_size > 0) {
     /*
@@ -290,12 +294,12 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
 
   if (nice_address_equal (to, &priv->remote_addr)) {
     nice_debug("tcp-est %p: Sending on tcp-established to %s:%u len=%d", sock, to_string, nice_address_get_port (to), len);
-    
+
     /* Don't try to access the socket if it had an error, otherwise we risk a
        crash with SIGPIPE (Broken pipe) */
     if (priv->error)
       return -1;
-    
+
     buff[0] = (len >> 8);
     buff[1] = (len & 0xFF);
     memcpy (&buff[2], buf, len);
@@ -325,7 +329,7 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
 
       return ret;
     } else {
-      nice_debug ("tcp-est %p: not connected to %s:%u, queueing. queue-size=%u, queue_is_empty=%d max-tcp-queue-size=%d", sock, to_string, 
+      nice_debug ("tcp-est %p: not connected to %s:%u, queueing. queue-size=%u, queue_is_empty=%d max-tcp-queue-size=%d", sock, to_string,
                   nice_address_get_port (to), priv->send_queue.length, g_queue_is_empty (&priv->send_queue), priv->max_tcp_queue_size);
       add_to_be_sent (sock, buff, len, FALSE);
       if (g_socket_is_connected (sock->fileno)) {
@@ -411,8 +415,17 @@ socket_recv_more (
     sock = cbdata->sock;
     priv = sock->priv;
   }
-  
+
+  if (!priv->rx_enabled) {
+    /* Socket is suspended so don't read from it */
+    nice_debug("tcp-est %p: Socket rx disabled, ignoring event", sock);
+    agent_unlock (agent);
+    return TRUE;
+  }
+
   len = socket_recv (sock, &from, MAX_BUFFER_SIZE-priv->recv_offset, (gchar *)&priv->recv_buff[priv->recv_offset]);
+  nice_debug("tcp-est %p: socket_recv_more: %d", sock, len);
+
   if (len > 0) {
     priv->recv_offset += len;
     parse_rfc4571(sock, &from);
@@ -462,7 +475,7 @@ socket_send_more (
   }
 
   if (priv->connect_pending) {
-    /* 
+    /*
      * First event will be the connect result
      */
     if (!g_socket_check_connect_result (gsocket, &gerr)) {
@@ -479,7 +492,7 @@ socket_send_more (
 
   while ((tbs = g_queue_pop_head (&priv->send_queue)) != NULL) {
     int ret;
-    
+
     priv->tx_queue_size_bytes -= tbs->length;
 
     if(condition & G_IO_HUP) {
@@ -550,14 +563,14 @@ add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len, gboolean add_to_h
    */
   if (!add_to_head && priv->max_tcp_queue_size != 0) {
     while (g_queue_get_length (&priv->send_queue) > priv->max_tcp_queue_size) {
-      
+
       /*
        * We want to discard the oldest queued data which is at the front of the queue.
        * However we need to be careful as the first element on the queue may be partially
        * transmitted already, we'll discard the second element on the list instead
        */
       struct to_be_sent *pkt;
-      
+
       nice_debug ("tcp-est %p: TCP queue size breached, discarding", sock);
       pkt = g_queue_pop_nth (&priv->send_queue, 1);
       priv->tx_queue_size_bytes -= pkt->length;
@@ -599,4 +612,28 @@ socket_get_tx_queue_size (NiceSocket *sock)
   TcpEstablishedPriv *priv = sock->priv;
 
   return priv->tx_queue_size_bytes;
+}
+
+static void
+socket_set_rx_enabled (NiceSocket *sock, gboolean enabled)
+{
+  TcpEstablishedPriv *priv = sock->priv;
+
+  if (enabled) {
+    if (priv->read_source == NULL) {
+      priv->read_source = g_socket_create_source(sock->fileno, G_IO_IN | G_IO_ERR, NULL);
+      g_source_set_callback (priv->read_source, (GSourceFunc) socket_recv_more,
+                             tcp_established_callback_data_new(priv->nice_agent, sock),
+                             (GDestroyNotify)tcp_established_callback_data_free);
+      g_source_attach (priv->read_source, priv->context);
+    }
+  } else {
+    if (priv->read_source != NULL) {
+      g_source_destroy (priv->read_source);
+      g_source_unref (priv->read_source);
+      priv->read_source = NULL;
+    }
+  }
+
+  priv->rx_enabled = enabled;
 }
