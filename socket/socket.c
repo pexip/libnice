@@ -64,15 +64,8 @@ nice_socket_get_tx_queue_size (NiceSocket *sock)
   if (sock->get_tx_queue_size != NULL) {
     ret = sock->get_tx_queue_size (sock);
   }
-
+  
   return ret;
-}
-
-void
-nice_socket_set_rx_enabled (NiceSocket *sock, gboolean enabled)
-{
-  if (sock->set_rx_enabled != NULL)
-    sock->set_rx_enabled (sock, enabled);
 }
 
 gboolean
@@ -115,3 +108,4 @@ const char* socket_type_to_string (NiceSocketType type)
   }
   return "(invalid)";
 }
+
