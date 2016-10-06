@@ -2946,3 +2946,31 @@ nice_agent_get_tx_queue_size (
   agent_unlock (agent);
   return ret;
 }
+
+NICEAPI_EXPORT void
+nice_agent_set_rx_enabled (
+  NiceAgent *agent,
+  guint stream_id,
+  guint component_id,
+  gboolean enabled)
+{
+  Stream *stream;
+  Component *component;
+
+  agent_lock (agent);
+
+  if (!agent_find_component (agent, stream_id, component_id,
+                             &stream, &component)) {
+    goto done;
+  }
+
+  if (component->selected_pair.local != NULL) {
+    NiceSocket *sock = component->selected_pair.local->sockptr;
+
+    nice_debug ("Setting TCP rx to %d", enabled);
+    nice_socket_set_rx_enabled (sock, enabled);
+  }
+
+done:
+  agent_unlock (agent);
+}

@@ -71,7 +71,7 @@ static gint socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf);
 static gboolean socket_is_reliable (NiceSocket *sock);
 static gint socket_get_tx_queue_size (NiceSocket *sock);
-
+static void socket_set_rx_enabled (NiceSocket *sock, gboolean enabled);
 
 NiceSocket *
 nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr,
@@ -121,6 +121,8 @@ nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr,
   sock->close = socket_close;
   sock->attach = socket_attach;
   sock->get_tx_queue_size = socket_get_tx_queue_size;
+  sock->set_rx_enabled = socket_set_rx_enabled;
+
   return sock;
 }
 
@@ -345,4 +347,16 @@ socket_get_tx_queue_size (NiceSocket *sock)
       ret = queue_len;
   }
   return ret;
+}
+
+static void
+socket_set_rx_enabled (NiceSocket *sock, gboolean enabled)
+{
+  TcpActivePriv *priv = sock->priv;
+  GSList *i;
+
+  for (i = priv->established_sockets; i; i = i->next) {
+    NiceSocket *socket = i->data;
+    nice_socket_set_rx_enabled (socket, enabled);
+  }
 }

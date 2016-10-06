@@ -69,6 +69,7 @@ typedef struct {
   gboolean            connect_pending;
   guint               max_tcp_queue_size;
   gint                tx_queue_size_bytes;
+  gboolean            rx_enabled;
 } TcpEstablishedPriv;
 
 struct to_be_sent {
@@ -97,6 +98,7 @@ static gboolean socket_send_more (GSocket *gsocket, GIOCondition condition,
 static gboolean socket_recv_more (GSocket *gsocket, GIOCondition condition,
                                   gpointer data);
 static gint socket_get_tx_queue_size (NiceSocket *sock);
+static void socket_set_rx_enabled (NiceSocket *sock, gboolean enabled);
 
 static TcpEstablishedCallbackData *
 tcp_established_callback_data_new (NiceAgent *agent, NiceSocket *sock)
@@ -139,6 +141,7 @@ nice_tcp_established_socket_new (GSocket *gsock, GObject *nice_agent,
   priv->recv_offset = 0;
   priv->connect_pending = connect_pending;
   priv->max_tcp_queue_size = max_tcp_queue_size;
+  priv->rx_enabled = TRUE;
 
   sock->type = NICE_SOCKET_TYPE_TCP_ESTABLISHED;
   sock->fileno = gsock;
@@ -149,6 +152,7 @@ nice_tcp_established_socket_new (GSocket *gsock, GObject *nice_agent,
   sock->close = socket_close;
   sock->attach = socket_attach;
   sock->get_tx_queue_size = socket_get_tx_queue_size;
+  sock->set_rx_enabled = socket_set_rx_enabled;
 
   if (max_tcp_queue_size > 0) {
     /*
@@ -411,8 +415,16 @@ socket_recv_more (
     sock = cbdata->sock;
     priv = sock->priv;
   }
-  
+
+  if (!priv->rx_enabled) {
+    /* Socket is suspended so don't read from it */
+    nice_debug("tcp-est %p: Socket rx disabled, ignoring event", sock);
+    agent_unlock (agent);
+    return TRUE;
+  }
+
   len = socket_recv (sock, &from, MAX_BUFFER_SIZE-priv->recv_offset, (gchar *)&priv->recv_buff[priv->recv_offset]);
+
   if (len > 0) {
     priv->recv_offset += len;
     parse_rfc4571(sock, &from);
@@ -599,4 +611,28 @@ socket_get_tx_queue_size (NiceSocket *sock)
   TcpEstablishedPriv *priv = sock->priv;
 
   return priv->tx_queue_size_bytes;
+}
+
+static void
+socket_set_rx_enabled (NiceSocket *sock, gboolean enabled)
+{
+  TcpEstablishedPriv *priv = sock->priv;
+
+  if (enabled) {
+    if (priv->read_source == NULL) {
+      priv->read_source = g_socket_create_source(sock->fileno, G_IO_IN | G_IO_ERR, NULL);
+      g_source_set_callback (priv->read_source, (GSourceFunc) socket_recv_more,
+                             tcp_established_callback_data_new(priv->nice_agent, sock),
+                             (GDestroyNotify)tcp_established_callback_data_free);
+      g_source_attach (priv->read_source, priv->context);
+    }
+  } else {
+    if (priv->read_source != NULL) {
+      g_source_destroy (priv->read_source);
+      g_source_unref (priv->read_source);
+      priv->read_source = NULL;
+    }
+  }
+
+  priv->rx_enabled = enabled;
 }

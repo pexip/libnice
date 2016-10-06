@@ -80,6 +80,7 @@ struct _NiceSocket
   void (*close) (NiceSocket *sock);
   void (*attach) (NiceSocket *sock, GMainContext* ctx);
   int (*get_tx_queue_size) (NiceSocket *sock);
+  void (*set_rx_enabled) (NiceSocket *sock, gboolean enabled);
 
   void *priv;
 };
@@ -105,6 +106,9 @@ gint
 nice_socket_get_tx_queue_size (NiceSocket *sock);
 
 void
+nice_socket_set_rx_enabled (NiceSocket *sock, gboolean enabled);
+
+void
 nice_socket_free (NiceSocket *sock);
 
 const char *socket_type_to_string (NiceSocketType type);
@@ -122,4 +126,3 @@ const char *socket_type_to_string (NiceSocketType type);
 G_END_DECLS
 
 #endif /* _SOCKET_H */
-

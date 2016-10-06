@@ -100,6 +100,8 @@ GST_STATIC_PAD_TEMPLATE (
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS_ANY);
 
+#define gst_nice_src_parent_class parent_class
+
 G_DEFINE_TYPE (GstNiceSrc, gst_nice_src, GST_TYPE_PUSH_SRC);
 
 enum
@@ -110,6 +112,41 @@ enum
   PROP_CAPS
 };
 
+static gboolean
+gst_nice_src_handle_event (GstBaseSrc *basesrc, GstEvent * event)
+{
+  GstNiceSrc *src = GST_NICE_SRC_CAST (basesrc);
+  gboolean ret = TRUE;
+
+  GST_LOG_OBJECT (src, "handling %s event", GST_EVENT_TYPE_NAME (event));
+
+  switch (GST_EVENT_TYPE (event)) {
+    case GST_EVENT_CUSTOM_UPSTREAM:
+    {
+      if (gst_event_has_name (event, "PexQosOverflow")) {
+        GST_INFO_OBJECT (src, "Suspend TCP receive, QOS received");
+        nice_agent_set_rx_enabled (src->agent, src->stream_id, src->component_id, FALSE);
+        ret = TRUE;
+      } else if (gst_event_has_name (event, "PexQosUnderflow")) {
+        GST_INFO_OBJECT (src, "Resume TCP receive, QOS received");
+        nice_agent_set_rx_enabled (src->agent, src->stream_id, src->component_id, TRUE);
+        ret = TRUE;
+      } else {
+        ret = GST_BASE_SRC_CLASS (parent_class)->event (basesrc, event);
+      }
+      break;
+    }
+
+    default:
+    {
+      GST_LOG_OBJECT (src, "let base class handle event");
+      ret = GST_BASE_SRC_CLASS (parent_class)->event (basesrc, event);
+      break;
+    }
+  }
+
+  return ret;
+}
 
 static void
 gst_nice_src_class_init (GstNiceSrcClass *klass)
@@ -129,6 +166,7 @@ gst_nice_src_class_init (GstNiceSrcClass *klass)
   gstbasesrc_class->unlock = GST_DEBUG_FUNCPTR (gst_nice_src_unlock);
   gstbasesrc_class->unlock_stop = GST_DEBUG_FUNCPTR (gst_nice_src_unlock_stop);
   gstbasesrc_class->negotiate = GST_DEBUG_FUNCPTR (gst_nice_src_negotiate);
+  gstbasesrc_class->event = GST_DEBUG_FUNCPTR (gst_nice_src_handle_event);
 
   gobject_class = (GObjectClass *) klass;
   gobject_class->set_property = gst_nice_src_set_property;

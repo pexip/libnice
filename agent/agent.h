@@ -778,7 +778,18 @@ nice_agent_get_tx_queue_size (
   guint stream_id,
   guint component_id);
 
+/**
+ * nice_agent_set_rx_enabled
+ *
+ * Start/Stop receiving traffic on a given stream/component
+ */
+void
+nice_agent_set_rx_enabled (
+  NiceAgent *agent,
+  guint stream_id,
+  guint component_id,
+  gboolean enabled);
+
 G_END_DECLS
 
 #endif /* _AGENT_H */
-
