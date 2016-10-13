@@ -667,12 +667,31 @@ static CandidateCheckPair* priv_find_pair_with_matching_foundation (NiceAgent* a
   return NULL;
 }
 
+static gboolean priv_stream_needs_rtcp_pair (NiceAgent * agent, Stream *stream, CandidateCheckPair* rtp_pair)
+{
+  Component *component;
+
+  if (is_microsoft_tcp_pair (agent, rtp_pair))
+    return FALSE;
+
+  if (stream->n_components < 2)
+    return FALSE;
+
+  if (!agent_find_component (agent, stream->id, NICE_COMPONENT_TYPE_RTCP, NULL, &component))
+    return FALSE;
+
+  if (component->remote_candidates == NULL)
+    return FALSE;
+
+  return TRUE;
+}
+
 static gboolean priv_attempt_to_nominate_pair (NiceAgent *agent, Stream *stream, CandidateCheckPair* rtp_pair)
 {
   if (rtp_pair->component_id == NICE_COMPONENT_TYPE_RTP && rtp_pair->state == NICE_CHECK_SUCCEEDED) {
 
-    if (is_microsoft_tcp_pair (agent, rtp_pair) || stream->n_components < 2) {
-      /* 
+    if (!priv_stream_needs_rtcp_pair (agent, stream, rtp_pair)) {
+      /*
        *  For Microsoft TCP streams we may not have an RTCP pair (as rtcp-mux will always be enabled). In this
        *  case just go ahead and nominate the RTP pair
        */
