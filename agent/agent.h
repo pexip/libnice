@@ -341,6 +341,12 @@ nice_agent_remove_stream (
   guint stream_id);
 
 
+void
+nice_agent_set_stream (
+  NiceAgent *agent,
+  guint stream_id,
+  gboolean rtcp_mux);
+
 /**
  * nice_agent_set_port_range:
  * @agent: The #NiceAgent Object

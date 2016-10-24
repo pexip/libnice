@@ -75,6 +75,7 @@ struct _Stream
   gboolean gathering;
   gint tos;
   guint tick_counter;
+  gboolean rtcp_mux;
 };
 
 

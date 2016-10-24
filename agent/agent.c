@@ -1413,6 +1413,27 @@ nice_agent_add_stream (
   return ret;
 }
 
+NICEAPI_EXPORT void
+nice_agent_set_stream (
+                       NiceAgent *agent,
+                       guint stream_id,
+                       gboolean rtcp_mux)
+{
+  Stream *stream;
+
+  agent_lock (agent);
+  stream = agent_find_stream (agent, stream_id);
+
+  if (!stream) {
+    goto done;
+  }
+
+  stream->rtcp_mux = rtcp_mux;
+
+ done:
+  agent_unlock (agent);
+
+}
 
 NICEAPI_EXPORT gboolean
 nice_agent_set_relay_info(NiceAgent *agent,

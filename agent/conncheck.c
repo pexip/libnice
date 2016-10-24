@@ -680,7 +680,7 @@ static gboolean priv_stream_needs_rtcp_pair (NiceAgent * agent, Stream *stream, 
   if (!agent_find_component (agent, stream->id, NICE_COMPONENT_TYPE_RTCP, NULL, &component))
     return FALSE;
 
-  if (component->remote_candidates == NULL)
+  if (stream->rtcp_mux)
     return FALSE;
 
   return TRUE;
