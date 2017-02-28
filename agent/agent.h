@@ -435,6 +435,28 @@ gboolean nice_agent_set_relay_info(
     NiceRelayType type);
 
 /**
+ * nice_agent_set_stun_info:
+ * @agent: The #NiceAgent Object
+ * @stream_id: The ID of the stream
+ * @component_id: The ID of the component
+ * @stun_server_ip: The IP address of the STUN server
+ * @stun_server_port: The port of the STUN server
+ *
+ * Sets the settings for using a stun server during the candidate discovery. If 
+ * this API is used to configure a STUN server for a component then this setting
+ * will override any global STUN server configured on the agent.
+ *
+ * Returns: %TRUE if the STUN settings were accepted.
+ * %FALSE if the address was invalid.
+ */
+gboolean nice_agent_set_stun_info(
+  NiceAgent *agent,
+  guint stream_id,
+  guint component_id,
+  const gchar *stun_server_ip,
+  guint stun_server_port);
+
+/**
  * nice_agent_gather_candidates:
  * @agent: The #NiceAgent Object
  * @stream_id: The id of the stream to start

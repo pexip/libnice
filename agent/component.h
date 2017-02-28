@@ -111,6 +111,9 @@ struct _Component
   GSList *gsources;            /**< list of GSource objs */
   GSList *incoming_checks;     /**< list of IncomingCheck objs */
   GList *turn_servers;             /**< List of TURN servers */
+  gchar *stun_server_ip;          /* STUN server IP */
+  guint stun_server_port;         /* STUN server port */
+
   CandidatePair selected_pair; /**< independent from checklists, 
 				    see ICE 11.1. "Sending Media" (ID-19) */
   NiceCandidate *restart_candidate; /**< for storing active remote candidate during a restart */

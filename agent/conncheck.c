@@ -1005,16 +1005,27 @@ static gboolean priv_conn_keepalive_tick_unlocked (NiceAgent *agent)
     Stream *stream = i->data;
     for (j = stream->components; j; j = j->next) {
       Component *component = j->data;
+      gchar *stun_server_ip = NULL;
+      guint stun_server_port;
+
+      if (component->stun_server_ip != NULL) {
+        stun_server_ip = component->stun_server_ip;
+        stun_server_port = component->stun_server_port;
+      } else {
+        stun_server_ip = agent->stun_server_ip;
+        stun_server_port = agent->stun_server_port;
+      }
+
       if (component->state < NICE_COMPONENT_STATE_READY &&
-          agent->stun_server_ip) {
+          stun_server_ip) {
         NiceAddress stun_server;
-        if (nice_address_set_from_string (&stun_server, agent->stun_server_ip)) {
+        if (nice_address_set_from_string (&stun_server, stun_server_ip)) {
           StunAgent stun_agent;
           uint8_t stun_buffer[STUN_MAX_MESSAGE_SIZE];
           StunMessage stun_message;
           size_t buffer_len = 0;
 
-          nice_address_set_port (&stun_server, agent->stun_server_port);
+          nice_address_set_port (&stun_server, stun_server_port);
 
           stun_agent_init (&stun_agent, STUN_ALL_KNOWN_ATTRIBUTES,
                            STUN_COMPATIBILITY_RFC5389, 

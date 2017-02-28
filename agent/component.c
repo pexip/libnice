@@ -120,6 +120,9 @@ component_free (Component *cmp)
   }
   g_list_free (cmp->turn_servers);
 
+  g_free (cmp->stun_server_ip);
+  cmp->stun_server_ip = NULL;
+
   if (cmp->selected_pair.keepalive.tick_source != NULL) {
     g_source_destroy (cmp->selected_pair.keepalive.tick_source);
     g_source_unref (cmp->selected_pair.keepalive.tick_source);

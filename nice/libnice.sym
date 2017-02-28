@@ -34,6 +34,7 @@ nice_agent_set_port_range
 nice_agent_set_tcp_active_port_range
 nice_agent_set_transport
 nice_agent_set_relay_info
+nice_agent_set_stun_info
 nice_agent_set_remote_candidates
 nice_agent_set_remote_credentials
 nice_agent_set_selected_pair

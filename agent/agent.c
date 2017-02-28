@@ -1480,6 +1480,30 @@ nice_agent_set_relay_info(NiceAgent *agent,
   return TRUE;
 }
 
+gboolean nice_agent_set_stun_info(
+  NiceAgent *agent,
+  guint stream_id,
+  guint component_id,
+  const gchar *stun_server_ip,
+  guint stun_server_port)
+{
+  Component *component = NULL;
+
+  g_return_val_if_fail (stun_server_ip, FALSE);
+  g_return_val_if_fail (stun_server_port, FALSE);
+
+  agent_lock (agent);
+
+  if (agent_find_component (agent, stream_id, component_id, NULL, &component)) {
+    g_free (component->stun_server_ip);
+    component->stun_server_ip = g_strdup (stun_server_ip);
+    component->stun_server_port = stun_server_port;
+  }
+
+  agent_unlock (agent);
+  return TRUE;
+}
+
 NICEAPI_EXPORT gboolean
 nice_agent_gather_candidates (
   NiceAgent *agent,
@@ -1546,9 +1570,19 @@ nice_agent_gather_candidates (
     for (n = 0; n < stream->n_components; n++) {
       Component *component = stream_find_component_by_id (stream, n + 1);
       guint current_port;
+      gchar *stun_server_ip = NULL;
+      guint stun_server_port;
 
       if (component == NULL)
         continue;
+
+      if (component->stun_server_ip != NULL) {
+        stun_server_ip = component->stun_server_ip;
+        stun_server_port = component->stun_server_port;
+      } else {
+        stun_server_ip = agent->stun_server_ip;
+        stun_server_port = agent->stun_server_port;
+      }
 
       current_port = component->min_port;
 
@@ -1590,10 +1624,10 @@ nice_agent_gather_candidates (
 #endif
 
         if (agent->full_mode &&
-            agent->stun_server_ip) {
+            stun_server_ip) {
           NiceAddress stun_server;
-          if (nice_address_set_from_string (&stun_server, agent->stun_server_ip)) {
-            nice_address_set_port (&stun_server, agent->stun_server_port);
+          if (nice_address_set_from_string (&stun_server, stun_server_ip)) {
+            nice_address_set_port (&stun_server, stun_server_port);
 
             priv_add_new_candidate_discovery_stun (agent,
                 udp_host_candidate->sockptr,
@@ -1670,8 +1704,7 @@ nice_agent_gather_candidates (
           goto error;
         }
 
-        if (agent->full_mode &&
-            agent->stun_server_ip) {
+        if (agent->full_mode && stun_server_ip) {
           /*
            * RDP Traversal
            * Use UDP stun to discover our server reflexive address and then advertise
@@ -1679,12 +1712,12 @@ nice_agent_gather_candidates (
            * to the remote relay TCP passive candidate
            */
           NiceAddress stun_server;
-          if (nice_address_set_from_string (&stun_server, agent->stun_server_ip)) {
+          if (nice_address_set_from_string (&stun_server, stun_server_ip)) {
             NiceSocket* sockptr;
             char local_address_string[NICE_ADDRESS_STRING_LEN];
             char stun_address_string[NICE_ADDRESS_STRING_LEN];
 
-            nice_address_set_port (&stun_server, agent->stun_server_port);
+            nice_address_set_port (&stun_server, stun_server_port);
 
             if (udp_host_candidate) {
               sockptr = udp_host_candidate->sockptr;
@@ -1986,6 +2019,7 @@ nice_agent_add_stream_local_address (NiceAgent *agent, guint stream_id, NiceAddr
   else {
     nice_address_free(dup);
   }
+  result = TRUE;
 
 done:
   agent_unlock (agent);
@@ -2208,6 +2242,8 @@ _nice_agent_recv (
   gboolean has_padding = _nice_should_have_padding(agent->compatibility);
   NiceAddress stun_server;
   gboolean found_server = FALSE;
+  gchar *stun_server_ip = NULL;
+  guint stun_server_port;
 
   len = nice_socket_recv (socket, from,  buf_len, buf);
 
@@ -2262,8 +2298,16 @@ _nice_agent_recv (
    * Now that the packet has been decapsulated from any data indication figure out the correct
    * padding based on compatibility mode
    */
-  if (agent->stun_server_ip && nice_address_set_from_string (&stun_server, agent->stun_server_ip)) {
-    nice_address_set_port (&stun_server, agent->stun_server_port);
+  if (component->stun_server_ip != NULL) {
+    stun_server_ip = component->stun_server_ip;
+    stun_server_port = component->stun_server_port;
+  } else {
+    stun_server_ip = agent->stun_server_ip;
+    stun_server_port = agent->stun_server_port;
+  }
+
+  if (stun_server_ip && nice_address_set_from_string (&stun_server, stun_server_ip)) {
+    nice_address_set_port (&stun_server, stun_server_port);
     if (nice_address_equal (from, &stun_server)) {
       has_padding = _nice_should_have_padding(agent->turn_compatibility);
 #ifndef NDEBUG
@@ -2542,6 +2586,9 @@ nice_agent_socket_rx_cb (NiceSocket* socket, NiceAddress* from,
   GList *item;
   gboolean is_stun = TRUE;
   NiceAddress stun_server;
+  gchar *stun_server_ip = NULL;
+  guint stun_server_port;
+
 
   if (len <= 0) {
     gchar tmpbuf[INET6_ADDRSTRLEN];
@@ -2564,8 +2611,16 @@ nice_agent_socket_rx_cb (NiceSocket* socket, NiceAddress* from,
 
   agent_lock (agent);
 
-  if (agent->stun_server_ip && nice_address_set_from_string (&stun_server, agent->stun_server_ip)) {
-    nice_address_set_port (&stun_server, agent->stun_server_port);
+  if (component->stun_server_ip != NULL) {
+    stun_server_ip = component->stun_server_ip;
+    stun_server_port = component->stun_server_port;
+  } else {
+    stun_server_ip = agent->stun_server_ip;
+    stun_server_port = agent->stun_server_port;
+  }
+
+  if (stun_server_ip && nice_address_set_from_string (&stun_server, stun_server_ip)) {
+    nice_address_set_port (&stun_server, stun_server_port);
     if (nice_address_equal (from, &stun_server)) {
       has_padding = _nice_should_have_padding(agent->turn_compatibility);
     }
