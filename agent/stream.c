@@ -71,6 +71,14 @@ stream_free (Stream *stream)
 {
   GSList *i;
 
+  for (i = stream->local_addresses; i; i = i->next)
+  {
+    NiceAddress *a = i->data;
+    nice_address_free (a);
+  }
+  g_slist_free (stream->local_addresses);
+  stream->local_addresses = NULL;
+
   for (i = stream->components; i; i = i->next) {
     Component *component = i->data;
     component_free (component);

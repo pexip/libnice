@@ -312,6 +312,26 @@ nice_agent_add_local_address (NiceAgent *agent, NiceAddress *addr);
 gboolean
 nice_agent_add_local_address_from_string (NiceAgent *agent, const gchar *addr);
 
+/**
+ * nice_agent_add_stream_local_address:
+ * @agent: The #NiceAgent Object
+ * @addr: The address to listen to
+ * @stream_id: The stream for this address
+ * If the port is 0, then a random port will be chosen by the system
+ *
+ * Add a local address from which to derive local host candidates for
+ * candidate gathering.
+ * <para>
+ * Since 0.0.5, if this method is not called, libnice will automatically
+ * discover the local addresses available
+ * </para>
+ *
+ * See also: nice_agent_gather_candidates()
+ * Returns: %TRUE on success, %FALSE on fatal (memory allocation) errors
+ */
+gboolean
+nice_agent_add_stream_local_address (NiceAgent *agent, guint stream_id, NiceAddress *addr);
+
 
 /**
  * nice_agent_add_stream:

@@ -62,9 +62,11 @@ G_BEGIN_DECLS
 struct _Stream
 {
   guint id;
+  GSList *local_addresses;        /* list of NiceAddresses for local
+                                     interfaces */
   guint n_components;
   gboolean initial_binding_request_received;
-  GSList *components; /* list of 'Component' structs */
+  GSList *components;             /* list of 'Component' structs */
   GSList *conncheck_list;         /* list of CandidatePair items */
   GSList *valid_list;             /* list of CandidatePair items */
   GSList *conncheck_heap;         /* list of CandidatePair items */

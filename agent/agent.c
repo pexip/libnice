@@ -1489,6 +1489,7 @@ nice_agent_gather_candidates (
   GSList *i;
   Stream *stream;
   GSList *local_addresses = NULL;
+  GSList *configured_local_addresses = NULL;
   gboolean ret = TRUE;
 
   agent_lock (agent);
@@ -1502,8 +1503,10 @@ nice_agent_gather_candidates (
   nice_debug ("Agent %p : In %s mode, starting candidate gathering.", agent,
       agent->full_mode ? "ICE-FULL" : "ICE-LITE");
 
+  configured_local_addresses = (stream->local_addresses != NULL) ? stream->local_addresses : agent->local_addresses;
+
   /* if no local addresses added, generate them ourselves */
-  if (agent->local_addresses == NULL) {
+  if (configured_local_addresses == NULL) {
     GList *addresses = nice_interfaces_get_local_ips (FALSE);
     GList *item;
 
@@ -1520,7 +1523,7 @@ nice_agent_gather_candidates (
     g_list_foreach (addresses, (GFunc) g_free, NULL);
     g_list_free (addresses);
   } else {
-    for (i = agent->local_addresses; i; i = i->next) {
+    for (i = configured_local_addresses; i; i = i->next) {
       NiceAddress *addr = i->data;
       NiceAddress *dup = nice_address_dup (addr);
 
@@ -1946,6 +1949,47 @@ nice_agent_add_local_address_from_string (NiceAgent *agent, const gchar *addr)
   if (!nice_address_set_from_string (&nice_addr, addr))
     return FALSE;
   return nice_agent_add_local_address (agent, &nice_addr);
+}
+
+NICEAPI_EXPORT gboolean
+nice_agent_add_stream_local_address (NiceAgent *agent, guint stream_id, NiceAddress *addr)
+{
+  NiceAddress *dup;
+  gboolean found = FALSE;
+  GSList *item;
+  gboolean result = FALSE;
+  Stream *stream;
+
+  agent_lock (agent);
+
+  stream = agent_find_stream (agent, stream_id);
+
+  if (!stream) {
+    goto done;
+  }
+
+  dup = nice_address_dup (addr);
+  nice_address_set_port (dup, 0);
+
+  for (item = stream->local_addresses; item; item = g_slist_next (item)) {
+    NiceAddress *address = item->data;
+
+    if (nice_address_equal (dup, address)) {
+      found = TRUE;
+      break;
+    }
+  }
+
+  if (!found) {
+    stream->local_addresses = g_slist_append (stream->local_addresses, dup);
+  }
+  else {
+    nice_address_free(dup);
+  }
+
+done:
+  agent_unlock (agent);
+  return result;
 }
 
 static gboolean priv_add_remote_candidate (
