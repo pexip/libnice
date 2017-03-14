@@ -2667,7 +2667,7 @@ nice_agent_socket_rx_cb (NiceSocket* socket, NiceAddress* from,
       callback (agent, sid, cid, len, buf, cdata, from, &socket->addr);
     } else {
       agent_unlock (agent);
-    }    
+    }
   } else {
     agent_unlock (agent);
   }
@@ -2683,12 +2683,12 @@ nice_agent_socket_tx_cb (NiceSocket* socket, gchar* buf, gint len, gsize queued,
   Component *component = ctx->component;
 
   g_mutex_lock (&agent->mutex);
-  if (agent->writable && queued > 0) {
-    agent->writable = FALSE;
+  if (component->writable && queued > 0) {
+    component->writable = FALSE;
     g_signal_emit (agent, signals[SIGNAL_RELIABLE_TRANSPORT_OVERFLOW],
         0, stream->id, component->id);
-  } else if (!agent->writable && queued == 0) {
-    agent->writable = TRUE;
+  } else if (!component->writable && queued == 0) {
+    component->writable = TRUE;
     g_signal_emit (agent, signals[SIGNAL_RELIABLE_TRANSPORT_WRITABLE],
         0, stream->id, component->id);
   }

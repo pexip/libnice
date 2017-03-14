@@ -128,6 +128,7 @@ struct _Component
   gboolean enable_udp;
   gboolean enable_tcp_passive;
   gboolean enable_tcp_active;
+  gboolean writable;
 };
 
 Component *

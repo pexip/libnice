@@ -135,7 +135,6 @@ struct _NiceAgent
 #endif
   gchar *software_attribute;       /* SOFTWARE attribute */
   gboolean reliable;               /* property: reliable */
-  gboolean writable;
   /* XXX: add pointer to internal data struct for ABI-safe extensions */
 };
 

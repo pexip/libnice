@@ -65,6 +65,7 @@ component_new (guint id)
   component->enable_udp = FALSE;
   component->enable_tcp_passive = FALSE;
   component->enable_tcp_active = FALSE;
+  component->writable = TRUE;
   return component;
 }
 
