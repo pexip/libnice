@@ -196,38 +196,34 @@ static void
 gst_nice_sink_on_overflow (GstNiceSink * sink,
     guint stream_id, guint component_id, NiceAgent * agent)
 {
+  (void) stream_id;
+  (void) component_id;
   (void) agent;
 
-  if (stream_id == sink->stream_id && component_id == sink->component_id) {
-    GST_INFO_OBJECT (sink, "Sink overflow for stream %d, component %d", stream_id, component_id);
-
 #if GST_CHECK_VERSION (1,0,0)
-    gst_pad_push_event (GST_BASE_SINK_PAD (sink),
-        gst_event_new_custom (GST_EVENT_CUSTOM_UPSTREAM, gst_structure_new_empty ("PexQosOverflow")));
+  gst_pad_push_event (GST_BASE_SINK_PAD (sink),
+      gst_event_new_qos (GST_QOS_TYPE_OVERFLOW, 0.5, -1, GST_CLOCK_TIME_NONE));
 #else
-    gst_pad_push_event (GST_BASE_SINK_PAD (sink),
-        gst_event_new_custom (GST_EVENT_CUSTOM_UPSTREAM, gst_structure_new_empty ("PexQosOverflow")));
+  gst_pad_push_event (GST_BASE_SINK_PAD (sink),
+      gst_event_new_qos (0.5, -1, GST_CLOCK_TIME_NONE));
 #endif
-  }
 }
 
 static void
 gst_nice_sink_on_writable (GstNiceSink * sink,
     guint stream_id, guint component_id, NiceAgent * agent)
 {
+  (void) stream_id;
+  (void) component_id;
   (void) agent;
 
-  if (stream_id == sink->stream_id && component_id == sink->component_id) {
-    GST_INFO_OBJECT (sink, "Sink underflow for stream %d, component %d", stream_id, component_id);
-
 #if GST_CHECK_VERSION (1,0,0)
-    gst_pad_push_event (GST_BASE_SINK_PAD (sink),
-        gst_event_new_custom (GST_EVENT_CUSTOM_UPSTREAM, gst_structure_new_empty ("PexQosUnderflow")));
+  gst_pad_push_event (GST_BASE_SINK_PAD (sink),
+      gst_event_new_qos (GST_QOS_TYPE_UNDERFLOW, 1.0, 1, GST_CLOCK_TIME_NONE));
 #else
-    gst_pad_push_event (GST_BASE_SINK_PAD (sink),
-        gst_event_new_custom (GST_EVENT_CUSTOM_UPSTREAM, gst_structure_new_empty ("PexQosUnderflow")));
+  gst_pad_push_event (GST_BASE_SINK_PAD (sink),
+      gst_event_new_qos (1.0, 1, GST_CLOCK_TIME_NONE));
 #endif
-  }
 }
 
 static void
