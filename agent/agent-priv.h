@@ -87,7 +87,9 @@ struct _NiceAgent
   gint agent_mutex_count;
   GThread *agent_mutex_th;
   GRecMutex agent_mutex;          /* Mutex used for thread-safe lib */
-  GMutex mutex;
+  
+  GQueue *reliable_transport_events;
+  GSource *event_source;
 
   gboolean full_mode;             /* property: full-mode */
   GTimeVal next_check_tv;         /* property: next conncheck timestamp */

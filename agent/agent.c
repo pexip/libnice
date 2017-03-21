@@ -120,6 +120,14 @@ enum
   N_SIGNALS,
 };
 
+struct _ReliableTransportEvent
+{
+  guint stream_id;
+  guint component_id;
+  gboolean writable;
+};
+typedef struct _ReliableTransportEvent ReliableTransportEvent;
+
 static guint signals[N_SIGNALS];
 
 static void priv_free_upnp (NiceAgent *agent);
@@ -829,6 +837,8 @@ nice_agent_init (NiceAgent *agent)
   agent->refresh_list = NULL;
   agent->media_after_tick = FALSE;
   agent->software_attribute = NULL;
+  agent->reliable_transport_events = g_queue_new();
+  agent->event_source = NULL;
 
   agent->compatibility = NICE_COMPATIBILITY_RFC5245;
 
@@ -840,7 +850,6 @@ nice_agent_init (NiceAgent *agent)
   agent->rng = nice_rng_new ();
   priv_generate_tie_breaker (agent);
 
-  g_mutex_init (&agent->mutex);
   g_rec_mutex_init (&agent->agent_mutex);
 }
 
@@ -2476,6 +2485,8 @@ nice_agent_dispose (GObject *object)
   refresh_free (agent);
   g_assert (agent->refresh_list == NULL);
 
+  g_queue_free_full (agent->reliable_transport_events, g_free);
+
   /* step: free resources for the connectivity check timers */
   conn_check_prune_all_streams (agent);
 
@@ -2524,7 +2535,6 @@ nice_agent_dispose (GObject *object)
   agent->main_context = NULL;
 
   agent_unlock (agent);
-  g_mutex_clear (&agent->mutex);
   g_assert (agent->agent_mutex_th == NULL);
   g_rec_mutex_clear (&agent->agent_mutex);
 
@@ -2673,6 +2683,59 @@ nice_agent_socket_rx_cb (NiceSocket* socket, NiceAddress* from,
   }
 }
 
+static gboolean
+nice_agent_send_reliable_transport_events (gpointer userdata)
+{
+  NiceAgent *agent = userdata;
+  ReliableTransportEvent *ev;
+  GQueue *events;
+
+  agent_lock (agent);
+  events = agent->reliable_transport_events;
+  agent->reliable_transport_events = g_queue_new();
+
+  if (agent->event_source != NULL) {
+    g_source_destroy (agent->event_source);
+    g_source_unref (agent->event_source);
+    agent->event_source = NULL;
+  }
+  agent_unlock (agent);
+
+  while ((ev = g_queue_pop_head (events)) != NULL) {
+    nice_debug ("%p: %d/%d sending event %s", agent, ev->stream_id, ev->component_id, ev->writable ? "writable" : "overflow");
+    if (ev->writable) {
+      g_signal_emit (agent, signals[SIGNAL_RELIABLE_TRANSPORT_WRITABLE],
+                     0, ev->stream_id, ev->component_id);
+    } else {
+      g_signal_emit (agent, signals[SIGNAL_RELIABLE_TRANSPORT_OVERFLOW],
+                     0, ev->stream_id, ev->component_id);
+    }
+    g_free (ev);
+  }
+  g_queue_free (events);
+
+  return G_SOURCE_REMOVE;
+}
+
+static void
+nice_agent_queue_reliable_transport_event (NiceAgent *agent, guint stream_id, guint component_id, gboolean writable)
+{
+  ReliableTransportEvent *ev = g_new0(ReliableTransportEvent, 1);
+
+  ev->stream_id = stream_id;
+  ev->component_id = component_id;
+  ev->writable = writable;
+  g_queue_push_tail (agent->reliable_transport_events, ev);
+  nice_debug ("%p: %d/%d queued event %s", agent, ev->stream_id, ev->component_id, ev->writable ? "writable" : "overflow");
+
+  /* Schedule sending events */
+  if (agent->event_source == NULL) {
+    agent->event_source = g_timeout_source_new (0);
+    g_source_set_callback (agent->event_source, nice_agent_send_reliable_transport_events, agent, NULL);
+    g_source_attach (agent->event_source, agent->main_context);
+  }
+}
+
 void
 nice_agent_socket_tx_cb (NiceSocket* socket, gchar* buf, gint len, gsize queued,
     gpointer userdata)
@@ -2682,17 +2745,15 @@ nice_agent_socket_tx_cb (NiceSocket* socket, gchar* buf, gint len, gsize queued,
   Stream *stream = ctx->stream;
   Component *component = ctx->component;
 
-  g_mutex_lock (&agent->mutex);
+  agent_lock (agent);
   if (component->writable && queued > 0) {
     component->writable = FALSE;
-    g_signal_emit (agent, signals[SIGNAL_RELIABLE_TRANSPORT_OVERFLOW],
-        0, stream->id, component->id);
+    nice_agent_queue_reliable_transport_event (agent, stream->id, component->id, component->writable);
   } else if (!component->writable && queued == 0) {
     component->writable = TRUE;
-    g_signal_emit (agent, signals[SIGNAL_RELIABLE_TRANSPORT_WRITABLE],
-        0, stream->id, component->id);
+    nice_agent_queue_reliable_transport_event (agent, stream->id, component->id, component->writable);
   }
-  g_mutex_unlock (&agent->mutex);
+  agent_unlock (agent);
 }
 
 static gboolean
