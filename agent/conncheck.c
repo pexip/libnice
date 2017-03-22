@@ -170,17 +170,22 @@ static int priv_timer_expired (GTimeVal *timer, GTimeVal *now)
 
 static void priv_set_pair_state (NiceAgent* agent, CandidateCheckPair* pair, NiceCheckState new_state)
 {
-  nice_debug ("Agent %p %u/%u: pair %p(%s) change state %s -> %s",
-              agent, pair->stream_id, pair->component_id,
-              pair, pair->foundation,
-              priv_state_to_string(pair->state), priv_state_to_string (new_state));
-  pair->state = new_state;
-
-  if (new_state == NICE_CHECK_SUCCEEDED) {
-    /* 
-     * Anything in succeeded state must have a valid pair
-     */
-    g_assert (pair->valid_pair != NULL);
+  if (new_state == NICE_CHECK_SUCCEEDED && pair->valid_pair == NULL) {
+    /*
+     * This condition can occur if two check pairs with different local addresses generate the same
+     * valid pair (e.g. a misbehaving NAT is assigning the same peer reflexive address to different local
+     * addresses). The pair that has already generated the valid pair will be in state succeeded so we can 
+     * ignore this pair*/
+    nice_debug ("Agent %p %u/%u: pair %p(%s) cannot change state %s -> %s as no valid pair generated",
+                agent, pair->stream_id, pair->component_id,
+                pair, pair->foundation,
+                priv_state_to_string(pair->state), priv_state_to_string (new_state));
+  } else {
+    nice_debug ("Agent %p %u/%u: pair %p(%s) change state %s -> %s",
+                agent, pair->stream_id, pair->component_id,
+                pair, pair->foundation,
+                priv_state_to_string(pair->state), priv_state_to_string (new_state));
+    pair->state = new_state;
   }
 }
 
@@ -499,89 +504,89 @@ static void priv_conn_check_unfreeze_related (NiceAgent *agent, Stream *stream, 
 {
   GSList *i;
 
-  g_assert (ok_check);
-  g_assert (ok_check->state == NICE_CHECK_SUCCEEDED);
-  g_assert (stream);
-  g_assert (stream->id == ok_check->stream_id);
+  if (ok_check->state == NICE_CHECK_SUCCEEDED) {
+    g_assert (stream);
+    g_assert (stream->id == ok_check->stream_id);
 
-  /* step: perform the step (1) of 'Updating Pair States' */
-  g_assert (priv_conn_check_list_is_ordered (stream->conncheck_list));
-  g_assert (priv_conn_check_list_is_ordered (stream->valid_list));
+    /* step: perform the step (1) of 'Updating Pair States' */
+    g_assert (priv_conn_check_list_is_ordered (stream->conncheck_list));
+    g_assert (priv_conn_check_list_is_ordered (stream->valid_list));
 
-  for (i = stream->conncheck_list; i ; i = i->next) {
-    CandidateCheckPair *p = i->data;
+    for (i = stream->conncheck_list; i ; i = i->next) {
+      CandidateCheckPair *p = i->data;
 
-    if (p->stream_id == ok_check->stream_id) {
-      if (p->state == NICE_CHECK_FROZEN &&
-          strcmp (p->foundation, ok_check->foundation) == 0) {
-        nice_debug ("Agent %p %u/%u: Unfreezing check %p(%s) (after successful check %p(%s)).",
-                    agent, p->stream_id, p->component_id,
-                    p, p->foundation,
-                    ok_check, ok_check->foundation);
-        priv_set_pair_state (agent, p, NICE_CHECK_WAITING);
+      if (p->stream_id == ok_check->stream_id) {
+        if (p->state == NICE_CHECK_FROZEN &&
+            strcmp (p->foundation, ok_check->foundation) == 0) {
+          nice_debug ("Agent %p %u/%u: Unfreezing check %p(%s) (after successful check %p(%s)).",
+                      agent, p->stream_id, p->component_id,
+                      p, p->foundation,
+                      ok_check, ok_check->foundation);
+          priv_set_pair_state (agent, p, NICE_CHECK_WAITING);
+        }
       }
     }
-  }
 
-  /* 
-   * Section 7.1.3.2.3 Updating Pair States part 2
-   * 2.  If there is a pair in the valid list for every component of this
-   *    media stream (where this is the actual number of components being
-   *    used, in cases where the number of components signaled in the SDP
-   *    differs from offerer to answerer), the success of this check may
-   *    unfreeze checks for other media streams.  Note that this step is
-   *    followed not just the first time the valid list under
-   *    consideration has a pair for every component, but every
-   *    subsequent time a check succeeds and adds yet another pair to
-   *    that valid list.  The agent examines the check list for each
-   *    other media stream in turn:
-   *    ...
-   */
-  if (priv_all_components_have_valid_pair (agent, stream)) {
-  
-    for (i = agent->streams; i ; i = i->next) {
-      Stream *s = i->data;
+    /* 
+     * Section 7.1.3.2.3 Updating Pair States part 2
+     * 2.  If there is a pair in the valid list for every component of this
+     *    media stream (where this is the actual number of components being
+     *    used, in cases where the number of components signaled in the SDP
+     *    differs from offerer to answerer), the success of this check may
+     *    unfreeze checks for other media streams.  Note that this step is
+     *    followed not just the first time the valid list under
+     *    consideration has a pair for every component, but every
+     *    subsequent time a check succeeds and adds yet another pair to
+     *    that valid list.  The agent examines the check list for each
+     *    other media stream in turn:
+     *    ...
+     */
+    if (priv_all_components_have_valid_pair (agent, stream)) {
       
-      if (s != stream) {
-        g_assert (priv_conn_check_list_is_ordered (s->conncheck_list));
-        g_assert (priv_conn_check_list_is_ordered (s->valid_list));
+      for (i = agent->streams; i ; i = i->next) {
+        Stream *s = i->data;
         
-        if ( !priv_check_list_is_frozen (agent, s)) {
-          /* 
-           * "If the check list is active, the agent changes the state of
-           * all Frozen pairs in that check list whose foundation matches a
-           * pair in the valid list under consideration to Waiting."
-           * 
-           */
-          priv_unfreeze_checks_for_valid_pairs (agent, s, s->valid_list);
-        } else {
-          /*
-           * "If the check list is frozen, and there is at least one pair in
-           * the check list whose foundation matches a pair in the valid
-           * list under consideration, the state of all pairs in the check
-           * list whose foundation matches a pair in the valid list under
-           * consideration is set to Waiting.  This will cause the check
-           * list to become active, and ordinary checks will begin for it,
-           * as described in Section 5.8."
-           *
-           */
-          guint unfrozen = priv_unfreeze_checks_for_valid_pairs (agent, s, s->valid_list);
+        if (s != stream) {
+          g_assert (priv_conn_check_list_is_ordered (s->conncheck_list));
+          g_assert (priv_conn_check_list_is_ordered (s->valid_list));
           
-          if (unfrozen == 0) {
-            /*
-             * If the check list is frozen, and there are no pairs in the
-             * check list whose foundation matches a pair in the valid list
-             * under consideration, the agent
-             *
-             *  + groups together all of the pairs with the same foundation,
-             *  
-             *  and
-             *
-             *  + for each group, sets the state of the pair with the lowest
-             *    component ID to Waiting.  If there is more than one such
-             *    pair, the one with the highest priority is used.
+          if ( !priv_check_list_is_frozen (agent, s)) {
+            /* 
+             * "If the check list is active, the agent changes the state of
+             * all Frozen pairs in that check list whose foundation matches a
+             * pair in the valid list under consideration to Waiting."
+             * 
              */
-            priv_conn_check_unfreeze_stream (agent, s);
+            priv_unfreeze_checks_for_valid_pairs (agent, s, s->valid_list);
+          } else {
+            /*
+             * "If the check list is frozen, and there is at least one pair in
+             * the check list whose foundation matches a pair in the valid
+             * list under consideration, the state of all pairs in the check
+             * list whose foundation matches a pair in the valid list under
+             * consideration is set to Waiting.  This will cause the check
+             * list to become active, and ordinary checks will begin for it,
+             * as described in Section 5.8."
+             *
+             */
+            guint unfrozen = priv_unfreeze_checks_for_valid_pairs (agent, s, s->valid_list);
+            
+            if (unfrozen == 0) {
+              /*
+               * If the check list is frozen, and there are no pairs in the
+               * check list whose foundation matches a pair in the valid list
+               * under consideration, the agent
+               *
+               *  + groups together all of the pairs with the same foundation,
+               *  
+               *  and
+               *
+               *  + for each group, sets the state of the pair with the lowest
+               *    component ID to Waiting.  If there is more than one such
+               *    pair, the one with the highest priority is used.
+               */
+              priv_conn_check_unfreeze_stream (agent, s);
+            }
           }
         }
       }
