@@ -2485,6 +2485,11 @@ nice_agent_dispose (GObject *object)
   refresh_free (agent);
   g_assert (agent->refresh_list == NULL);
 
+  if (agent->event_source != NULL) {
+    g_source_destroy (agent->event_source);
+    g_source_unref (agent->event_source);
+    agent->event_source = NULL;
+  }
   g_queue_free_full (agent->reliable_transport_events, g_free);
 
   /* step: free resources for the connectivity check timers */
