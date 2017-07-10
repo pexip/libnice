@@ -2218,7 +2218,7 @@ static guint priv_prune_pending_checks_aggressive_or_controlled (NiceAgent *agen
                 highest_nominated_pair, highest_nominated_pair->foundation);
     prune_all_checks = TRUE;
   }
-      
+
   /* step: cancel all FROZEN and WAITING pairs for the component */
   for (i = stream->conncheck_list; i; i = i->next) {
     CandidateCheckPair *p = i->data;
@@ -2258,7 +2258,8 @@ static guint priv_prune_pending_checks_aggressive_or_controlled (NiceAgent *agen
       /* note: a SHOULD level req. in ICE 8.1.2. "Updating States" (ID-19) */
       if (p->state == NICE_CHECK_IN_PROGRESS) {
         if ((highest_nominated_priority != 0 && p->priority < highest_nominated_priority ) ||
-            prune_all_checks) {
+            prune_all_checks ||
+            (highest_nominated_pair != NULL && agent->compatibility == NICE_COMPATIBILITY_OC2007R2 && !agent->controlling_mode)) {
           p->stun_message.buffer = NULL;
           p->stun_message.buffer_len = 0;
           priv_set_pair_state (agent, p, NICE_CHECK_CANCELLED);
