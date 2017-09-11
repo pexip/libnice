@@ -1444,7 +1444,7 @@ priv_send_create_permission(TurnPriv *priv, StunMessage *resp,
       priv->password_len,
       realm, realm_len,
       nonce, nonce_len,
-      (struct sockaddr *) &addr,
+      (struct sockaddr *) &addr, sizeof (addr),
       STUN_USAGE_TURN_COMPATIBILITY_RFC5766);
 
   if (msg_buf_len > 0) {
