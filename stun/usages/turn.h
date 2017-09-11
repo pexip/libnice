@@ -212,7 +212,7 @@ size_t stun_usage_turn_create_permission (StunAgent *agent, StunMessage *msg,
     uint8_t *password, size_t password_len,
     uint8_t *realm, size_t realm_len,
     uint8_t *nonce, size_t nonce_len,
-    struct sockaddr *peer,
+    struct sockaddr *peer, size_t peer_len,
     StunUsageTurnCompatibility compatibility);
 
 /**

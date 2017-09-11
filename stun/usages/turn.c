@@ -224,7 +224,7 @@ size_t stun_usage_turn_create_permission (StunAgent *agent, StunMessage *msg,
     uint8_t *password, size_t password_len,
     uint8_t *realm, size_t realm_len,
     uint8_t *nonce, size_t nonce_len,
-    struct sockaddr *peer,
+    struct sockaddr *peer, size_t peer_len,
     StunUsageTurnCompatibility compatibility)
 {
   if (!peer)
@@ -235,7 +235,7 @@ size_t stun_usage_turn_create_permission (StunAgent *agent, StunMessage *msg,
 
   /* PEER address */
   if (stun_message_append_xor_addr (msg, STUN_ATTRIBUTE_XOR_PEER_ADDRESS,
-          peer, sizeof(*peer)) != STUN_MESSAGE_RETURN_SUCCESS) {
+          peer, peer_len) != STUN_MESSAGE_RETURN_SUCCESS) {
     return 0;
   }
 
