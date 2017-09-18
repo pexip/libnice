@@ -2035,6 +2035,16 @@ done:
   return result;
 }
 
+NICEAPI_EXPORT gboolean
+nice_agent_add_stream_local_address_from_string (NiceAgent *agent, guint stream_id, const gchar *addr)
+{
+  NiceAddress nice_addr;
+  nice_address_init (&nice_addr);
+  if (!nice_address_set_from_string (&nice_addr, addr))
+    return FALSE;
+  return nice_agent_add_stream_local_address (agent, stream_id, &nice_addr);
+}
+
 static gboolean priv_add_remote_candidate (
   NiceAgent *agent,
   guint stream_id,
