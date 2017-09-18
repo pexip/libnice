@@ -332,6 +332,21 @@ nice_agent_add_local_address_from_string (NiceAgent *agent, const gchar *addr);
 gboolean
 nice_agent_add_stream_local_address (NiceAgent *agent, guint stream_id, NiceAddress *addr);
 
+/**
+ * nice_agent_add_stream_local_address_from_string:
+ * @agent: The #NiceAgent Object
+ * @stream_id: The stream for this address
+ * @addr: The address to listen to
+ *
+ * Add a local address from which to derive local host candidates for
+ * candidate gathering.
+ *
+ *
+ * See also: nice_agent_gather_candidates()
+ * Returns: %TRUE on success, %FALSE on fatal (memory allocation) errors
+ */
+gboolean
+nice_agent_add_stream_local_address_from_string (NiceAgent *agent, guint stream_id, const gchar *addr);
 
 /**
  * nice_agent_add_stream:
