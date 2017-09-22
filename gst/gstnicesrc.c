@@ -467,6 +467,12 @@ gst_nice_src_dispose (GObject *object)
 {
   GstNiceSrc *src = GST_NICE_SRC (object);
 
+  if (src->idle_source) {
+    g_source_destroy (src->idle_source);
+    g_source_unref(src->idle_source);
+  }
+  src->idle_source = NULL;
+
   if (src->agent)
     g_object_unref (src->agent);
   src->agent = NULL;
