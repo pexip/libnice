@@ -354,8 +354,6 @@ gst_nice_src_unlock (GstBaseSrc *src)
   GST_OBJECT_LOCK (src);
   nicesrc->unlocked = TRUE;
 
-  g_main_loop_quit (nicesrc->mainloop);
-
   if (!nicesrc->idle_source) {
     nicesrc->idle_source = g_idle_source_new ();
     g_source_set_priority (nicesrc->idle_source, G_PRIORITY_HIGH);
