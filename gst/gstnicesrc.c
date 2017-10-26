@@ -581,6 +581,27 @@ gst_nice_src_get_property (
     }
 }
 
+static void
+gst_nice_src_log_callback (NiceAgent *agent, guint stream_id, guint component_id, GLogLevelFlags level,
+    gchar *msg, gpointer data)
+{
+  (void)agent;
+  GstBaseSrc *basesrc = GST_BASE_SRC (data);
+  GstNiceSrc *nicesrc = GST_NICE_SRC (basesrc);
+
+  switch (level) {
+  case G_LOG_LEVEL_WARNING:
+    GST_WARNING_OBJECT (nicesrc, "stream=%u component=%u %s", stream_id, component_id, msg);
+    break;
+  case G_LOG_LEVEL_INFO:
+    GST_INFO_OBJECT (nicesrc, "stream=%u component=%u %s", stream_id, component_id, msg);
+    break;
+  default:
+    GST_DEBUG_OBJECT (nicesrc, "stream=%u component=%u %s", stream_id, component_id, msg);
+    break;
+  }
+}
+
 static GstStateChangeReturn
 gst_nice_src_change_state (GstElement * element, GstStateChange transition)
 {
@@ -599,6 +620,8 @@ gst_nice_src_change_state (GstElement * element, GstStateChange transition)
         }
       else
         {
+          nice_agent_attach_log (src->agent, src->stream_id, src->component_id,
+              gst_nice_src_log_callback, (gpointer) src);
           nice_agent_attach_recv (src->agent, src->stream_id, src->component_id,
               src->mainctx, gst_nice_src_read_callback, (gpointer) src);
         }
@@ -606,6 +629,8 @@ gst_nice_src_change_state (GstElement * element, GstStateChange transition)
     case GST_STATE_CHANGE_READY_TO_NULL:
       nice_agent_attach_recv (src->agent, src->stream_id, src->component_id,
           src->mainctx, NULL, NULL);
+      nice_agent_attach_log (src->agent, src->stream_id, src->component_id,
+          NULL, NULL);
       break;
     default:
       break;
@@ -616,5 +641,3 @@ gst_nice_src_change_state (GstElement * element, GstStateChange transition)
 
   return ret;
 }
-
-

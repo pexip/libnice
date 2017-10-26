@@ -22,6 +22,7 @@ nice_agent_add_stream_local_address_from_string
 nice_agent_add_stream
 nice_agent_set_stream
 nice_agent_attach_recv
+nice_agent_attach_log
 nice_agent_gather_candidates
 nice_agent_get_local_candidates
 nice_agent_get_local_credentials

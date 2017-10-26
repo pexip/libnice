@@ -121,6 +121,9 @@ struct _Component
   gpointer data;                    /**< data passed to the io function */
   GMainContext *ctx;                /**< context for data callbacks for this
                                        component */
+  NiceAgentLogFunc log_cb;
+  gpointer         log_data;
+
   guint min_port;
   guint max_port;
   guint min_tcp_active_port;

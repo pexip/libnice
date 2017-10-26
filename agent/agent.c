@@ -45,6 +45,7 @@
 #endif
 
 #include <glib.h>
+#include <glib/gprintf.h>
 
 #include <string.h>
 #include <errno.h>
@@ -1246,6 +1247,35 @@ void agent_signal_component_state_change (NiceAgent *agent, guint stream_id, gui
   }
 }
 
+static void
+agent_log (NiceAgent *agent, guint stream_id, guint component_id, GLogLevelFlags level, const gchar *fmt, ...)
+{
+  Component *component = NULL;
+  Stream *stream = NULL;
+  NiceAgentLogFunc callback = NULL;
+  gpointer data = NULL;
+
+  agent_lock (agent);
+
+  if (agent_find_component (agent, stream_id, component_id, &stream, &component)) {
+    callback = component->log_cb;
+    data = component->log_data;
+  }
+
+  agent_unlock (agent);
+
+  if (callback) {
+    gchar *msg;
+    va_list ap;
+    va_start (ap, fmt);
+    g_vasprintf(&msg, fmt, ap);
+    va_end (ap);
+    callback (agent, stream_id, component_id, level, msg, data);
+    g_free (msg);
+  }
+
+}
+
 void agent_signal_turn_allocation_failure (NiceAgent* agent, guint stream_id, guint component_id, const NiceAddress* relay_addr, const StunMessage* response, const char* reason)
 {
   char* msgstr = NULL;
@@ -1258,8 +1288,8 @@ void agent_signal_turn_allocation_failure (NiceAgent* agent, guint stream_id, gu
   if (relay_addr)
     nice_address_to_string(relay_addr, addrstr);
 
-  g_log (G_LOG_DOMAIN, G_LOG_LEVEL_INFO, "TURN ALLOCATION FAILED for stream=%u component=%u server=%s response=%s reason=%s", 
-         stream_id, component_id, addrstr, msgstr ? msgstr : "none", reason ? reason : "none");
+  agent_log (agent, stream_id, component_id, G_LOG_LEVEL_INFO, "TURN allocation failed server=%s response=%s reason=%s",
+         addrstr, msgstr ? msgstr : "none", reason ? reason : "none");
 
   if (msgstr) g_free(msgstr);
 }
@@ -2943,6 +2973,36 @@ nice_agent_attach_recv (
 
     priv_attach_stream_component (agent, stream, component);
   }
+  
+done:
+  agent_unlock (agent);
+  return ret;
+}
+
+NICEAPI_EXPORT gboolean
+nice_agent_attach_log (
+  NiceAgent *agent,
+  guint stream_id,
+  guint component_id,
+  NiceAgentLogFunc func,
+  gpointer data)
+{
+  Component *component = NULL;
+  Stream *stream = NULL;
+  gboolean ret = FALSE;
+
+  agent_lock (agent);
+
+  if (!agent_find_component (agent, stream_id, component_id, &stream, &component)) {
+    g_warning ("Could not find component %u in stream %u", component_id,
+        stream_id);
+    goto done;
+  }
+
+  component->log_cb = func;
+  component->log_data = data;
+
+  ret = TRUE;
 
  done:
   agent_unlock (agent);

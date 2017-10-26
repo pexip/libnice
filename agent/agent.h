@@ -729,6 +729,17 @@ nice_agent_attach_recv (
   NiceAgentRecvFunc func,
   gpointer data);
 
+typedef void (*NiceAgentLogFunc) (
+  NiceAgent *agent, guint stream_id, guint component_id, GLogLevelFlags level,
+  gchar *msg, gpointer user_data);
+
+gboolean
+nice_agent_attach_log (
+  NiceAgent *agent,
+  guint stream_id,
+  guint component_id,
+  NiceAgentLogFunc func,
+  gpointer data);
 
 /**
  * nice_agent_set_selected_pair:
