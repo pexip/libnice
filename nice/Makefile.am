@@ -25,9 +25,7 @@ libnice_la_LDFLAGS = \
 	$(LIBNICE_LT_LDFLAGS)
 
 
-AM_CFLAGS = \
-	$(ERROR_CFLAGS) \
-	$(GLIB_CFLAGS) \
+GIR_CFLAGS = \
 	-I $(top_srcdir) \
 	-I $(top_srcdir)/agent \
 	-I $(top_srcdir)/random \
@@ -92,7 +90,7 @@ introspection_sources = $(gir_headers) $(gir_sources)
 Nice-0.1.gir: libnice.la
 Nice_0_1_gir_INCLUDES = GObject-2.0 Gio-2.0
 Nice_0_1_gir_EXPORT_PACKAGES = nice
-Nice_0_1_gir_CFLAGS = $(AM_CFLAGS)
+Nice_0_1_gir_CFLAGS = $(GIR_CFLAGS)
 Nice_0_1_gir_LIBS = libnice.la
 Nice_0_1_gir_FILES = $(introspection_sources)
 INTROSPECTION_GIRS += Nice-0.1.gir
