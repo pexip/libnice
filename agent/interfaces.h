@@ -37,6 +37,7 @@
  */
 
 #include <glib.h>
+#include "niceconfig.h"
 
 G_BEGIN_DECLS
 
@@ -50,7 +51,8 @@ G_BEGIN_DECLS
  * Returns: (nullable) (transfer full): a newly-allocated string with the IP
  * address
  */
-gchar * nice_interfaces_get_ip_for_interface (gchar *interface_name);
+NICE_EXPORT gchar *
+nice_interfaces_get_ip_for_interface (gchar *interface_name);
 
 
 /**
@@ -63,7 +65,8 @@ gchar * nice_interfaces_get_ip_for_interface (gchar *interface_name);
  * strings. The caller must free it.
  */
 
-GList * nice_interfaces_get_local_ips (gboolean include_loopback);
+NICE_EXPORT GList *
+nice_interfaces_get_local_ips (gboolean include_loopback);
 
 
 /**
@@ -74,7 +77,8 @@ GList * nice_interfaces_get_local_ips (gboolean include_loopback);
  * Returns: (element-type utf8) (transfer full): a newly-allocated #GList of
  * strings. The caller must free it.
  */
-GList * nice_interfaces_get_local_interfaces (void);
+NICE_EXPORT GList *
+nice_interfaces_get_local_interfaces (void);
 
 G_END_DECLS
 

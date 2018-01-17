@@ -11,9 +11,13 @@ SUBDIRS = . tools tests
 include $(top_srcdir)/common.mk
 include $(top_srcdir)/common-modified/gst-glib-gen.mak
 
-AM_CFLAGS = -std=gnu99 -DG_LOG_DOMAIN=\"libnice-stun\" $(ERROR_CFLAGS) $(GLIB_CFLAGS)
+AM_CFLAGS = \
+	-std=gnu99 \
+	-DG_LOG_DOMAIN=\"libnice-stun\" \
+	$(ERROR_CFLAGS) \
+	$(GLIB_CFLAGS)
 
-AM_CPPFLAGS = -I$(top_srcdir)
+AM_CPPFLAGS = -I$(top_srcdir) -I $(top_srcdir)/nice
 
 if WINDOWS
   AM_CFLAGS += -DWINVER=0x0501 # _WIN32_WINNT_WINXP

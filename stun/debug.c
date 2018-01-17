@@ -95,11 +95,12 @@ void stun_debug_bytes (const void *data, size_t len)
 {
   size_t i;
 
-  gchar buffer[len*2+1];
+  gchar *buffer = g_malloc(len*2+1);
   
   for (i = 0; i < len; i++)
     sprintf(&buffer[i*2], "%02x", ((const unsigned char *)data)[i]);
   buffer[len*2] = '\0';
   stun_debug("0x%s", buffer);
+  g_free (buffer);
 }
 

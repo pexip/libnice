@@ -10,7 +10,7 @@
 include $(top_srcdir)/common.mk
 include $(top_srcdir)/common-modified/gst-glib-gen.mak
 AM_CFLAGS = -std=gnu99 $(ERROR_CFLAGS) $(GLIB_CFLAGS)
-AM_CPPFLAGS = -I$(top_srcdir) 
+AM_CPPFLAGS = -I$(top_srcdir) -I $(top_srcdir)/nice
 
 bin_PROGRAMS = stunbdc stund
 

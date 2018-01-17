@@ -40,6 +40,7 @@
 #ifndef _CANDIDATE_H
 #define _CANDIDATE_H
 
+#include "niceconfig.h"
 
 /**
  * SECTION:candidate
@@ -226,7 +227,7 @@ struct _NiceCandidate
  *
  * Returns: A new #NiceCandidate
  */
-NiceCandidate *
+NICE_EXPORT NiceCandidate *
 nice_candidate_new (NiceCandidateType type);
 
 /**
@@ -235,7 +236,7 @@ nice_candidate_new (NiceCandidateType type);
  *
  * Frees a #NiceCandidate
  */
-void
+NICE_EXPORT void
 nice_candidate_free (NiceCandidate *candidate);
 
 /**
@@ -246,7 +247,7 @@ nice_candidate_free (NiceCandidate *candidate);
  *
  * Returns: A new #NiceCandidate, a copy of @candidate
  */
-NiceCandidate *
+NICE_EXPORT NiceCandidate *
 nice_candidate_copy (const NiceCandidate *candidate);
 
 /**
@@ -254,7 +255,7 @@ nice_candidate_copy (const NiceCandidate *candidate);
  * @candidate: The candidate to set the @type to
  * @type:
  */
-void
+NICE_EXPORT void
 nice_candidate_set_ctype (NiceCandidate *candidate, NiceCandidateType type);
 
 /**
@@ -263,7 +264,7 @@ nice_candidate_set_ctype (NiceCandidate *candidate, NiceCandidateType type);
  *
  * Returns: @candidate type field
  */
-NiceCandidateType
+NICE_EXPORT NiceCandidateType
 nice_candidate_get_ctype (const NiceCandidate *candidate);
 
 /**
@@ -271,7 +272,7 @@ nice_candidate_get_ctype (const NiceCandidate *candidate);
  * @candidate: The candidate to set @transport to
  * @transport:
  */
-void
+NICE_EXPORT void
 nice_candidate_set_transport (NiceCandidate *candidate, NiceCandidateTransport transport);
 
 /**
@@ -280,7 +281,7 @@ nice_candidate_set_transport (NiceCandidate *candidate, NiceCandidateTransport t
  *
  * Returns: @candidate transport field
  */
-NiceCandidateTransport
+NICE_EXPORT NiceCandidateTransport
 nice_candidate_get_transport (const NiceCandidate *candidate);
 
 /**
@@ -293,7 +294,7 @@ nice_candidate_get_transport (const NiceCandidate *candidate);
  *
  * Returns: %TRUE on success, %FALSE on failure
  */
-gboolean
+NICE_EXPORT gboolean
 nice_candidate_set_addr (NiceCandidate *candidate, const gchar *addr, guint port);
 
 /**
@@ -304,7 +305,7 @@ nice_candidate_set_addr (NiceCandidate *candidate, const gchar *addr, guint port
  *
  * Gets addr of @candidate
  */
-void
+NICE_EXPORT void
 nice_candidate_get_addr (const NiceCandidate *candidate, gchar **dst_addr, guint *dst_port);
 
 /**
@@ -317,7 +318,7 @@ nice_candidate_get_addr (const NiceCandidate *candidate, gchar **dst_addr, guint
  *
  * Returns: %TRUE on success, %FALSE on failure
  */
-gboolean
+NICE_EXPORT gboolean
 nice_candidate_set_base_addr (NiceCandidate *candidate, const gchar *addr, guint port);
 
 /**
@@ -328,7 +329,7 @@ nice_candidate_set_base_addr (NiceCandidate *candidate, const gchar *addr, guint
  *
  * Gets base_addr of @candidate
  */
-void
+NICE_EXPORT void
 nice_candidate_get_base_addr (const NiceCandidate *candidate, gchar **dst_addr, guint *dst_port);
 
 /**
@@ -336,7 +337,7 @@ nice_candidate_get_base_addr (const NiceCandidate *candidate, gchar **dst_addr, 
  * @candidate: The candidate to set @priority to
  * @priority:
  */
-void
+NICE_EXPORT void
 nice_candidate_set_priority (NiceCandidate *candidate, guint32 priority);
 
 /**
@@ -345,7 +346,7 @@ nice_candidate_set_priority (NiceCandidate *candidate, guint32 priority);
  *
  * Returns: @candidate priority field
  */
-guint32
+NICE_EXPORT guint32
 nice_candidate_get_priority (const NiceCandidate *candidate);
 
 /**
@@ -353,7 +354,7 @@ nice_candidate_get_priority (const NiceCandidate *candidate);
  * @candidate: The candidate to set @stream_id to
  * @stream_id:
  */
-void
+NICE_EXPORT void
 nice_candidate_set_stream_id (NiceCandidate *candidate, guint stream_id);
 
 /**
@@ -362,7 +363,7 @@ nice_candidate_set_stream_id (NiceCandidate *candidate, guint stream_id);
  *
  * Returns: @candidate stream_id field
  */
-guint
+NICE_EXPORT guint
 nice_candidate_get_stream_id (const NiceCandidate *candidate);
 
 /**
@@ -370,7 +371,7 @@ nice_candidate_get_stream_id (const NiceCandidate *candidate);
  * @candidate: The candidate to set @component_id to
  * @component_id:
  */
-void
+NICE_EXPORT void
 nice_candidate_set_component_id (NiceCandidate *candidate, guint component_id);
 
 /**
@@ -379,7 +380,7 @@ nice_candidate_set_component_id (NiceCandidate *candidate, guint component_id);
  *
  * Returns: @candidate component_id field
  */
-guint
+NICE_EXPORT guint
 nice_candidate_get_component_id (const NiceCandidate *candidate);
 
 /**
@@ -387,7 +388,7 @@ nice_candidate_get_component_id (const NiceCandidate *candidate);
  * @candidate: The candidate to set @foundation to
  * @foundation:
  */
-void
+NICE_EXPORT void
 nice_candidate_set_foundation (NiceCandidate *candidate, const gchar *foundation);
 
 /**
@@ -396,7 +397,7 @@ nice_candidate_set_foundation (NiceCandidate *candidate, const gchar *foundation
  *
  * Returns: @candidate foundation field
  */
-const gchar *
+NICE_EXPORT const gchar *
 nice_candidate_get_foundation (const NiceCandidate *candidate);
 
 /**
@@ -404,7 +405,7 @@ nice_candidate_get_foundation (const NiceCandidate *candidate);
  * @candidate: The candidate to set @username to
  * @username: (transfer full):
  */
-void
+NICE_EXPORT void
 nice_candidate_set_username (NiceCandidate *candidate, gchar *username);
 
 /**
@@ -413,7 +414,7 @@ nice_candidate_set_username (NiceCandidate *candidate, gchar *username);
  *
  * Returns: @candidate username field
  */
-const gchar *
+NICE_EXPORT const gchar *
 nice_candidate_get_username (const NiceCandidate *candidate);
 
 /**
@@ -421,7 +422,7 @@ nice_candidate_get_username (const NiceCandidate *candidate);
  * @candidate: The candidate to set @password to
  * @password: (transfer full):
  */
-void
+NICE_EXPORT void
 nice_candidate_set_password (NiceCandidate *candidate, gchar *password);
 
 /**
@@ -430,14 +431,16 @@ nice_candidate_set_password (NiceCandidate *candidate, gchar *password);
  *
  * Returns: @candidate password field
  */
-const gchar *
+NICE_EXPORT const gchar *
 nice_candidate_get_password (const NiceCandidate *candidate);
 
-guint64
+NICE_EXPORT guint64
 nice_candidate_pair_priority (guint32 o_prio, guint32 a_prio);
 
-const char *candidate_type_to_string(NiceCandidateType type);
-const char *candidate_transport_to_string(NiceCandidateTransport transport);
+NICE_EXPORT const char *
+candidate_type_to_string(NiceCandidateType type);
+NICE_EXPORT const char *
+candidate_transport_to_string(NiceCandidateTransport transport);
 
 G_END_DECLS
 

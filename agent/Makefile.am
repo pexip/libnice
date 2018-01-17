@@ -30,7 +30,8 @@ AM_CFLAGS = \
 	-I $(top_srcdir) \
 	-I $(top_srcdir)/random \
 	-I $(top_srcdir)/socket \
-	-I $(top_srcdir)/stun
+	-I $(top_srcdir)/stun \
+	-I $(top_srcdir)/nice
 
 if WINDOWS
   AM_CFLAGS += -DWINVER=0x0501 # _WIN32_WINNT_WINXP

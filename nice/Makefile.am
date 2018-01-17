@@ -30,7 +30,8 @@ GIR_CFLAGS = \
 	-I $(top_srcdir)/agent \
 	-I $(top_srcdir)/random \
 	-I $(top_srcdir)/socket \
-	-I $(top_srcdir)/stun
+	-I $(top_srcdir)/stun \
+	-I $(top_srcdir)/nice
 
 test-symbols.sh::
 	chmod +x $(srcdir)/$@
@@ -55,7 +56,7 @@ TESTS = $(check_SCRIPTS)
 
 EXTRA_DIST = $(check_SCRIPTS) libnice.sym libnice.ver
 
-pkginclude_HEADERS = nice.h
+pkginclude_HEADERS = nice.h niceconfig.h
 
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = nice.pc

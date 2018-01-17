@@ -65,6 +65,7 @@
 
 
 #include <glib.h>
+#include "niceconfig.h"
 
 G_BEGIN_DECLS
 
@@ -74,7 +75,8 @@ G_BEGIN_DECLS
  * Initialize the debugging system. Uses the NICE_DEBUG environment variable
  * to set the appropriate debugging flags
  */
-void nice_debug_init (void);
+NICE_EXPORT void
+nice_debug_init (void);
 
 /**
  * nice_debug_enable:
@@ -82,7 +84,8 @@ void nice_debug_init (void);
  *
  * Enables libnice debug output to the terminal
  */
-void nice_debug_enable (gboolean with_stun);
+NICE_EXPORT void
+nice_debug_enable (gboolean with_stun);
 
 /**
  * nice_debug_disable:
@@ -90,9 +93,11 @@ void nice_debug_enable (gboolean with_stun);
  *
  * Disables libnice debug output to the terminal
  */
-void nice_debug_disable (gboolean with_stun);
+NICE_EXPORT void
+nice_debug_disable (gboolean with_stun);
 
-void nice_debug (const char *fmt, ...);
+NICE_EXPORT void
+nice_debug (const char *fmt, ...);
 
 G_END_DECLS
 

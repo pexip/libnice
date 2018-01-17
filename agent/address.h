@@ -51,6 +51,7 @@
 
 
 #include <glib.h>
+#include "niceconfig.h"
 
 #ifdef G_OS_WIN32
 #include <winsock2.h>
@@ -102,7 +103,7 @@ typedef struct _NiceAddress NiceAddress;
  *
  * Initialize a #NiceAddress into an undefined address
  */
-void
+NICE_EXPORT void
 nice_address_init (NiceAddress *addr);
 
 /**
@@ -113,7 +114,7 @@ nice_address_init (NiceAddress *addr);
  *
  * Returns: The new #NiceAddress
  */
-NiceAddress *
+NICE_EXPORT NiceAddress *
 nice_address_new (void);
 
 /**
@@ -122,7 +123,7 @@ nice_address_new (void);
  *
  * Frees a #NiceAddress created with nice_address_new() or nice_address_dup()
  */
-void
+NICE_EXPORT void
 nice_address_free (NiceAddress *addr);
 
 /**
@@ -133,7 +134,7 @@ nice_address_free (NiceAddress *addr);
  *
  * Returns: The new #NiceAddress
  */
-NiceAddress *
+NICE_EXPORT NiceAddress *
 nice_address_dup (const NiceAddress *addr);
 
 
@@ -151,7 +152,7 @@ nice_address_dup (const NiceAddress *addr);
   </para>
  </note>
  */
-void
+NICE_EXPORT void
 nice_address_set_ipv4 (NiceAddress *addr, guint32 addr_ipv4);
 
 
@@ -169,7 +170,7 @@ nice_address_set_ipv4 (NiceAddress *addr, guint32 addr_ipv4);
   </para>
  </note>
  */
-void
+NICE_EXPORT void
 nice_address_set_ipv6 (NiceAddress *addr, const guchar *addr_ipv6);
 
 
@@ -177,14 +178,14 @@ nice_address_set_ipv6 (NiceAddress *addr, const guchar *addr_ipv6);
  * nice_address_get_family
  * @addr: The #NiceAddress 
  */
-guint16
+NICE_EXPORT guint16
 nice_address_get_family (const NiceAddress *addr);
 
 /**
  * nice_address_is_ipv6:
  * @addr: The #NiceAddress 
  */
-gboolean
+NICE_EXPORT gboolean
 nice_address_is_ipv6 (const NiceAddress *addr);
 
 /**
@@ -194,7 +195,7 @@ nice_address_is_ipv6 (const NiceAddress *addr);
  *
  * Set the port of @addr to @port
  */
-void
+NICE_EXPORT void
 nice_address_set_port (NiceAddress *addr, guint port);
 
 /**
@@ -205,7 +206,7 @@ nice_address_set_port (NiceAddress *addr, guint port);
  *
  * Returns: The port of @addr
  */
-guint
+NICE_EXPORT guint
 nice_address_get_port (const NiceAddress *addr);
 
 /**
@@ -217,7 +218,7 @@ nice_address_get_port (const NiceAddress *addr);
  *
  * Returns: %TRUE if success, %FALSE on error
  */
-gboolean
+NICE_EXPORT gboolean
 nice_address_set_from_string (NiceAddress *addr, const gchar *str);
 
 /**
@@ -228,7 +229,7 @@ nice_address_set_from_string (NiceAddress *addr, const gchar *str);
  * Sets an IPv4 or IPv6 address from the sockaddr structure @sin
  *
  */
-void
+NICE_EXPORT void
 nice_address_set_from_sockaddr (NiceAddress *addr, const struct sockaddr *sin);
 
 
@@ -240,7 +241,7 @@ nice_address_set_from_sockaddr (NiceAddress *addr, const struct sockaddr *sin);
  * Fills the sockaddr structure @sin with the address contained in @addr
  *
  */
-void
+NICE_EXPORT void
 nice_address_copy_to_sockaddr (const NiceAddress *addr, struct sockaddr *sin);
 
 /**
@@ -252,7 +253,7 @@ nice_address_copy_to_sockaddr (const NiceAddress *addr, struct sockaddr *sin);
  *
  * Returns: %TRUE if @a and @b are the same address, %FALSE if they are different
  */
-gboolean
+NICE_EXPORT gboolean
 nice_address_equal (const NiceAddress *a, const NiceAddress *b);
 
 /**
@@ -265,7 +266,7 @@ nice_address_equal (const NiceAddress *a, const NiceAddress *b);
  *
  * Returns: %TRUE if @a and @b are the same address, %FALSE if they are different
  */
-gboolean
+NICE_EXPORT gboolean
 nice_address_equal_full (const NiceAddress *a, const NiceAddress *b, gboolean compare_ports);
 
 /**
@@ -276,7 +277,7 @@ nice_address_equal_full (const NiceAddress *a, const NiceAddress *b, gboolean co
  * Transforms the address @addr into a human readable string
  *
  */
-void
+NICE_EXPORT void
 nice_address_to_string (const NiceAddress *addr, gchar *dst);
 
 /**
@@ -287,7 +288,7 @@ nice_address_to_string (const NiceAddress *addr, gchar *dst);
  *
  * Returns: %TRUE if @addr is a private address, %FALSE otherwise
  */
-gboolean
+NICE_EXPORT gboolean
 nice_address_is_private (const NiceAddress *addr);
 
 /**
@@ -299,7 +300,7 @@ nice_address_is_private (const NiceAddress *addr);
  * Returns: %TRUE if @addr is valid, %FALSE otherwise
  */
 G_GNUC_WARN_UNUSED_RESULT
-gboolean
+NICE_EXPORT gboolean
 nice_address_is_valid (const NiceAddress *addr);
 
 G_END_DECLS

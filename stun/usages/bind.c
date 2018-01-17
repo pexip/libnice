@@ -42,6 +42,7 @@
 
 #ifdef _WIN32
 #include <winsock2.h>
+#include <windows.h>
 #include <ws2tcpip.h>
 #include "win32_common.h"
 #define close closesocket
@@ -328,6 +329,66 @@ static void stun_trans_deinit (StunTransport *tr)
 # define MSG_NOSIGNAL 0
 #endif
 
+#ifdef _MSC_VER
+
+struct iovec {
+  void *iov_base; /* Contains the address of a buffer. */
+  size_t iov_len; /* Contains the length of the buffer. */
+};
+
+struct msghdr {
+  void * msg_name; /* optional address */
+  socklen_t msg_namelen; /* size of address */
+  struct iovec * msg_iov; /* scatter/gather array */
+  size_t msg_iovlen; /* # elements in msg_iov */
+  void * msg_control; /* ancillary data, see below */
+  socklen_t msg_controllen; /* ancillary data buffer len*/
+  int msg_flags; /* flags on received message */
+};
+
+ssize_t recvmsg(int sd, struct msghdr *msg, int flags)
+{
+  ssize_t bytes_read;
+  size_t expected_recv_size;
+  ssize_t left2move;
+  char *tmp_buf;
+  char *tmp;
+  int i;
+
+  assert(msg->msg_iov);
+
+  expected_recv_size = 0;
+  for(i = 0; i < msg->msg_iovlen; i++)
+    expected_recv_size += msg->msg_iov[i].iov_len;
+  tmp_buf = malloc(expected_recv_size);
+  if(!tmp_buf)
+    return -1;
+
+  left2move = bytes_read = recvfrom (sd,
+      tmp_buf,
+      expected_recv_size,
+      flags,
+      (struct sockaddr *)msg->msg_name,
+      &msg->msg_namelen
+      );
+
+  for(tmp = tmp_buf, i = 0; i < msg->msg_iovlen; i++) {
+    if(left2move <= 0)
+      break;
+    assert(msg->msg_iov[i].iov_base);
+    memcpy(
+    msg->msg_iov[i].iov_base, tmp,
+      MIN (msg->msg_iov[i].iov_len, left2move));
+    left2move -= msg->msg_iov[i].iov_len;
+    tmp += msg->msg_iov[i].iov_len;
+  }
+
+  free(tmp_buf);
+
+  return bytes_read;
+}
+
+#endif
 
 static int stun_err_dequeue (int fd)
 {

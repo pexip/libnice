@@ -11,7 +11,8 @@ AM_CFLAGS = $(LIBNICE_CFLAGS) \
 	-I $(top_srcdir)/socket \
 	-I $(top_srcdir)/agent \
 	-I $(top_srcdir)/random \
-	-I $(top_srcdir)/stun
+	-I $(top_srcdir)/stun \
+	-I $(top_srcdir)/nice
 
 COMMON_LIBADD = \
 	$(top_builddir)/nice/libnice.la

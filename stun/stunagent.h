@@ -52,6 +52,7 @@
  *
  */
 
+#include "niceconfig.h"
 
 #ifdef _WIN32
 #include "win32_common.h"
@@ -265,7 +266,7 @@ typedef bool (*StunMessageIntegrityValidate) (StunAgent *agent,
  * Returns: %TRUE if the authentication was successful,
  * %FALSE if the authentication failed
  */
-bool stun_agent_default_validater (StunAgent *agent,
+NICE_EXPORT bool stun_agent_default_validater (StunAgent *agent,
     StunMessage *message, uint8_t *username, uint16_t username_len,
     uint8_t **password, size_t *password_len, void *user_data);
 
@@ -300,7 +301,7 @@ bool stun_agent_default_validater (StunAgent *agent,
     </para>
  </note>
  */
-void stun_agent_init (StunAgent *agent, const uint16_t *known_attributes,
+NICE_EXPORT void stun_agent_init (StunAgent *agent, const uint16_t *known_attributes,
     StunCompatibility compatibility, StunAgentUsageFlags usage_flags);
 
 /**
@@ -340,7 +341,7 @@ void stun_agent_init (StunAgent *agent, const uint16_t *known_attributes,
    </para>
  </note>
  */
-StunValidationStatus stun_agent_validate (StunAgent *agent, StunMessage *msg,
+NICE_EXPORT StunValidationStatus stun_agent_validate (StunAgent *agent, StunMessage *msg,
     const uint8_t *buffer, size_t buffer_len,
     StunMessageIntegrityValidate validater, void * validater_data);
 
@@ -355,7 +356,7 @@ StunValidationStatus stun_agent_validate (StunAgent *agent, StunMessage *msg,
  * Creates a new STUN message of class #STUN_REQUEST and with the method @m
  * Returns: %TRUE if the message was initialized correctly, %FALSE otherwise
  */
-bool stun_agent_init_request (StunAgent *agent, StunMessage *msg,
+NICE_EXPORT bool stun_agent_init_request (StunAgent *agent, StunMessage *msg,
     uint8_t *buffer, size_t buffer_len, StunMethod m);
 
 /**
@@ -369,7 +370,7 @@ bool stun_agent_init_request (StunAgent *agent, StunMessage *msg,
  * Creates a new STUN message of class #STUN_INDICATION and with the method @m
  * Returns: %TRUE if the message was initialized correctly, %FALSE otherwise
  */
-bool stun_agent_init_indication (StunAgent *agent, StunMessage *msg,
+NICE_EXPORT bool stun_agent_init_indication (StunAgent *agent, StunMessage *msg,
     uint8_t *buffer, size_t buffer_len, StunMethod m);
 
 /**
@@ -386,7 +387,7 @@ bool stun_agent_init_indication (StunAgent *agent, StunMessage *msg,
  * specify the key with stun_agent_finish_message()
  * Returns: %TRUE if the message was initialized correctly, %FALSE otherwise
  */
-bool stun_agent_init_response (StunAgent *agent, StunMessage *msg,
+NICE_EXPORT bool stun_agent_init_response (StunAgent *agent, StunMessage *msg,
     uint8_t *buffer, size_t buffer_len, const StunMessage *request);
 
 /**
@@ -407,7 +408,7 @@ bool stun_agent_init_response (StunAgent *agent, StunMessage *msg,
  * string.
  * Returns: %TRUE if the message was initialized correctly, %FALSE otherwise
  */
-bool stun_agent_init_error (StunAgent *agent, StunMessage *msg,
+NICE_EXPORT bool stun_agent_init_error (StunAgent *agent, StunMessage *msg,
     uint8_t *buffer, size_t buffer_len, const StunMessage *request,
     StunError err);
 
@@ -427,7 +428,7 @@ bool stun_agent_init_error (StunAgent *agent, StunMessage *msg,
  * by calling stun_agent_finish_message()
  * Returns: The size of the message built
  */
-size_t stun_agent_build_unknown_attributes_error (StunAgent *agent,
+NICE_EXPORT size_t stun_agent_build_unknown_attributes_error (StunAgent *agent,
     StunMessage *msg, uint8_t *buffer, size_t buffer_len,
     const StunMessage *request);
 
@@ -461,7 +462,7 @@ size_t stun_agent_build_unknown_attributes_error (StunAgent *agent,
      </para>
    </note>
  */
-size_t stun_agent_finish_message (StunAgent *agent, StunMessage *msg,
+NICE_EXPORT size_t stun_agent_finish_message (StunAgent *agent, StunMessage *msg,
    const uint8_t *key, size_t key_len);
 
 /**
@@ -482,7 +483,7 @@ size_t stun_agent_finish_message (StunAgent *agent, StunMessage *msg,
  * Since: 0.0.6
  * Returns: %TRUE if the transaction was found, %FALSE otherwise
  */
-bool stun_agent_forget_transaction (StunAgent *agent, StunTransactionId id);
+NICE_EXPORT bool stun_agent_forget_transaction (StunAgent *agent, StunTransactionId id);
 
 
 /**
@@ -491,7 +492,7 @@ bool stun_agent_forget_transaction (StunAgent *agent, StunTransactionId id);
  *
  * Returns: %TRUE if the transaction was found, %FALSE otherwise
  */
-bool stun_agent_find_transaction (StunAgent *agent, StunMethod method, StunTransactionId id);
+NICE_EXPORT bool stun_agent_find_transaction (StunAgent *agent, StunMethod method, StunTransactionId id);
 
 
 /**
@@ -520,6 +521,6 @@ bool stun_agent_find_transaction (StunAgent *agent, StunMethod method, StunTrans
  * Since: 0.0.10
  *
  */
-void stun_agent_set_software (StunAgent *agent, const char *software);
+NICE_EXPORT void stun_agent_set_software (StunAgent *agent, const char *software);
 
 #endif /* _STUN_AGENT_H */

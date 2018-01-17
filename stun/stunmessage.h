@@ -533,7 +533,7 @@ struct _StunMessage {
  * Initializes a STUN message buffer, with no attributes.
  * Returns: %TRUE if the initialization was successful
  */
-bool stun_message_init (StunMessage *msg, StunClass c, StunMethod m,
+NICE_EXPORT bool stun_message_init (StunMessage *msg, StunClass c, StunMethod m,
     const StunTransactionId id);
 
 /**
@@ -544,7 +544,7 @@ bool stun_message_init (StunMessage *msg, StunClass c, StunMethod m,
  *
  * Returns: The length of the message
  */
-uint16_t stun_message_length (const StunMessage *msg);
+NICE_EXPORT uint16_t stun_message_length (const StunMessage *msg);
 
 /**
  * stun_message_find:
@@ -557,7 +557,7 @@ uint16_t stun_message_length (const StunMessage *msg);
  * Returns: A pointer to the start of the attribute payload if found,
  * otherwise NULL.
  */
-const void * stun_message_find (const StunMessage * msg, StunAttribute type,
+NICE_EXPORT const void * stun_message_find (const StunMessage * msg, StunAttribute type,
     uint16_t *palen);
 
 
@@ -571,7 +571,7 @@ const void * stun_message_find (const StunMessage * msg, StunAttribute type,
  * Returns: A #StunMessageReturn value.
  * %STUN_MESSAGE_RETURN_INVALID is returned if the attribute's size is not zero.
  */
-StunMessageReturn stun_message_find_flag (const StunMessage *msg,
+NICE_EXPORT StunMessageReturn stun_message_find_flag (const StunMessage *msg,
     StunAttribute type);
 
 /**
@@ -586,7 +586,7 @@ StunMessageReturn stun_message_find_flag (const StunMessage *msg,
  * %STUN_MESSAGE_RETURN_INVALID is returned if the attribute's size is not
  * 4 bytes.
  */
-StunMessageReturn stun_message_find32 (const StunMessage *msg,
+NICE_EXPORT StunMessageReturn stun_message_find32 (const StunMessage *msg,
     StunAttribute type, uint32_t *pval);
 
 /**
@@ -601,7 +601,7 @@ StunMessageReturn stun_message_find32 (const StunMessage *msg,
  * %STUN_MESSAGE_RETURN_INVALID is returned if the attribute's size is not
  * 8 bytes.
  */
-StunMessageReturn stun_message_find64 (const StunMessage *msg,
+NICE_EXPORT StunMessageReturn stun_message_find64 (const StunMessage *msg,
     StunAttribute type, uint64_t *pval);
 
 /**
@@ -626,7 +626,7 @@ StunMessageReturn stun_message_find64 (const StunMessage *msg,
  </note>
  *
  */
-StunMessageReturn stun_message_find_string (const StunMessage *msg,
+NICE_EXPORT StunMessageReturn stun_message_find_string (const StunMessage *msg,
     StunAttribute type, char *buf, size_t buflen);
 
 /**
@@ -645,7 +645,7 @@ StunMessageReturn stun_message_find_string (const StunMessage *msg,
  * wrong or if the @addrlen is too small
  * %STUN_MESSAGE_RETURN_UNSUPPORTED_ADDRESS if the address family is unknown.
  */
-StunMessageReturn stun_message_find_addr (const StunMessage *msg,
+NICE_EXPORT StunMessageReturn stun_message_find_addr (const StunMessage *msg,
     StunAttribute type, struct sockaddr *addr, socklen_t *addrlen);
 
 /**
@@ -664,7 +664,7 @@ StunMessageReturn stun_message_find_addr (const StunMessage *msg,
  * wrong or if the @addrlen is too small
  * %STUN_MESSAGE_RETURN_UNSUPPORTED_ADDRESS if the address family is unknown.
  */
-StunMessageReturn stun_message_find_xor_addr (const StunMessage *msg,
+NICE_EXPORT StunMessageReturn stun_message_find_xor_addr (const StunMessage *msg,
     StunAttribute type, struct sockaddr *addr, socklen_t *addrlen);
 
 /**
@@ -684,7 +684,7 @@ StunMessageReturn stun_message_find_xor_addr (const StunMessage *msg,
  * wrong or if the @addrlen is too small
  * %STUN_MESSAGE_RETURN_UNSUPPORTED_ADDRESS if the address family is unknown.
  */
-StunMessageReturn stun_message_find_xor_addr_full (const StunMessage *msg,
+NICE_EXPORT StunMessageReturn stun_message_find_xor_addr_full (const StunMessage *msg,
     StunAttribute type, struct sockaddr *addr,
     socklen_t *addrlen, uint32_t magic_cookie);
 
@@ -699,7 +699,7 @@ StunMessageReturn stun_message_find_xor_addr_full (const StunMessage *msg,
  * Returns: A #StunMessageReturn value.
  * %STUN_MESSAGE_RETURN_INVALID is returned if the value is invalid
  */
-StunMessageReturn stun_message_find_error (const StunMessage *msg, int *code);
+NICE_EXPORT StunMessageReturn stun_message_find_error (const StunMessage *msg, int *code);
 
 
 /**
@@ -714,7 +714,7 @@ StunMessageReturn stun_message_find_error (const StunMessage *msg, int *code);
  * where the attribute payload must be written, or NULL if there is not
  * enough room in the STUN message buffer.
  */
-void *stun_message_append (StunMessage *msg, StunAttribute type,
+NICE_EXPORT void *stun_message_append (StunMessage *msg, StunAttribute type,
     size_t length);
 
 /**
@@ -728,7 +728,7 @@ void *stun_message_append (StunMessage *msg, StunAttribute type,
  *
  * Returns: A #StunMessageReturn value.
  */
-StunMessageReturn stun_message_append_bytes (StunMessage *msg,
+NICE_EXPORT StunMessageReturn stun_message_append_bytes (StunMessage *msg,
     StunAttribute type, const void *data, size_t len);
 
 /**
@@ -740,7 +740,7 @@ StunMessageReturn stun_message_append_bytes (StunMessage *msg,
  *
  * Returns: A #StunMessageReturn value.
  */
-StunMessageReturn stun_message_append_flag (StunMessage *msg,
+NICE_EXPORT StunMessageReturn stun_message_append_flag (StunMessage *msg,
     StunAttribute type);
 
 /**
@@ -753,7 +753,7 @@ StunMessageReturn stun_message_append_flag (StunMessage *msg,
  *
  * Returns: A #StunMessageReturn value.
  */
-StunMessageReturn stun_message_append32 (StunMessage *msg,
+NICE_EXPORT StunMessageReturn stun_message_append32 (StunMessage *msg,
     StunAttribute type, uint32_t value);
 
 /**
@@ -766,7 +766,7 @@ StunMessageReturn stun_message_append32 (StunMessage *msg,
  *
  * Returns: A #StunMessageReturn value.
  */
-StunMessageReturn stun_message_append64 (StunMessage *msg,
+NICE_EXPORT StunMessageReturn stun_message_append64 (StunMessage *msg,
     StunAttribute type, uint64_t value);
 
 /**
@@ -779,7 +779,7 @@ StunMessageReturn stun_message_append64 (StunMessage *msg,
  *
  * Returns: A #StunMessageReturn value.
  */
-StunMessageReturn stun_message_append_string (StunMessage *msg,
+NICE_EXPORT StunMessageReturn stun_message_append_string (StunMessage *msg,
     StunAttribute type, const char *str);
 
 /**
@@ -795,7 +795,7 @@ StunMessageReturn stun_message_append_string (StunMessage *msg,
  * %STUN_MESSAGE_RETURN_INVALID is returned if the @addrlen is too small
  * %STUN_MESSAGE_RETURN_UNSUPPORTED_ADDRESS if the address family is unknown.
  */
-StunMessageReturn stun_message_append_addr (StunMessage * msg,
+NICE_EXPORT StunMessageReturn stun_message_append_addr (StunMessage * msg,
     StunAttribute type, const struct sockaddr *addr, socklen_t addrlen);
 
 /**
@@ -811,7 +811,7 @@ StunMessageReturn stun_message_append_addr (StunMessage * msg,
  * %STUN_MESSAGE_RETURN_INVALID is returned if the @addrlen is too small
  * %STUN_MESSAGE_RETURN_UNSUPPORTED_ADDRESS if the address family is unknown.
  */
-StunMessageReturn stun_message_append_xor_addr (StunMessage * msg,
+NICE_EXPORT StunMessageReturn stun_message_append_xor_addr (StunMessage * msg,
     StunAttribute type, const struct sockaddr *addr, socklen_t addrlen);
 
 /**
@@ -828,7 +828,7 @@ StunMessageReturn stun_message_append_xor_addr (StunMessage * msg,
  * %STUN_MESSAGE_RETURN_INVALID is returned if the @addrlen is too small
  * %STUN_MESSAGE_RETURN_UNSUPPORTED_ADDRESS if the address family is unknown.
  */
-StunMessageReturn stun_message_append_xor_addr_full (StunMessage * msg,
+NICE_EXPORT StunMessageReturn stun_message_append_xor_addr_full (StunMessage * msg,
     StunAttribute type, const struct sockaddr *addr, socklen_t addrlen,
     uint32_t magic_cookie);
 
@@ -842,7 +842,7 @@ StunMessageReturn stun_message_append_xor_addr_full (StunMessage * msg,
  *
  * Returns: A #StunMessageReturn value.
  */
-StunMessageReturn stun_message_append_error (StunMessage * msg,
+NICE_EXPORT StunMessageReturn stun_message_append_error (StunMessage * msg,
     StunError code);
 
 /**
@@ -876,7 +876,7 @@ StunMessageReturn stun_message_append_error (StunMessage * msg,
  * <para> See also: #STUN_MESSAGE_BUFFER_INCOMPLETE </para>
  * <para> See also: #STUN_MESSAGE_BUFFER_INVALID </para>
  */
-int stun_message_validate_buffer_length (const uint8_t *msg, size_t length,
+NICE_EXPORT int stun_message_validate_buffer_length (const uint8_t *msg, size_t length,
     bool has_padding);
 
 /**
@@ -886,7 +886,7 @@ int stun_message_validate_buffer_length (const uint8_t *msg, size_t length,
  *
  * Retreive the STUN transaction id from a STUN message
  */
-void stun_message_id (const StunMessage *msg, StunTransactionId id);
+NICE_EXPORT void stun_message_id (const StunMessage *msg, StunTransactionId id);
 
 /**
  * stun_message_get_class:
@@ -896,7 +896,7 @@ void stun_message_id (const StunMessage *msg, StunTransactionId id);
  *
  * Returns: The #StunClass
  */
-StunClass stun_message_get_class (const StunMessage *msg);
+NICE_EXPORT StunClass stun_message_get_class (const StunMessage *msg);
 
 /**
  * stun_message_get_method:
@@ -906,7 +906,7 @@ StunClass stun_message_get_class (const StunMessage *msg);
  *
  * Returns: The #StunMethod
  */
-StunMethod stun_message_get_method (const StunMessage *msg);
+NICE_EXPORT StunMethod stun_message_get_method (const StunMessage *msg);
 
 /**
  * stun_message_has_attribute:
@@ -917,7 +917,7 @@ StunMethod stun_message_get_method (const StunMessage *msg);
  *
  * Returns: %TRUE if the attribute is found, %FALSE otherwise
  */
-bool stun_message_has_attribute (const StunMessage *msg, StunAttribute type);
+NICE_EXPORT bool stun_message_has_attribute (const StunMessage *msg, StunAttribute type);
 
 
 /* Defined in stun5389.c */
@@ -929,7 +929,7 @@ bool stun_message_has_attribute (const StunMessage *msg, StunAttribute type);
  *
  * Returns: %TRUE if the cookie is present, %FALSE otherwise
  */
-bool stun_message_has_cookie (const StunMessage *msg);
+NICE_EXPORT bool stun_message_has_cookie (const StunMessage *msg);
 
 
 /**
@@ -941,7 +941,7 @@ bool stun_message_has_cookie (const StunMessage *msg);
  *
  * Returns: %TRUE if the attribute is an optional one
  */
-bool stun_optional (uint16_t t);
+NICE_EXPORT bool stun_optional (uint16_t t);
 
 /**
  * stun_strerror:
@@ -951,7 +951,7 @@ bool stun_optional (uint16_t t);
  *
  * Returns: A static pointer to a NULL-terminated error message string.
  */
-const char *stun_strerror (StunError code);
+NICE_EXPORT const char *stun_strerror (StunError code);
 
 /** 
  * stun_message_to_string:
@@ -960,6 +960,6 @@ const char *stun_strerror (StunError code);
  * Returns: Printable string version of the message suitable for debug logs etc
  *          Caller must deallocate the string with g_free when finished
  */
-char *stun_message_to_string (const StunMessage* msg);
+NICE_EXPORT char *stun_message_to_string (const StunMessage* msg);
 
 #endif /* _STUN_MESSAGE_H */

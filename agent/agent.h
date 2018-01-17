@@ -108,6 +108,7 @@
  */
 typedef struct _NiceAgent NiceAgent;
 
+#include "niceconfig.h"
 #include "address.h"
 #include "candidate.h"
 #include "debug.h"
@@ -145,8 +146,8 @@ struct _NiceAgentClass
 };
 
 
-GType nice_agent_get_type (void);
-GType nice_candidate_get_type (void);
+NICE_EXPORT GType nice_agent_get_type (void);
+NICE_EXPORT GType nice_candidate_get_type (void);
 
 
 /**
@@ -274,7 +275,7 @@ typedef void (*NiceAgentRecvFunc) (
  *
  * Returns: The new agent GObject
  */
-NiceAgent *
+NICE_EXPORT NiceAgent *
 nice_agent_new (GMainContext *ctx, NiceCompatibility compat, NiceCompatibility turn_compat);
 
 
@@ -294,7 +295,7 @@ nice_agent_new (GMainContext *ctx, NiceCompatibility compat, NiceCompatibility t
  * See also: nice_agent_gather_candidates()
  * Returns: %TRUE on success, %FALSE on fatal (memory allocation) errors
  */
-gboolean
+NICE_EXPORT gboolean
 nice_agent_add_local_address (NiceAgent *agent, NiceAddress *addr);
 
 /**
@@ -309,7 +310,7 @@ nice_agent_add_local_address (NiceAgent *agent, NiceAddress *addr);
  * See also: nice_agent_gather_candidates()
  * Returns: %TRUE on success, %FALSE on fatal (memory allocation) errors
  */
-gboolean
+NICE_EXPORT gboolean
 nice_agent_add_local_address_from_string (NiceAgent *agent, const gchar *addr);
 
 /**
@@ -329,7 +330,7 @@ nice_agent_add_local_address_from_string (NiceAgent *agent, const gchar *addr);
  * See also: nice_agent_gather_candidates()
  * Returns: %TRUE on success, %FALSE on fatal (memory allocation) errors
  */
-gboolean
+NICE_EXPORT gboolean
 nice_agent_add_stream_local_address (NiceAgent *agent, guint stream_id, NiceAddress *addr);
 
 /**
@@ -345,7 +346,7 @@ nice_agent_add_stream_local_address (NiceAgent *agent, guint stream_id, NiceAddr
  * See also: nice_agent_gather_candidates()
  * Returns: %TRUE on success, %FALSE on fatal (memory allocation) errors
  */
-gboolean
+NICE_EXPORT gboolean
 nice_agent_add_stream_local_address_from_string (NiceAgent *agent, guint stream_id, const gchar *addr);
 
 /**
@@ -357,7 +358,7 @@ nice_agent_add_stream_local_address_from_string (NiceAgent *agent, guint stream_
  *
  * Returns: The ID of the new stream, 0 on failure
  **/
-guint
+NICE_EXPORT guint
 nice_agent_add_stream (
   NiceAgent *agent,
   guint n_components);
@@ -370,13 +371,13 @@ nice_agent_add_stream (
  * Remove and free a previously created data stream from @agent
  *
  **/
-void
+NICE_EXPORT void
 nice_agent_remove_stream (
   NiceAgent *agent,
   guint stream_id);
 
 
-void
+NICE_EXPORT void
 nice_agent_set_stream (
   NiceAgent *agent,
   guint stream_id,
@@ -400,7 +401,7 @@ nice_agent_set_stream (
  * </para>
  *
  */
-void
+NICE_EXPORT void
 nice_agent_set_port_range (
     NiceAgent *agent,
     guint stream_id,
@@ -408,7 +409,7 @@ nice_agent_set_port_range (
     guint min_port,
     guint max_port);
 
-void
+NICE_EXPORT void
 nice_agent_set_tcp_active_port_range (
     NiceAgent *agent,
     guint stream_id,
@@ -416,7 +417,7 @@ nice_agent_set_tcp_active_port_range (
     guint min_port,
     guint max_port);
 
-void
+NICE_EXPORT void
 nice_agent_set_transport (
     NiceAgent *agent,
     guint stream_id,
@@ -439,7 +440,8 @@ nice_agent_set_transport (
  * Returns: %TRUE if the TURN settings were accepted.
  * %FALSE if the address was invalid.
  */
-gboolean nice_agent_set_relay_info(
+NICE_EXPORT gboolean
+nice_agent_set_relay_info(
     NiceAgent *agent,
     guint stream_id,
     guint component_id,
@@ -464,7 +466,8 @@ gboolean nice_agent_set_relay_info(
  * Returns: %TRUE if the STUN settings were accepted.
  * %FALSE if the address was invalid.
  */
-gboolean nice_agent_set_stun_info(
+NICE_EXPORT gboolean
+nice_agent_set_stun_info(
   NiceAgent *agent,
   guint stream_id,
   guint component_id,
@@ -496,7 +499,7 @@ gboolean nice_agent_set_stun_info(
    </para>
  </note>
  */
-gboolean
+NICE_EXPORT gboolean
 nice_agent_gather_candidates (
   NiceAgent *agent,
   guint stream_id);
@@ -520,7 +523,7 @@ nice_agent_gather_candidates (
  *
  * Returns: %TRUE on success, %FALSE on error.
  */
-gboolean
+NICE_EXPORT gboolean
 nice_agent_set_remote_credentials (
   NiceAgent *agent,
   guint stream_id,
@@ -544,7 +547,7 @@ nice_agent_set_remote_credentials (
  *
  * Returns: %TRUE on success, %FALSE on error.
  */
-gboolean
+NICE_EXPORT gboolean
 nice_agent_get_local_credentials (
   NiceAgent *agent,
   guint stream_id,
@@ -581,7 +584,7 @@ nice_agent_get_local_credentials (
  * Returns: The number of candidates added, negative on errors (memory allocation
  * or if the local candidates are not done gathering yet)
  **/
-int
+NICE_EXPORT gint
 nice_agent_set_remote_candidates (
   NiceAgent *agent,
   guint stream_id,
@@ -624,7 +627,7 @@ nice_agent_set_remote_candidates (
  *
  * Returns: The number of bytes sent, or negative error code
  */
-gint
+NICE_EXPORT gint
 nice_agent_send (
   NiceAgent *agent,
   guint stream_id,
@@ -653,7 +656,7 @@ nice_agent_send (
  * Returns: (element-type NiceCandidate) (transfer full): a #GSList of
  * #NiceCandidate objects representing the local candidates of @agent
  **/
-GSList *
+NICE_EXPORT GSList *
 nice_agent_get_local_candidates (
   NiceAgent *agent,
   guint stream_id,
@@ -683,7 +686,7 @@ nice_agent_get_local_candidates (
  * Returns: (element-type NiceCandidate) (transfer full): a #GSList of
  * #NiceCandidates objects representing the remote candidates set on the @agent
  **/
-GSList *
+NICE_EXPORT GSList *
 nice_agent_get_remote_candidates (
   NiceAgent *agent,
   guint stream_id,
@@ -700,7 +703,7 @@ nice_agent_get_remote_candidates (
  *
  * Returns: %TRUE on success %FALSE on error
  **/
-gboolean
+NICE_EXPORT gboolean
 nice_agent_restart (
   NiceAgent *agent);
 
@@ -720,7 +723,7 @@ nice_agent_restart (
  *
  * Returns: %TRUE on success, %FALSE if the stream or component IDs are invalid.
  */
-gboolean
+NICE_EXPORT gboolean
 nice_agent_attach_recv (
   NiceAgent *agent,
   guint stream_id,
@@ -733,7 +736,7 @@ typedef void (*NiceAgentLogFunc) (
   NiceAgent *agent, guint stream_id, guint component_id, GLogLevelFlags level,
   gchar *msg, gpointer user_data);
 
-gboolean
+NICE_EXPORT gboolean
 nice_agent_attach_log (
   NiceAgent *agent,
   guint stream_id,
@@ -757,7 +760,7 @@ nice_agent_attach_log (
  *
  * Returns: %TRUE on success, %FALSE if the candidate pair cannot be found
  */
-gboolean
+NICE_EXPORT gboolean
 nice_agent_set_selected_pair (
   NiceAgent *agent,
   guint stream_id,
@@ -782,7 +785,7 @@ nice_agent_set_selected_pair (
  *
  * Returns: %TRUE on success, %FALSE on failure
  */
-gboolean
+NICE_EXPORT gboolean
 nice_agent_set_selected_remote_candidate (
   NiceAgent *agent,
   guint stream_id,
@@ -800,7 +803,8 @@ nice_agent_set_selected_remote_candidate (
  *
  * Since: 0.0.9
  */
-void nice_agent_set_stream_tos (
+NICE_EXPORT void
+nice_agent_set_stream_tos (
   NiceAgent *agent,
   guint stream_id,
   gint tos);
@@ -833,7 +837,8 @@ void nice_agent_set_stream_tos (
  * Since: 0.0.10
  *
  */
-void nice_agent_set_software (NiceAgent *agent, const gchar *software);
+NICE_EXPORT void
+nice_agent_set_software (NiceAgent *agent, const gchar *software);
 
 /**
  * nice_agent_get_tx_queue_size:
@@ -846,7 +851,7 @@ void nice_agent_set_software (NiceAgent *agent, const gchar *software);
  * streams using UDP will always return 0.
  *
  */
-gint
+NICE_EXPORT gint
 nice_agent_get_tx_queue_size (
   NiceAgent *agent,
   guint stream_id,
@@ -857,7 +862,7 @@ nice_agent_get_tx_queue_size (
  *
  * Start/Stop receiving traffic on a given stream/component
  */
-void
+NICE_EXPORT void
 nice_agent_set_rx_enabled (
   NiceAgent *agent,
   guint stream_id,
