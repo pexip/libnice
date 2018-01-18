@@ -15,6 +15,7 @@ project_arguments = [
   #'-DGLIB_DISABLE_DEPRECATION_WARNINGS',
   '-DHAVE_CONFIG_H',
   '-DNICE_EXPORTS',
+  '-fno-strict-aliasing'
 ]
 project_arguments += ['-DHOST_@0@'.format(host_system.to_upper())]
 
