@@ -676,7 +676,7 @@ static gboolean priv_stream_needs_rtcp_pair (NiceAgent * agent, Stream *stream, 
 {
   Component *component;
 
-  if (is_microsoft_tcp_pair (agent, rtp_pair))
+  if (rtp_pair && is_microsoft_tcp_pair (agent, rtp_pair))
     return FALSE;
 
   if (stream->n_components < 2)
@@ -1019,6 +1019,11 @@ static gboolean priv_conn_keepalive_tick_unlocked (NiceAgent *agent)
       } else {
         stun_server_ip = agent->stun_server_ip;
         stun_server_port = agent->stun_server_port;
+      }
+
+      if (component->id == NICE_COMPONENT_TYPE_RTCP && !priv_stream_needs_rtcp_pair (agent, stream, NULL)) {
+        nice_debug("Agent %p %u/%u: Not sending STUN keepalive as rtcp-mux in use", agent, stream->id, component->id);
+        continue;
       }
 
       if (component->state < NICE_COMPONENT_STATE_READY &&
