@@ -376,7 +376,6 @@ nice_agent_remove_stream (
   NiceAgent *agent,
   guint stream_id);
 
-
 NICE_EXPORT void
 nice_agent_set_stream (
   NiceAgent *agent,
@@ -809,6 +808,12 @@ nice_agent_set_stream_tos (
   guint stream_id,
   gint tos);
 
+
+NICE_EXPORT void
+nice_agent_set_stream_max_tcp_queue_size (
+  NiceAgent *agent,
+  guint stream_id,
+  guint max_tcp_queue_size);
 
 
 /**

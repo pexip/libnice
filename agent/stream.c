@@ -62,7 +62,7 @@ stream_new (guint n_components)
 
   stream->n_components = n_components;
   stream->initial_binding_request_received = FALSE;
-
+  stream->max_tcp_queue_size = NICE_STREAM_DEF_MAX_TCP_QUEUE;
   return stream;
 }
 

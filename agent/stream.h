@@ -58,6 +58,7 @@ G_BEGIN_DECLS
 #define NICE_STREAM_MAX_PWD     256 + 1  /* pwd + NULL */
 #define NICE_STREAM_DEF_UFRAG   4 + 1    /* ufrag + NULL */
 #define NICE_STREAM_DEF_PWD     22 + 1   /* pwd + NULL */
+#define NICE_STREAM_DEF_MAX_TCP_QUEUE 100
 
 struct _Stream
 {
@@ -78,6 +79,7 @@ struct _Stream
   gint tos;
   guint tick_counter;
   gboolean rtcp_mux;
+  guint    max_tcp_queue_size;
 };
 
 

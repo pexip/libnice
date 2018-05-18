@@ -100,7 +100,6 @@ enum
   PROP_UPNP,
   PROP_UPNP_TIMEOUT,
   PROP_RELIABLE,
-  PROP_MAX_TCP_QUEUE_SIZE,
   PROP_CONNCHECK_TIMEOUT,
   PROP_CONNCHECK_RETRANSMISSIONS,
   PROP_AGGRESSIVE_MODE,
@@ -442,15 +441,6 @@ nice_agent_class_init (NiceAgentClass *klass)
         "Upper limit for the total number of connectivity checks performed",
         1, 0xffffffff,
         NICE_AGENT_MAX_CONNECTIVITY_CHECKS_DEFAULT,
-        G_PARAM_READWRITE));
-
-  g_object_class_install_property (gobject_class, PROP_MAX_TCP_QUEUE_SIZE,
-      g_param_spec_uint (
-        "max-tcp-queue-size",
-        "Maximum number of packets that will be queued on a TCP connection",
-        "Maximum number of packets that will be queued on a TCP connection. 0 -> unlimited",
-        0, 0xffffffff,
-        NICE_AGENT_MAX_TCP_QUEUE_SIZE_DEFAULT,
         G_PARAM_READWRITE));
 
   /**
@@ -824,7 +814,6 @@ nice_agent_init (NiceAgent *agent)
   agent->stun_server_port = DEFAULT_STUN_PORT;
   agent->controlling_mode = TRUE;
   agent->max_conn_checks = NICE_AGENT_MAX_CONNECTIVITY_CHECKS_DEFAULT;
-  agent->max_tcp_queue_size = NICE_AGENT_MAX_TCP_QUEUE_SIZE_DEFAULT;
   agent->conncheck_timeout = STUN_TIMER_DEFAULT_TIMEOUT;
   agent->conncheck_retransmissions = STUN_TIMER_DEFAULT_MAX_RETRANSMISSIONS;
   agent->aggressive_mode = TRUE;
@@ -932,10 +921,6 @@ nice_agent_get_property (
     case PROP_MAX_CONNECTIVITY_CHECKS:
       g_value_set_uint (value, agent->max_conn_checks);
       /* XXX: should we prune the list of already existing checks? */
-      break;
-
-    case PROP_MAX_TCP_QUEUE_SIZE:
-      g_value_set_uint (value, agent->max_tcp_queue_size);
       break;
 
     case PROP_PROXY_IP:
@@ -1062,10 +1047,6 @@ nice_agent_set_property (
 
     case PROP_CONNCHECK_RETRANSMISSIONS:
       agent->conncheck_retransmissions = g_value_get_uint (value);
-      break;
-
-    case PROP_MAX_TCP_QUEUE_SIZE:
-      agent->max_tcp_queue_size = g_value_get_uint (value);
       break;
 
     case PROP_PROXY_IP:
@@ -3158,6 +3139,27 @@ void nice_agent_set_stream_tos (NiceAgent *agent,
     }
   }
 
+  agent_unlock (agent);
+}
+
+void nice_agent_set_stream_max_tcp_queue_size (
+  NiceAgent *agent,
+  guint stream_id,
+  guint max_tcp_queue_size)
+{
+  Stream *stream;
+
+  agent_lock (agent);
+  stream = agent_find_stream (agent, stream_id);
+
+  if (!stream) {
+    goto done;
+  }
+
+  nice_debug ("%u/*: setting max_tcp_queue_size to %u", stream_id, max_tcp_queue_size);
+  stream->max_tcp_queue_size = max_tcp_queue_size;
+
+done:
   agent_unlock (agent);
 }
 

@@ -45,6 +45,7 @@ nice_agent_set_software
 nice_agent_get_tx_queue_size
 nice_agent_set_rx_enabled
 nice_agent_set_stream_tos
+nice_agent_set_stream_max_tcp_queue_size
 nice_candidate_copy
 nice_candidate_free
 nice_candidate_new
