@@ -121,7 +121,8 @@ struct _NiceAgent
   GSource *keepalive_timer_source; /* source of keepalive timer */
   GSList *refresh_list;         /* list of CandidateRefresh items */
   guint64 tie_breaker;            /* tie breaker (ICE sect 5.2
-				     "Determining Role" ID-19) */
+                                     "Determining Role" ID-19) */
+  gboolean override_tie_breaker;
   NiceCompatibility compatibility; /* property: Compatibility mode */
   NiceCompatibility turn_compatibility; /* property: TURN server compatibility mode */
   StunAgent stun_agent;            /* STUN agent */

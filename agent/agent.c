@@ -103,7 +103,8 @@ enum
   PROP_CONNCHECK_TIMEOUT,
   PROP_CONNCHECK_RETRANSMISSIONS,
   PROP_AGGRESSIVE_MODE,
-  PROP_REGULAR_NOMINATION_TIMEOUT
+  PROP_REGULAR_NOMINATION_TIMEOUT,
+  PROP_TIE_BREAKER
 };
 
 
@@ -600,6 +601,15 @@ nice_agent_class_init (NiceAgentClass *klass)
         NICE_AGENT_REGULAR_NOMINATION_TIMEOUT_DEFAULT,  /* Not construct time so ignored */
         G_PARAM_READWRITE));
 
+  g_object_class_install_property (gobject_class, PROP_TIE_BREAKER,
+      g_param_spec_uint64 (
+          "tie-breaker",
+          "Tie breaker value to send in connectivity checks",
+          "Tie breaker value to send in connectivity checks",
+          0, 0xffffffffffffffffLL,
+          0,  /* Not construct time so ignored */
+          G_PARAM_READWRITE));
+
   /* install signals */
 
   /**
@@ -801,7 +811,8 @@ nice_agent_class_init (NiceAgentClass *klass)
 static void
 priv_generate_tie_breaker (NiceAgent *agent)
 {
-  nice_rng_generate_bytes (agent->rng, 8, (gchar*)&agent->tie_breaker);
+  if (!agent->override_tie_breaker)
+    nice_rng_generate_bytes (agent->rng, 8, (gchar*)&agent->tie_breaker);
 }
 
 static void
@@ -839,6 +850,7 @@ nice_agent_init (NiceAgent *agent)
 
   agent->rng = nice_rng_new ();
   priv_generate_tie_breaker (agent);
+  agent->override_tie_breaker = FALSE;
 
   g_rec_mutex_init (&agent->agent_mutex);
 }
@@ -957,6 +969,10 @@ nice_agent_get_property (
 #else
       g_value_set_uint (value, DEFAULT_UPNP_TIMEOUT);
 #endif
+      break;
+
+    case PROP_TIE_BREAKER:
+      g_value_set_uint64 (value, agent->tie_breaker);
       break;
 
     default:
@@ -1084,6 +1100,11 @@ nice_agent_set_property (
 #endif
       break;
 
+    case PROP_TIE_BREAKER:
+      agent->override_tie_breaker = TRUE;
+      agent->tie_breaker = g_value_get_uint64 (value);
+      break;
+ 
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
     }
