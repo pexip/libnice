@@ -199,7 +199,7 @@ gst_nice_sink_on_overflow (GstNiceSink * sink,
   (void) agent;
 
   if (stream_id == sink->stream_id && component_id == sink->component_id) {
-    GST_INFO_OBJECT (sink, "Sink overflow for stream %d, component %d", stream_id, component_id);
+    GST_DEBUG_OBJECT (sink, "Sink overflow for stream %d, component %d", stream_id, component_id);
 
 #if GST_CHECK_VERSION (1,0,0)
     gst_pad_push_event (GST_BASE_SINK_PAD (sink),
@@ -218,7 +218,7 @@ gst_nice_sink_on_writable (GstNiceSink * sink,
   (void) agent;
 
   if (stream_id == sink->stream_id && component_id == sink->component_id) {
-    GST_INFO_OBJECT (sink, "Sink underflow for stream %d, component %d", stream_id, component_id);
+    GST_DEBUG_OBJECT (sink, "Sink underflow for stream %d, component %d", stream_id, component_id);
 
 #if GST_CHECK_VERSION (1,0,0)
     gst_pad_push_event (GST_BASE_SINK_PAD (sink),

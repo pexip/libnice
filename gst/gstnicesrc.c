@@ -124,11 +124,11 @@ gst_nice_src_handle_event (GstBaseSrc *basesrc, GstEvent * event)
     case GST_EVENT_CUSTOM_UPSTREAM:
     {
       if (gst_event_has_name (event, "PexQosOverflow")) {
-        GST_INFO_OBJECT (src, "Suspend TCP receive, QOS received");
+        GST_DEBUG_OBJECT (src, "Suspend TCP receive, QOS received");
         nice_agent_set_rx_enabled (src->agent, src->stream_id, src->component_id, FALSE);
         ret = TRUE;
       } else if (gst_event_has_name (event, "PexQosUnderflow")) {
-        GST_INFO_OBJECT (src, "Resume TCP receive, QOS received");
+        GST_DEBUG_OBJECT (src, "Resume TCP receive, QOS received");
         nice_agent_set_rx_enabled (src->agent, src->stream_id, src->component_id, TRUE);
         ret = TRUE;
       } else {
