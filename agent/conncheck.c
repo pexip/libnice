@@ -2080,6 +2080,13 @@ int conn_check_send (NiceAgent *agent, CandidateCheckPair *pair)
   unsigned int timeout;
   gchar tmpbuf[INET6_ADDRSTRLEN];
 
+  /* Don't send to the discard port */
+  if (nice_address_get_port (&pair->remote->addr) == 9) {
+    pair->stun_message.buffer = NULL;
+    pair->stun_message.buffer_len = 0;
+    return 0;
+  }
+
   nice_address_to_string (&pair->remote->addr, tmpbuf);
 
   if (cand_use && agent->aggressive_mode)
