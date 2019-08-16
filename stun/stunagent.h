@@ -180,6 +180,7 @@ typedef enum {
   STUN_AGENT_USAGE_NO_INDICATION_AUTH        = (1 << 5),
   STUN_AGENT_USAGE_FORCE_VALIDATER           = (1 << 6),
   STUN_AGENT_USAGE_NO_ALIGNED_ATTRIBUTES     = (1 << 7),
+  STUN_AGENT_USAGE_IGNORE_RESPONSE_TRANSID   = (1 << 8)
 } StunAgentUsageFlags;
 
 

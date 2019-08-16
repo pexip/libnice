@@ -50,6 +50,17 @@
 
 #define STUN_MAX_TRANSACTION_STR_LENGTH 33
 
+static char* mem_to_str (uint8_t *mem, unsigned len)
+{
+  char *result = malloc (len*2 + 1);
+  int i;
+
+  for (i = 0; i < len; i++) {
+    sprintf (&result[i*2], "%02X", mem[i]);
+  }
+  return result;
+}
+
 static void transaction_id_to_str (StunTransactionId msg_id, char* buff)
 {
   int i;
@@ -122,6 +133,7 @@ StunValidationStatus stun_agent_validate (StunAgent *agent, StunMessage *msg,
   uint8_t long_term_key[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
   bool long_term_key_valid = FALSE;
   char tmpbuf[STUN_MAX_TRANSACTION_STR_LENGTH];
+  bool ignore_response_transid = (agent->usage_flags & STUN_AGENT_USAGE_IGNORE_RESPONSE_TRANSID) != 0;
 
   len = stun_message_validate_buffer_length (buffer, buffer_len,
        !(agent->usage_flags & STUN_AGENT_USAGE_NO_ALIGNED_ATTRIBUTES));
@@ -197,8 +209,8 @@ StunValidationStatus stun_agent_validate (StunAgent *agent, StunMessage *msg,
   }
 
 
-  if (stun_message_get_class (msg) == STUN_RESPONSE ||
-      stun_message_get_class (msg) == STUN_ERROR) {
+  if ((stun_message_get_class (msg) == STUN_RESPONSE ||
+       stun_message_get_class (msg) == STUN_ERROR) && !ignore_response_transid) {
     stun_message_id (msg, msg_id);
     transaction_id_to_str (msg_id, tmpbuf);
     stun_debug ("Received response: method=%d transaction id %s", stun_message_get_method (msg), tmpbuf);
@@ -327,7 +339,12 @@ StunValidationStatus stun_agent_validate (StunAgent *agent, StunMessage *msg,
       }
 
       if (memcmp (sha, hash, sizeof (sha)))  {
-        stun_debug ("STUN auth error: SHA1 fingerprint mismatch!\n");
+        char *sha_str = mem_to_str(sha, sizeof(sha));
+        char *hash_str = mem_to_str(hash, sizeof (sha));
+        stun_debug ("STUN auth error: SHA1 fingerprint mismatch! msg-hash=%s computed-hash=%s\n",
+                    hash_str, sha_str);
+        free (sha_str);
+        free (hash_str);
         return STUN_VALIDATION_UNAUTHORIZED;
       }
 
