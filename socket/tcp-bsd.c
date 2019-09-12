@@ -42,6 +42,8 @@
 # include "config.h"
 #endif
 
+#include <gst/gst.h>
+
 #include "tcp-bsd.h"
 #include "agent-priv.h"
 
@@ -52,6 +54,9 @@
 #ifndef G_OS_WIN32
 #include <unistd.h>
 #endif
+
+GST_DEBUG_CATEGORY_EXTERN (niceagent_debug);
+#define GST_CAT_DEFAULT niceagent_debug
 
 typedef struct {
   NiceAddress server_addr;
@@ -322,7 +327,7 @@ socket_send_more (
   agent_lock (agent);
 
   if (g_source_is_destroyed (g_main_current_source ())) {
-    nice_debug ("Source was destroyed. "
+    GST_DEBUG ("Source was destroyed. "
         "Avoided race condition in tcp-bsd.c:socket_send_more");
     agent_unlock (agent);
     return FALSE;
@@ -407,4 +412,3 @@ free_to_be_sent (struct to_be_sent *tbs)
   g_free (tbs->buf);
   g_slice_free (struct to_be_sent, tbs);
 }
-

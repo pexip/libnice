@@ -39,6 +39,8 @@
 # include "config.h"
 #endif
 
+#include <gst/gst.h>
+
 #include "tcp-active.h"
 #include "tcp-established.h"
 #include "agent-priv.h"
@@ -50,6 +52,9 @@
 #ifndef G_OS_WIN32
 #include <unistd.h>
 #endif
+
+GST_DEBUG_CATEGORY_EXTERN (niceagent_debug);
+#define GST_CAT_DEFAULT niceagent_debug
 
 typedef struct {
   GSocketAddress     *local_addr;
@@ -93,7 +98,6 @@ nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr,
   }
 
   tmp_addr = *addr;
-  nice_debug("tcp-act: binding to port %d", nice_address_get_port(addr));
   nice_address_copy_to_sockaddr (&tmp_addr, (struct sockaddr *)&name);
 
   gaddr = g_socket_address_new_from_native (&name, sizeof (name));
@@ -172,9 +176,9 @@ socket_close (NiceSocket *sock)
 static gint
 socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
 {
-  /* 
+  /*
    * Should never be called for an active connection, all real data arrives on
-   * established connections 
+   * established connections
    */
   return -1;
 }
@@ -195,13 +199,12 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
     sent_len = nice_socket_send(socket, to, len, buf);
     if (sent_len > 0)
     {
-      nice_debug("tcp-act %p: Sent on socket, sent %d to %s:%u", sock, sent_len, to_string, nice_address_get_port (to));
       return sent_len;
     } else if (sent_len < 0) {
-      /* 
-       * Correct socket but failed 
+      /*
+       * Correct socket but failed
        */
-      nice_debug("tcp-act %p: Failed to send to %s:%u, destroying socket", sock, to_string, nice_address_get_port (to));
+      GST_DEBUG ("tcp-act %p: Failed to send to %s:%u, destroying socket", sock, to_string, nice_address_get_port (to));
       nice_socket_free (socket);
       priv->established_sockets = g_slist_remove(priv->established_sockets, socket);
       break;
@@ -213,10 +216,9 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
    */
   NiceSocket* new_socket = nice_tcp_active_socket_connect (sock, to);
   if (!new_socket) {
-    nice_debug ("tcp-act %p: failed to connect the new socket to %s:%u", sock, to_string, nice_address_get_port (to));
+    GST_DEBUG ("tcp-act %p: failed to connect the new socket to %s:%u", sock, to_string, nice_address_get_port (to));
     return -1;
   }
-  nice_debug ("tcp-act %p: connecting outbound socket to %s:%u. New tcp-est %p", sock, to_string, nice_address_get_port (to), new_socket);
   priv->established_sockets = g_slist_append (priv->established_sockets, new_socket);
   sent_len = nice_socket_send (new_socket, to, len, buf);
   return sent_len;

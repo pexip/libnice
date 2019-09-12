@@ -39,6 +39,8 @@
 # include "config.h"
 #endif
 
+#include <gst/gst.h>
+
 #include "tcp-established.h"
 #include "agent-priv.h"
 
@@ -49,6 +51,9 @@
 #ifndef G_OS_WIN32
 #include <unistd.h>
 #endif
+
+GST_DEBUG_CATEGORY_EXTERN (niceagent_debug);
+#define GST_CAT_DEFAULT niceagent_debug
 
 #define MAX_BUFFER_SIZE 65535
 
@@ -293,13 +298,12 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
   nice_address_to_string (to, to_string);
 
   if (nice_address_equal (to, &priv->remote_addr)) {
-    nice_debug("tcp-est %p: Sending on tcp-established to %s:%u len=%d", sock, to_string, nice_address_get_port (to), len);
-    
+
     /* Don't try to access the socket if it had an error, otherwise we risk a
        crash with SIGPIPE (Broken pipe) */
     if (priv->error)
       return -1;
-    
+
     buff[0] = (len >> 8);
     buff[1] = (len & 0xFF);
     memcpy (&buff[2], buf, len);
@@ -329,8 +333,6 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
 
       return ret;
     } else {
-      nice_debug ("tcp-est %p: not connected to %s:%u, queueing. queue-size=%u, queue_is_empty=%d max-tcp-queue-size=%d", sock, to_string, 
-                  nice_address_get_port (to), priv->send_queue.length, g_queue_is_empty (&priv->send_queue), priv->max_tcp_queue_size);
       add_to_be_sent (sock, buff, len, FALSE);
       if (g_socket_is_connected (sock->fileno)) {
         priv->txcb (sock, buff, len, priv->tx_queue_size_bytes, priv->userdata);
@@ -341,8 +343,6 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
     gchar remote_string [NICE_ADDRESS_STRING_LEN];
 
     nice_address_to_string (&priv->remote_addr, remote_string);
-    nice_debug ("tcp-est %p: not for us to send to=%s:%u (priv->remote_addr = %s:%u)", sock, to_string, nice_address_get_port (to),
-                remote_string, nice_address_get_port (&priv->remote_addr));
     return 0;
   }
 }
@@ -363,14 +363,10 @@ parse_rfc4571(NiceSocket* sock, NiceAddress* from)
     if (priv->recv_offset > 2) {
       guint8 *data = priv->recv_buff;
       guint packet_length = data[0] << 8 | data[1];
-      nice_debug ("tcp-est %p: socket_recv_more: expecting %u bytes\n", sock, packet_length);
-
       if (packet_length + 2 <= priv->recv_offset) {
-        nice_debug ("tcp-est %p: socket_recv_more: received %d bytes, delivering", sock, packet_length);
         priv->rxcb (sock, from, (gchar *)&data[2], packet_length, priv->userdata);
 
         if (g_source_is_destroyed (g_main_current_source ())) {
-          nice_debug ("tcp-est %p: Source was destroyed while reading. ", sock);
           return;
         }
 
@@ -406,8 +402,8 @@ socket_recv_more (
   agent_lock (agent);
 
   if (g_source_is_destroyed (g_main_current_source ())) {
-    nice_debug ("tcp-est %p: Source was destroyed. "
-                "Avoided race condition in tcp-established.c:socket_recv_more", sock);
+    GST_DEBUG ("tcp-est %p: Source was destroyed. "
+        "Avoided race condition in tcp-established.c:socket_recv_more", sock);
     agent_unlock (agent);
     return FALSE;
   } else {
@@ -418,7 +414,6 @@ socket_recv_more (
 
   if (!priv->rx_enabled) {
     /* Socket is suspended so don't read from it */
-    nice_debug("tcp-est %p: Socket rx disabled, ignoring event", sock);
     agent_unlock (agent);
     return TRUE;
   }
@@ -429,7 +424,7 @@ socket_recv_more (
     priv->recv_offset += len;
     parse_rfc4571(sock, &from);
   } else if (len < 0) {
-      nice_debug("tcp-est %p: socket_recv_more: error from socket %d", sock, len);
+    GST_DEBUG ("tcp-est %p: socket_recv_more: error from socket %d", sock, len);
     g_source_destroy (priv->read_source);
     g_source_unref (priv->read_source);
     priv->read_source = NULL;
@@ -458,13 +453,11 @@ socket_send_more (
   GError *gerr = NULL;
   NiceAgent *agent = cbdata->nice_agent;
 
-  nice_debug("tcp-est %p: socket_send_more, condition=%u", sock, condition);
-
   agent_lock (agent);
 
   if (g_source_is_destroyed (g_main_current_source ())) {
-    nice_debug ("tcp-est %p: Source was destroyed. "
-                "Avoided race condition in tcp-established.c:socket_send_more", sock);
+    GST_DEBUG ("tcp-est %p: Source was destroyed. "
+        "Avoided race condition in tcp-established.c:socket_send_more", sock);
     agent_unlock (agent);
     return FALSE;
   } else {
@@ -474,14 +467,13 @@ socket_send_more (
   }
 
   if (priv->connect_pending) {
-    /* 
+    /*
      * First event will be the connect result
      */
     if (!g_socket_check_connect_result (gsocket, &gerr)) {
-        nice_debug("tcp-est %p: connect failed. g_socket_is_connected=%d", sock, g_socket_is_connected (sock->fileno));
-    } else {
-        nice_debug("tcp-est %p: connect completed. g_socket_is_connected=%d", sock, g_socket_is_connected (sock->fileno));
+        GST_DEBUG ("tcp-est %p: connect failed. g_socket_is_connected=%d", sock, g_socket_is_connected (sock->fileno));
     }
+
     if (gerr) {
       g_error_free (gerr);
       gerr = NULL;
@@ -491,16 +483,14 @@ socket_send_more (
 
   while ((tbs = g_queue_pop_head (&priv->send_queue)) != NULL) {
     int ret;
-    
+
     priv->tx_queue_size_bytes -= tbs->length;
 
     if(condition & G_IO_HUP) {
       /* connection hangs up */
       ret = -1;
-      nice_debug ("tcp-est %p: socket_send_more: got G_IO_HUP signal", sock);
     } else {
       ret = g_socket_send (sock->fileno, tbs->buf, tbs->length, NULL, &gerr);
-      nice_debug ("tcp-est %p: socket_send_more: tried to send %u bytes, ret=%u", sock, tbs->length, ret);
     }
 
     if (ret < 0) {
@@ -531,7 +521,6 @@ socket_send_more (
   }
 
   if (g_queue_is_empty (&priv->send_queue)) {
-    nice_debug ("tcp-est %p: socket_send_more: queue empty, releasing source", sock);
     g_source_destroy (priv->write_source);
     g_source_unref (priv->write_source);
     priv->write_source = NULL;
@@ -562,15 +551,14 @@ add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len, gboolean add_to_h
    */
   if (!add_to_head && priv->max_tcp_queue_size != 0) {
     while (g_queue_get_length (&priv->send_queue) > priv->max_tcp_queue_size) {
-      
+
       /*
        * We want to discard the oldest queued data which is at the front of the queue.
        * However we need to be careful as the first element on the queue may be partially
        * transmitted already, we'll discard the second element on the list instead
        */
       struct to_be_sent *pkt;
-      
-      nice_debug ("tcp-est %p: TCP queue size breached, discarding", sock);
+
       pkt = g_queue_pop_nth (&priv->send_queue, 1);
       priv->tx_queue_size_bytes -= pkt->length;
       free_to_be_sent (pkt);

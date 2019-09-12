@@ -46,6 +46,7 @@
 #endif
 
 #include <glib.h>
+#include <gst/gst.h>
 
 #include <stdlib.h>
 #include <string.h>
@@ -60,6 +61,9 @@
 #include "stun/usages/bind.h"
 #include "stun/usages/turn.h"
 #include "socket.h"
+
+GST_DEBUG_CATEGORY_EXTERN (niceagent_debug);
+#define GST_CAT_DEFAULT niceagent_debug
 
 static inline int priv_timer_expired (GTimeVal *timer, GTimeVal *now)
 {
@@ -216,7 +220,7 @@ void refresh_free (NiceAgent *agent)
 
 /*
  * Prunes the list of discovery processes for items related
- * to stream 'stream_id'. 
+ * to stream 'stream_id'.
  *
  * @return TRUE on success, FALSE on a fatal error
  */
@@ -261,14 +265,14 @@ static gboolean priv_add_local_candidate_pruned (NiceAgent *agent, guint stream_
 
   for (i = component->local_candidates; i ; i = i->next) {
     NiceCandidate *c = i->data;
-    
+
     if (c->transport == candidate->transport) {
       /* For TCP active candidates the port number is meaningless so ignore it */
       gboolean compare_ports = (c->transport != NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE || candidate->type != NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE);
 
       if (nice_address_equal_full (&c->base_addr, &candidate->base_addr, compare_ports) &&
           nice_address_equal_full (&c->addr, &candidate->addr, compare_ports)) {
-        nice_debug ("Candidate %p (component-id %u) redundant, ignoring.", candidate, component->id);
+        GST_DEBUG_OBJECT (agent, "%u/%u: Candidate %p redundant, ignoring.", stream_id, component->id, candidate);
         return FALSE;
       }
 
@@ -278,15 +282,15 @@ static gboolean priv_add_local_candidate_pruned (NiceAgent *agent, guint stream_
        * some endpoints (notably Lync). As having two server reflexives with the same address is
        * pointless in any real network scenario we'll prune them here
        */
-      if (c->type == NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE && 
+      if (c->type == NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE &&
           candidate->type == NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE &&
           nice_address_equal_full (&c->base_addr, &candidate->base_addr, FALSE) &&
           nice_address_equal_full (&c->addr, &candidate->addr, FALSE)) {
         gchar addrstr[INET6_ADDRSTRLEN];
         nice_address_to_string (&c->addr, addrstr);
 
-        nice_debug ("Agent %p %u/%u: Pruning duplicate server reflexive candidate for srflx address %s (%s %s)",
-                    agent, stream_id, component->id, addrstr, candidate->foundation, c->foundation);
+        GST_DEBUG_OBJECT (agent, "%u/%u: Pruning duplicate server reflexive candidate for srflx address %s (%s %s)",
+            stream_id, component->id, addrstr, candidate->foundation, c->foundation);
         return FALSE;
       }
     }
@@ -308,8 +312,8 @@ static guint priv_highest_remote_foundation (Component *component)
   gchar foundation[NICE_CANDIDATE_MAX_FOUNDATION];
 
   /*
-   * We are trying to find an unused foundation from the remote candidates. 
-   * Starting at 1 was not sensible when we were creating remote candidates 
+   * We are trying to find an unused foundation from the remote candidates.
+   * Starting at 1 was not sensible when we were creating remote candidates
    * before receiving an answer as it would immediately causes a clash with
    * the foundation values supplied by the remote.
    *
@@ -357,16 +361,16 @@ static void priv_assign_foundation (NiceAgent *agent, NiceCandidate *candidate)
 
         /* note: candidate must not on the local candidate list */
         g_assert (candidate != n);
-        
+
         /* note: ports are not to be compared */
         nice_address_set_port (&temp,
                                nice_address_get_port (&candidate->base_addr));
 
-        /* 
+        /*
          * For server reflexive candidates only assign the same foundation if they have
          * the same apparent address. This is OK because we will be pruning one of them
          * later and avoids a race when STUN/TURN results are returned in a different
-         * order for different components 
+         * order for different components
          */
         if (candidate->type == n->type &&
             candidate->transport == n->transport &&
@@ -389,7 +393,7 @@ static void priv_assign_foundation (NiceAgent *agent, NiceCandidate *candidate)
       }
     }
   }
-  
+
   candidate->local_foundation = agent->next_candidate_id++;
   g_snprintf (candidate->foundation, NICE_CANDIDATE_MAX_FOUNDATION,
               "%u", candidate->local_foundation);
@@ -405,21 +409,21 @@ static void priv_assign_remote_foundation (NiceAgent *agent, NiceCandidate *cand
     Stream *stream = i->data;
     for (j = stream->components; j; j = j->next) {
       Component *c = j->data;
-      
+
       if (c->id == candidate->component_id)
         component = c;
-      
+
       for (k = c->remote_candidates; k; k = k->next) {
         NiceCandidate *n = k->data;
         NiceAddress temp = n->addr;
-        
+
         /* note: candidate must not on the remote candidate list */
         g_assert (candidate != n);
-        
+
         /* note: ports are not to be compared */
         nice_address_set_port (&temp,
                                nice_address_get_port (&candidate->base_addr));
-        
+
         if (candidate->type == n->type &&
             candidate->transport == n->transport &&
             candidate->stream_id == n->stream_id &&
@@ -443,7 +447,7 @@ static void priv_assign_remote_foundation (NiceAgent *agent, NiceCandidate *cand
       }
     }
   }
-  
+
   if (component) {
     next_remote_id = priv_highest_remote_foundation (component);
     g_snprintf (candidate->foundation, NICE_CANDIDATE_MAX_FOUNDATION,
@@ -470,7 +474,7 @@ NiceCandidate *discovery_add_local_host_candidate (
   Stream *stream;
   NiceSocket *socket = NULL;
   TcpUserData* userdata = NULL;
- 
+
   if (!agent_find_component (agent, stream_id, component_id, &stream, &component))
     return NULL;
 
@@ -512,7 +516,7 @@ NiceCandidate *discovery_add_local_host_candidate (
 
   if (!socket)
     goto errors;
-    
+
   _priv_set_socket_tos (agent, socket, stream->tos);
   agent_attach_stream_component_socket (agent, stream,
                                         component, socket);
@@ -520,11 +524,11 @@ NiceCandidate *discovery_add_local_host_candidate (
   candidate->sockptr = socket;
   candidate->addr = socket->addr;
   candidate->base_addr = socket->addr;
-  
+
   priv_set_candidate_priority (agent, component, candidate);
   if (!priv_add_local_candidate_pruned (agent, stream_id, component, candidate, TRUE))
     goto errors;
-  
+
   component->sockets = g_slist_append (component->sockets, socket);
   return candidate;
 
@@ -593,7 +597,7 @@ discovery_add_server_reflexive_candidate (
  *
  * @return pointer to the created candidate, or NULL on error
  */
-NiceCandidate* 
+NiceCandidate*
 discovery_add_relay_candidate (
   NiceAgent *agent,
   guint stream_id,
@@ -685,9 +689,9 @@ discovery_add_peer_reflexive_candidate (
 
   candidate = nice_candidate_new (NICE_CANDIDATE_TYPE_PEER_REFLEXIVE);
 
-  nice_debug("Agent %p: remote->transport=%s remote->foundation=%s", agent,
-             candidate_transport_to_string(remote->transport),
-             remote->foundation);
+  GST_DEBUG_OBJECT (agent, "%u/%u: remote->transport=%s remote->foundation=%s",
+      stream_id, component_id, candidate_transport_to_string(remote->transport),
+      remote->foundation);
 
   candidate->transport = priv_determine_local_transport(remote->transport);
   candidate->stream_id = stream_id;
@@ -712,17 +716,17 @@ discovery_add_peer_reflexive_candidate (
   priv_set_candidate_priority (agent, component, candidate);
   result = priv_add_local_candidate_pruned (agent, stream_id, component, candidate, FALSE);
   if (result != TRUE) {
-    /* 
-     * error: memory allocation, or duplicate candidate 
+    /*
+     * error: memory allocation, or duplicate candidate
      */
     nice_candidate_free (candidate);
     candidate = NULL;
   } else {
-    nice_debug ("Agent %p %u/%u: adding new local reflexive candidate, type=%s, transport=%s, foundation=%s",
-                agent, candidate->stream_id, candidate->component_id, 
-                candidate_type_to_string(candidate->type), 
-                candidate_transport_to_string(candidate->transport), 
-                candidate->foundation);
+    GST_DEBUG_OBJECT (agent, "%u/%u: adding new local reflexive candidate, type=%s, transport=%s, foundation=%s",
+        candidate->stream_id, candidate->component_id,
+        candidate_type_to_string(candidate->type),
+        candidate_transport_to_string(candidate->transport),
+        candidate->foundation);
   }
 
   return candidate;
@@ -751,10 +755,10 @@ NiceCandidate *discovery_learn_remote_peer_reflexive_candidate (
 
   candidate = nice_candidate_new (NICE_CANDIDATE_TYPE_PEER_REFLEXIVE);
 
-  /* 
-   * Determine remote candidate type from the local socket on which the 
-   * request was received 
-   */     
+  /*
+   * Determine remote candidate type from the local socket on which the
+   * request was received
+   */
   switch (local_socket->type) {
   case NICE_SOCKET_TYPE_TCP_ACTIVE:
     candidate->transport = NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE;
@@ -780,29 +784,29 @@ NiceCandidate *discovery_learn_remote_peer_reflexive_candidate (
   if (remote) {
     g_free (candidate->username);
     g_free (candidate->password);
-    nice_debug("Agent %p %u/%u: creating username/password for peer-reflexive candidate %s/%s", 
-               agent, stream->id, component->id,
-               remote->username, remote->password);
+    GST_DEBUG_OBJECT (agent, "%u/%u: creating username/password for peer-reflexive candidate %s/%s",
+        stream->id, component->id,
+        remote->username, remote->password);
     candidate->username = g_strdup(remote->username);
     candidate->password = g_strdup(remote->password);
   } else {
     if (component->remote_candidates) {
       NiceCandidate* first_remote = component->remote_candidates->data;
-      nice_debug("Agent %p %u/%u: no remote when creating peer-reflexive, using first remote candidate username/password %s/%s", 
-                 agent, stream->id, component->id,
-                 first_remote->username, first_remote->password);
+      GST_DEBUG_OBJECT (agent, "%u/%u: no remote when creating peer-reflexive, using first remote candidate username/password %s/%s",
+          stream->id, component->id,
+          first_remote->username, first_remote->password);
       g_free (candidate->username);
       g_free (candidate->password);
       candidate->username = g_strdup(first_remote->username);
-      candidate->password = g_strdup(first_remote->password);    
+      candidate->password = g_strdup(first_remote->password);
     } else {
-      nice_debug("Agent %p %u/%u: no remote when creating peer-reflexive", 
-                 agent, stream->id, component->id);
-    }    
+      GST_DEBUG_OBJECT (agent, "%u/%u: no remote when creating peer-reflexive",
+          stream->id, component->id);
+    }
   }
 
   candidate->sockptr = NULL; /* not stored for remote candidates */
-  /* note: candidate username and password are left NULL as stream 
+  /* note: candidate username and password are left NULL as stream
      level ufrag/password are used */
 
   /* if the check didn't contain the PRIORITY attribute, then the priority will
@@ -816,19 +820,19 @@ NiceCandidate *discovery_learn_remote_peer_reflexive_candidate (
   component->remote_candidates = g_slist_append (component->remote_candidates,
       candidate);
 
-  nice_debug ("Agent %p %u/%u: adding new remote candidate, type=%s, transport=%s, foundation=%s",
-              agent, candidate->stream_id, candidate->component_id, 
-              candidate_type_to_string(candidate->type), 
-              candidate_transport_to_string(candidate->transport), 
-              candidate->foundation);
+  GST_DEBUG_OBJECT (agent, "%u/%u: adding new remote candidate, type=%s, transport=%s, foundation=%s",
+      candidate->stream_id, candidate->component_id,
+      candidate_type_to_string(candidate->type),
+      candidate_transport_to_string(candidate->transport),
+      candidate->foundation);
   agent_signal_new_remote_candidate (agent, candidate);
 
   return candidate;
 }
 
-/* 
+/*
  * Timer callback that handles scheduling new candidate discovery
- * processes (paced by the Ta timer), and handles running of the 
+ * processes (paced by the Ta timer), and handles running of the
  * existing discovery processes.
  *
  * This function is designed for the g_timeout_add() interface.
@@ -846,7 +850,7 @@ static gboolean priv_discovery_tick_unlocked (gpointer pointer)
   {
     static int tick_counter = 0;
     if (tick_counter++ % 50 == 0)
-      nice_debug ("Agent %p : discovery tick #%d with list %p (1)", agent, tick_counter, agent->discovery_list);
+      GST_DEBUG_OBJECT (agent, "discovery tick #%d with list %p (1)", tick_counter, agent->discovery_list);
   }
 
   for (i = agent->discovery_list; i ; i = i->next) {
@@ -861,8 +865,9 @@ static gboolean priv_discovery_tick_unlocked (gpointer pointer)
       {
         gchar tmpbuf[INET6_ADDRSTRLEN];
         nice_address_to_string (&cand->server, tmpbuf);
-        nice_debug ("Agent %p : discovery - scheduling cand type %u addr %s.\n",
-            agent, cand->type, tmpbuf);
+        GST_DEBUG_OBJECT (agent, "%u/%u: discovery - scheduling cand type %u addr %s.\n",
+            cand->stream->id, cand->component->id,
+            cand->type, tmpbuf);
       }
       if (nice_address_is_valid (&cand->server) &&
           (cand->type == NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE ||
@@ -952,7 +957,8 @@ static gboolean priv_discovery_tick_unlocked (gpointer pointer)
       g_get_current_time (&now);
 
       if (cand->stun_message.buffer == NULL) {
-	nice_debug ("Agent %p : STUN discovery was cancelled, marking discovery done.", agent);
+	GST_DEBUG_OBJECT (agent, "%u/%u: STUN discovery was cancelled, marking discovery done.",
+            cand->stream->id, cand->component->id);
 	cand->done = TRUE;
       }
       else if (priv_timer_expired (&cand->next_tick, &now)) {
@@ -970,12 +976,13 @@ static gboolean priv_discovery_tick_unlocked (gpointer pointer)
               cand->stun_message.buffer = NULL;
               cand->stun_message.buffer_len = 0;
               agent_signal_turn_allocation_failure(cand->agent,
-                                                   cand->stream->id, 
+                                                   cand->stream->id,
                                                    cand->component->id,
                                                    &cand->server,
                                                    NULL,
                                                    "Discovery timed out, aborting.");
-              nice_debug ("Agent %p : bind discovery timed out, aborting discovery item.", agent);
+              GST_DEBUG_OBJECT (agent, "%u/%u : bind discovery timed out, aborting discovery item.",
+                  cand->stream->id, cand->component->id);
               break;
             }
           case STUN_USAGE_TIMER_RETURN_RETRANSMIT:
@@ -1017,7 +1024,7 @@ static gboolean priv_discovery_tick_unlocked (gpointer pointer)
   }
 
   if (not_done == 0) {
-    nice_debug ("Agent %p : Candidate gathering FINISHED, stopping discovery timer.", agent);
+    GST_DEBUG_OBJECT (agent, "Candidate gathering FINISHED, stopping discovery timer.");
 
     discovery_free (agent);
 
@@ -1037,7 +1044,7 @@ static gboolean priv_discovery_tick (gpointer pointer)
 
   agent_lock (agent);
   if (g_source_is_destroyed (g_main_current_source ())) {
-    nice_debug ("Source was destroyed. "
+    GST_DEBUG ("Source was destroyed. "
         "Avoided race condition in priv_discovery_tick");
     agent_unlock (agent);
     return FALSE;
@@ -1067,7 +1074,7 @@ void discovery_schedule (NiceAgent *agent)
   g_assert (agent->discovery_list != NULL);
 
   if (agent->discovery_unsched_items > 0) {
-    
+
     if (agent->discovery_timer_source == NULL) {
       /* step: run first iteration immediately */
       gboolean res = priv_discovery_tick_unlocked (agent);

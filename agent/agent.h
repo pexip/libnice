@@ -458,7 +458,7 @@ nice_agent_set_relay_info(
  * @stun_server_ip: The IP address of the STUN server
  * @stun_server_port: The port of the STUN server
  *
- * Sets the settings for using a stun server during the candidate discovery. If 
+ * Sets the settings for using a stun server during the candidate discovery. If
  * this API is used to configure a STUN server for a component then this setting
  * will override any global STUN server configured on the agent.
  *
@@ -729,18 +729,6 @@ nice_agent_attach_recv (
   guint component_id,
   GMainContext *ctx,
   NiceAgentRecvFunc func,
-  gpointer data);
-
-typedef void (*NiceAgentLogFunc) (
-  NiceAgent *agent, guint stream_id, guint component_id, GLogLevelFlags level,
-  gchar *msg, gpointer user_data);
-
-NICE_EXPORT gboolean
-nice_agent_attach_log (
-  NiceAgent *agent,
-  guint stream_id,
-  guint component_id,
-  NiceAgentLogFunc func,
   gpointer data);
 
 /**

@@ -26,6 +26,8 @@
 # include "config.h"
 #endif
 
+#include <gst/gst.h>
+
 #include "interfaces.h"
 #include "debug.h"
 
@@ -58,6 +60,9 @@
 
 #ifdef HAVE_GETIFADDRS
 
+GST_DEBUG_CATEGORY_EXTERN (niceagent_debug);
+#define GST_CAT_DEFAULT niceagent_debug
+
 GList *
 nice_interfaces_get_local_interfaces (void)
 {
@@ -78,7 +83,7 @@ nice_interfaces_get_local_interfaces (void)
       continue;
 
     if (ifa->ifa_addr->sa_family == AF_INET || ifa->ifa_addr->sa_family == AF_INET6) {
-      nice_debug ("Found interface : %s", ifa->ifa_name);
+      GST_DEBUG ("Found interface : %s", ifa->ifa_name);
       interfaces = g_list_prepend (interfaces, g_strdup (ifa->ifa_name));
     }
   }
@@ -100,7 +105,7 @@ nice_interfaces_get_local_interfaces (void)
   struct ifconf ifc;
 
   if ((sockfd = socket (AF_INET, SOCK_DGRAM, IPPROTO_IP)) < 0) {
-    nice_debug ("error : Cannot open socket to retreive interface list");
+    GST_WARNING ("error : Cannot open socket to retreive interface list");
     return NULL;
   }
 
@@ -112,7 +117,7 @@ nice_interfaces_get_local_interfaces (void)
     size += sizeof (struct ifreq);
     /* realloc buffer size until no overflow occurs  */
     if (NULL == (ifc.ifc_req = realloc (ifc.ifc_req, size))) {
-      nice_debug ("Error : Out of memory while allocation interface"
+      GST_WARNING ("Out of memory while allocation interface"
           "configuration structure");
       close (sockfd);
       return NULL;
@@ -132,7 +137,7 @@ nice_interfaces_get_local_interfaces (void)
   for (ifr = ifc.ifc_req;
        (gchar *) ifr < (gchar *) ifc.ifc_req + ifc.ifc_len;
        ++ifr) {
-    nice_debug ("Found interface : %s", ifr->ifr_name);
+    GST_DEBUG ("Found interface : %s", ifr->ifr_name);
     interfaces = g_list_prepend (interfaces, g_strdup (ifr->ifr_name));
   }
 
@@ -166,7 +171,7 @@ nice_interfaces_is_private_ip (const struct sockaddr *sa)
     if (sa4->sin_addr.s_addr >> 16 == 0xA9FE)
       return TRUE;
   }
-  
+
   return FALSE;
 }
 
@@ -213,13 +218,13 @@ nice_interfaces_get_local_ips (gboolean include_loopback)
       continue;
 
 
-    nice_debug ("Interface:  %s", ifa->ifa_name);
-    nice_debug ("IP Address: %s", addr_as_string);
+    GST_DEBUG ("Interface:  %s", ifa->ifa_name);
+    GST_DEBUG ("IP Address: %s", addr_as_string);
     if ((ifa->ifa_flags & IFF_LOOPBACK) == IFF_LOOPBACK) {
       if (include_loopback)
         loopbacks = g_list_append (loopbacks, g_strdup (addr_as_string));
       else
-        nice_debug ("Ignoring loopback interface");
+        GST_DEBUG ("Ignoring loopback interface");
     } else {
       if (nice_interfaces_is_private_ip (ifa->ifa_addr))
         ips = g_list_append (ips, g_strdup (addr_as_string));
@@ -250,7 +255,7 @@ nice_interfaces_get_local_ips (gboolean include_loopback)
   gchar *loopback = NULL;
 
   if ((sockfd = socket (AF_INET, SOCK_DGRAM, IPPROTO_IP)) < 0) {
-    nice_debug ("Error : Cannot open socket to retreive interface list");
+    GST_WARNING ("Cannot open socket to retreive interface list");
     return NULL;
   }
 
@@ -262,7 +267,7 @@ nice_interfaces_get_local_ips (gboolean include_loopback)
     size += sizeof (struct ifreq);
     /* realloc buffer size until no overflow occurs  */
     if (NULL == (ifc.ifc_req = realloc (ifc.ifc_req, size))) {
-      nice_debug ("Error : Out of memory while allocation interface"
+      GST_WARNING ("Out of memory while allocation interface"
           " configuration structure");
       close (sockfd);
       return NULL;
@@ -284,18 +289,18 @@ nice_interfaces_get_local_ips (gboolean include_loopback)
        ++ifr) {
 
     if (ioctl (sockfd, SIOCGIFFLAGS, ifr)) {
-      nice_debug ("Error : Unable to get IP information for interface %s."
+      GST_WARNING ("Unable to get IP information for interface %s."
           " Skipping...", ifr->ifr_name);
       continue;  /* failed to get flags, skip it */
     }
     sa = (struct sockaddr_in *) &ifr->ifr_addr;
-    nice_debug ("Interface:  %s", ifr->ifr_name);
-    nice_debug ("IP Address: %s", inet_ntoa (sa->sin_addr));
+    GST_DEBUG ("Interface:  %s", ifr->ifr_name);
+    GST_DEBUG ("IP Address: %s", inet_ntoa (sa->sin_addr));
     if ((ifr->ifr_flags & IFF_LOOPBACK) == IFF_LOOPBACK){
       if (include_loopback)
         loopback = g_strdup (inet_ntoa (sa->sin_addr));
       else
-        nice_debug ("Ignoring loopback interface");
+        GST_DEBUG ("Ignoring loopback interface");
     } else {
       if (nice_interfaces_is_private_ip (&ifr->ifr_addr)) {
         ips = g_list_append (ips, g_strdup (inet_ntoa (sa->sin_addr)));
@@ -329,12 +334,12 @@ nice_interfaces_get_ip_for_interface (gchar *interface_name)
   g_strlcpy (ifr.ifr_name, interface_name, sizeof (ifr.ifr_name));
 
   if ((sockfd = socket (AF_INET, SOCK_DGRAM, IPPROTO_IP)) < 0) {
-    nice_debug ("Error : Cannot open socket to retreive interface list");
+    GST_WARNING ("Cannot open socket to retreive interface list");
     return NULL;
   }
 
   if (ioctl (sockfd, SIOCGIFADDR, &ifr) < 0) {
-    nice_debug ("Error : Unable to get IP information for interface %s",
+    GST_WARNING ("Unable to get IP information for interface %s",
       interface_name);
     close (sockfd);
     return NULL;
@@ -342,7 +347,7 @@ nice_interfaces_get_ip_for_interface (gchar *interface_name)
 
   close (sockfd);
   sa = (struct sockaddr_in *) &ifr.ifr_addr;
-  nice_debug ("Address for %s: %s", interface_name, inet_ntoa (sa->sin_addr));
+  GST_DEBUG ("Address for %s: %s", interface_name, inet_ntoa (sa->sin_addr));
   return g_strdup (inet_ntoa (sa->sin_addr));
 }
 
@@ -363,42 +368,6 @@ nice_interfaces_get_ip_for_interface (gchar *interface_name)
 
 #ifndef MIB_IPADDR_DELETED
 #define MIB_IPADDR_DELETED 0x0040
-#endif
-
-#if 0
-static gboolean started_wsa_engine = FALSE;
-
-/*
- * private function that initializes the WinSock engine and
- *  returns a prebuilt socket
- */
-SOCKET nice_interfaces_get_WSA_socket ()
-{
-  WORD wVersionRequested;
-  WSADATA wsaData;
-  int err;
-  SOCKET sock;
-
-  if (started_wsa_engine == FALSE) {
-    wVersionRequested = MAKEWORD ( 2, 0 );
-
-    err = WSAStartup ( wVersionRequested, &wsaData );
-    if ( err != 0 ) {
-      nice_debug ("Error : Could not start the winsocket engine");
-      return INVALID_SOCKET;
-    }
-    started_wsa_engine = TRUE;
-  }
-
-
-  if ((sock = socket (AF_INET, SOCK_DGRAM, 0)) == INVALID_SOCKET) {
-    nice_debug ("Error : Could not open socket to retreive interface list,"
-        " error no : %d", WSAGetLastError ());
-    return INVALID_SOCKET;
-  }
-
-  return sock;
-}
 #endif
 
 GList * nice_interfaces_get_local_interfaces ()

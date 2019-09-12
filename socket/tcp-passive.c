@@ -39,6 +39,8 @@
 # include "config.h"
 #endif
 
+#include <gst/gst.h>
+
 #include "tcp-passive.h"
 #include "tcp-established.h"
 #include "agent-priv.h"
@@ -50,6 +52,9 @@
 #ifndef G_OS_WIN32
 #include <unistd.h>
 #endif
+
+GST_DEBUG_CATEGORY_EXTERN (niceagent_debug);
+#define GST_CAT_DEFAULT niceagent_debug
 
 #define MAX_BUFFER_SIZE 65536
 
@@ -126,7 +131,7 @@ nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr,
   g_object_unref (gaddr);
 
   if (gret == FALSE) {
-    nice_debug ("tcp-pass: Failed to listen on port %d", nice_address_get_port(addr));
+    GST_WARNING ("tcp-pass: Failed to listen on port %d", nice_address_get_port(addr));
     g_socket_close (gsock, NULL);
     g_object_unref (gsock);
     return NULL;
@@ -218,15 +223,14 @@ socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
   TcpPassivePriv *priv = sock->priv;
 
   /*
-   * Accept new connection, TODO: dos prevention, reconnects etc 
+   * Accept new connection, TODO: dos prevention, reconnects etc
    */
   NiceSocket* new_socket = nice_tcp_passive_socket_accept (sock);
   if (!new_socket) {
-    nice_debug ("tcp-pass %p: Failed to accept new connection", sock);
+    GST_WARNING ("tcp-pass %p: Failed to accept new connection", sock);
     return -1;
   }
-  nice_debug ("tcp-pass %p: Accepted OK, got new established connection tcp-est %p", sock, new_socket);
-  
+
   priv->established_sockets = g_slist_append (priv->established_sockets, new_socket);
   return 0;
 }
@@ -243,7 +247,6 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
     gint sent_len = nice_socket_send(socket, to, len, buf);
     if (sent_len != 0)
     {
-      nice_debug("tcp-pass %p: Sent on socket, sent %d", sock, sent_len);
       return sent_len;
     }
   }
@@ -288,7 +291,7 @@ nice_tcp_passive_socket_accept (NiceSocket *socket)
   gsock = g_socket_accept (socket->fileno, NULL, NULL);
 
   if (gsock == NULL) {
-    nice_debug("tcp-pass %p: Accept failed", socket);
+    GST_WARNING("tcp-pass %p: Accept failed", socket);
     return NULL;
   }
 

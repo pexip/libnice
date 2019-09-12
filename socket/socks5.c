@@ -42,6 +42,8 @@
 # include "config.h"
 #endif
 
+#include <gst/gst.h>
+
 #include "socks5.h"
 
 #include <string.h>
@@ -49,6 +51,9 @@
 #ifndef G_OS_WIN32
 #include <unistd.h>
 #endif
+
+GST_DEBUG_CATEGORY_EXTERN (niceagent_debug);
+#define GST_CAT_DEFAULT niceagent_debug
 
 typedef enum {
   SOCKS_STATE_INIT,
@@ -179,7 +184,7 @@ socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
         gchar data[2];
         gint ret  = -1;
 
-        nice_debug ("Socks5 state Init");
+        GST_DEBUG ("Socks5 state Init");
 
         if (priv->base_socket)
           ret = nice_socket_recv (priv->base_socket, NULL, sizeof(data), data);
@@ -199,14 +204,14 @@ socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
                 if (priv->username)
                   ulen = strlen (priv->username);
                 if (ulen > 255) {
-                  nice_debug ("Socks5 username length > 255");
+                  GST_DEBUG ("Socks5 username length > 255");
                   goto error;
                 }
 
                 if (priv->password)
                   plen  = strlen (priv->password);
                 if (plen > 255) {
-                  nice_debug ("Socks5 password length > 255");
+                  GST_DEBUG ("Socks5 password length > 255");
                   goto error;
                 }
 
@@ -247,7 +252,7 @@ socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
         gchar data[2];
         gint ret  = -1;
 
-        nice_debug ("Socks5 state auth");
+        GST_DEBUG ("Socks5 state auth");
         if (priv->base_socket)
           ret = nice_socket_recv (priv->base_socket, NULL, sizeof(data), data);
 
@@ -269,7 +274,7 @@ socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
         gchar data[22];
         gint ret  = -1;
 
-        nice_debug ("Socks5 state connect");
+        GST_DEBUG ("Socks5 state connect");
         if (priv->base_socket)
           ret = nice_socket_recv (priv->base_socket, NULL, 4, data);
 
@@ -375,7 +380,7 @@ socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
     return 0;
   }
  error:
-  nice_debug ("Socks5 error");
+  GST_DEBUG ("Socks5 error");
   if (priv->base_socket)
     nice_socket_free (priv->base_socket);
   priv->base_socket = NULL;

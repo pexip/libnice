@@ -41,6 +41,7 @@
 #ifdef HAVE_CONFIG_H
 # include "config.h"
 #endif
+#include <gst/gst.h>
 
 #include "http.h"
 
@@ -52,6 +53,8 @@
 #include <unistd.h>
 #endif
 
+GST_DEBUG_CATEGORY_EXTERN (niceagent_debug);
+#define GST_CAT_DEFAULT niceagent_debug
 
 #define HTTP_USER_AGENT "libnice"
 
@@ -207,7 +210,7 @@ socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
   }
 
  retry:
-  nice_debug ("Receiving from HTTP proxy (state %d) : %d \n'%s'", priv->state, priv->recv_len, priv->recv_buf);
+  GST_DEBUG ("Receiving from HTTP proxy (state %d) : %d \n'%s'", priv->state, priv->recv_len, priv->recv_buf);
   switch (priv->state) {
     case HTTP_STATE_INIT:
       {
@@ -282,7 +285,7 @@ socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
         while (pos + 1 < priv->recv_len &&
             priv->recv_buf[pos] != '\r' && priv->recv_buf[pos+1] != '\n')
           pos++;
-        nice_debug ("pos = %d, len = %d", pos, priv->recv_len);
+        GST_DEBUG ("pos = %d, len = %d", pos, priv->recv_len);
         if (pos + 1 >= priv->recv_len)
           goto not_enough_data;
         pos += 2;
@@ -352,7 +355,7 @@ socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
   return 0;
 
  error:
-  nice_debug ("http error");
+  GST_DEBUG ("http error");
   if (priv->base_socket)
     nice_socket_free (priv->base_socket);
   priv->base_socket = NULL;

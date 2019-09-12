@@ -14,6 +14,7 @@ libsocket_sources = [
 
 libsocket_deps = [
   glib_deps,
+  gst_deps
 ]
 
 libsocket_includes = [

@@ -69,8 +69,6 @@ nice_candidate_set_username
 nice_candidate_get_username
 nice_candidate_set_password
 nice_candidate_get_password
-nice_debug_disable
-nice_debug_enable
 nice_interfaces_get_ip_for_interface
 nice_interfaces_get_local_interfaces
 nice_interfaces_get_local_ips

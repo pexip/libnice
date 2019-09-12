@@ -114,16 +114,13 @@ struct _Component
   gchar *stun_server_ip;          /* STUN server IP */
   guint stun_server_port;         /* STUN server port */
 
-  CandidatePair selected_pair; /**< independent from checklists, 
-				    see ICE 11.1. "Sending Media" (ID-19) */
+  CandidatePair selected_pair; /**< independent from checklists,
+                                  see ICE 11.1. "Sending Media" (ID-19) */
   NiceCandidate *restart_candidate; /**< for storing active remote candidate during a restart */
   NiceAgentRecvFunc g_source_io_cb; /**< function called on io cb */
   gpointer data;                    /**< data passed to the io function */
   GMainContext *ctx;                /**< context for data callbacks for this
                                        component */
-  NiceAgentLogFunc log_cb;
-  gpointer         log_data;
-
   guint min_port;
   guint max_port;
   guint min_tcp_active_port;
@@ -146,7 +143,7 @@ component_find_pair (Component *cmp, NiceAgent *agent, const gchar *lfoundation,
 gboolean
 component_restart (Component *cmp);
 
-void 
+void
 component_update_selected_pair (Component *component, NiceCandidate* local, NiceCandidate* remote, guint64 priority);
 
 NiceCandidate *
@@ -161,4 +158,3 @@ const char *component_state_to_string(NiceComponentState state);
 G_END_DECLS
 
 #endif /* _NICE_COMPONENT_H */
-

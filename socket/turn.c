@@ -41,6 +41,8 @@
 # include "config.h"
 #endif
 
+#include <gst/gst.h>
+
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -50,6 +52,9 @@
 #include "stun/stunagent.h"
 #include "stun/usages/timer.h"
 #include "agent-priv.h"
+
+GST_DEBUG_CATEGORY_EXTERN (niceagent_debug);
+#define GST_CAT_DEFAULT niceagent_debug
 
 #define STUN_END_TIMEOUT 8000
 #define STUN_MAX_MS_REALM_LEN 128 // as defined in [MS-TURN]
@@ -181,7 +186,7 @@ nice_turn_socket_new (GMainContext *ctx,
       compatibility == NICE_TURN_SOCKET_COMPATIBILITY_RFC5766) {
     stun_agent_init (&priv->agent, STUN_ALL_KNOWN_ATTRIBUTES,
         STUN_COMPATIBILITY_RFC5389,
-        STUN_AGENT_USAGE_LONG_TERM_CREDENTIALS | 
+        STUN_AGENT_USAGE_LONG_TERM_CREDENTIALS |
         STUN_AGENT_USAGE_NO_INDICATION_AUTH);
   } else if (compatibility == NICE_TURN_SOCKET_COMPATIBILITY_MSN) {
     stun_agent_init (&priv->agent, STUN_ALL_KNOWN_ATTRIBUTES,
@@ -321,8 +326,6 @@ socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
   NiceAddress recv_from;
   NiceSocket *dummy;
 
-  nice_debug ("received message on TURN socket");
-
   recv_len = nice_socket_recv (priv->base_socket, &recv_from,
       sizeof(recv_buf), (gchar *) recv_buf);
 
@@ -409,8 +412,8 @@ priv_add_permission_for_peer (TurnPriv *priv, const NiceAddress *peer)
 {
   gchar addrstring[INET6_ADDRSTRLEN];
   nice_address_to_string (peer, addrstring);
-  
-  nice_debug ("added permission for peer %s:%u", addrstring, nice_address_get_port(peer));
+
+  GST_DEBUG ("added permission for peer %s:%u", addrstring, nice_address_get_port(peer));
 
   priv->permissions =
       g_list_append (priv->permissions, nice_address_dup (peer));
@@ -489,15 +492,13 @@ check_for_pending_create_permissions (TurnPriv *priv)
     while (g_hash_table_iter_next (&iter, &key, &value)) {
       NiceAddress *to = key;
       gchar addrstring[INET6_ADDRSTRLEN];
-      
+
       nice_address_to_string (to, addrstring);
-      nice_debug ("starting pending createpermission request for address : %s:%u", addrstring, nice_address_get_port (to));
-      
+      GST_DEBUG ("starting pending createpermission request for address : %s:%u", addrstring, nice_address_get_port (to));
+
       priv_send_create_permission (priv, NULL, to);
       break;
     }
-  } else {
-    nice_debug ("can't start pending transactions as createpermission in progress");
   }
 }
 
@@ -511,7 +512,6 @@ socket_dequeue_all_data (TurnPriv *priv, const NiceAddress *to)
       SendData *data =
           (SendData *) g_queue_pop_head(send_queue);
 
-      nice_debug ("dequeuing data");
       nice_socket_send (priv->base_socket, &priv->server_addr, data->data_len, data->data);
 
       g_free (data->data);
@@ -630,17 +630,16 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
         !priv_has_permission_for_peer (priv, to)) {
       gchar addrstring[INET6_ADDRSTRLEN];
       nice_address_to_string (to, addrstring);
-      
-      nice_debug ("Dont have permission for peer %s:%u", addrstring, nice_address_get_port(to));
+
+      GST_DEBUG ("Dont have permission for peer %s:%u", addrstring, nice_address_get_port(to));
 
       if (priv->current_create_permission_msg == NULL) {
         priv_send_create_permission (priv, NULL, to);
       } else {
-        nice_debug ("Create permission in flight, not creating another");
+        GST_DEBUG ("Create permission in flight, not creating another");
       }
 
       /* enque data */
-      nice_debug ("enqueuing data to TURN server as permissions have not yet been set");
       socket_enqueue_data(priv, to, msg_len, (gchar *)buffer);
       return len;
     } else {
@@ -668,7 +667,7 @@ priv_forget_send_request (gpointer pointer)
   agent_lock (agent);
 
   if (g_source_is_destroyed (g_main_current_source ())) {
-    nice_debug ("Source was destroyed. "
+    GST_DEBUG ("Source was destroyed. "
         "Avoided race condition in turn.c:priv_forget_send_request");
     agent_unlock (agent);
     return FALSE;
@@ -695,7 +694,7 @@ priv_permission_timeout (gpointer data)
   TurnPriv *priv = (TurnPriv *) data;
   NiceAgent *agent = priv->nice_agent;
 
-  nice_debug ("Permission is about to timeout, schedule renewal");
+  GST_DEBUG ("Permission is about to timeout, schedule renewal");
 
   agent_lock (agent);
   /* remove all permissions for this agent (the permission for the peer
@@ -714,13 +713,13 @@ priv_binding_expired_timeout (gpointer data)
   GList *i;
   GSource *source = NULL;
 
-  nice_debug ("Permission expired, refresh failed");
+  GST_DEBUG ("Permission expired, refresh failed");
 
   agent_lock (agent);
 
   source = g_main_current_source ();
   if (g_source_is_destroyed (source)) {
-    nice_debug ("Source was destroyed. "
+    GST_DEBUG ("Source was destroyed. "
         "Avoided race condition in turn.c:priv_binding_expired_timeout");
     agent_unlock (agent);
     return FALSE;
@@ -773,13 +772,13 @@ priv_binding_timeout (gpointer data)
   GList *i;
   GSource *source = NULL;
 
-  nice_debug ("Permission is about to timeout, sending binding renewal");
+  GST_DEBUG ("Permission is about to timeout, sending binding renewal");
 
   agent_lock (agent);
 
   source = g_main_current_source ();
   if (g_source_is_destroyed (source)) {
-    nice_debug ("Source was destroyed. "
+    GST_DEBUG ("Source was destroyed. "
         "Avoided race condition in turn.c:priv_binding_timeout");
     agent_unlock (agent);
     return FALSE;
@@ -1007,7 +1006,6 @@ nice_turn_socket_parse_recv (NiceSocket *sock, NiceSocket **from_sock,
             socklen_t peer_len = sizeof(peer);
             NiceAddress to;
 
-            nice_debug ("got response for CreatePermission");
             stun_message_find_xor_addr (
                 &priv->current_create_permission_msg->message,
                 STUN_ATTRIBUTE_XOR_PEER_ADDRESS, (struct sockaddr *) &peer,
@@ -1296,7 +1294,7 @@ priv_retransmissions_tick (gpointer pointer)
 
   agent_lock (agent);
   if (g_source_is_destroyed (g_main_current_source ())) {
-    nice_debug ("Source was destroyed. "
+    GST_DEBUG ("Source was destroyed. "
         "Avoided race condition in turn.c:priv_retransmissions_tick");
     agent_unlock (agent);
     return FALSE;
@@ -1322,8 +1320,8 @@ priv_retransmissions_create_permission_tick (gpointer pointer)
 
   agent_lock (agent);
   if (g_source_is_destroyed (g_main_current_source ())) {
-    nice_debug ("Source was destroyed. Avoided race condition in "
-                "turn.c:priv_retransmissions_create_permission_tick");
+    GST_DEBUG ("Source was destroyed. Avoided race condition in "
+        "turn.c:priv_retransmissions_create_permission_tick");
     agent_unlock (agent);
     return FALSE;
   }

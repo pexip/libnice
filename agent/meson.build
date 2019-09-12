@@ -27,6 +27,7 @@ libagent_deps = [
   libnice_random_dep,
   libsocket_dep,
   libstun_dep,
+  gst_deps,
 ]
 
 libagent_cargs = [

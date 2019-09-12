@@ -61,17 +61,13 @@
 #include "stun/usages/turn.h"
 #include "stun/usages/ice.h"
 
-#ifdef HAVE_GUPNP
-#include <libgupnp-igd/gupnp-simple-igd-thread.h>
-#endif
-
 /* XXX: starting from ICE ID-18, Ta SHOULD now be set according
  *      to session bandwidth -> this is not yet implemented in NICE */
 
 #define NICE_AGENT_TIMER_TA_DEFAULT 20      /* timer Ta, msecs (impl. defined) */
 #define NICE_AGENT_TIMER_TR_DEFAULT 25000   /* timer Tr, msecs (impl. defined) */
 #define NICE_AGENT_TIMER_TR_MIN     15000   /* timer Tr, msecs (ICE ID-19) */
-#define NICE_AGENT_MAX_CONNECTIVITY_CHECKS_DEFAULT 80 /* see spec 5.7.3 RFC 5245 and 3.1.4.8.2.1 of MS-ICE2. 
+#define NICE_AGENT_MAX_CONNECTIVITY_CHECKS_DEFAULT 80 /* see spec 5.7.3 RFC 5245 and 3.1.4.8.2.1 of MS-ICE2.
                                                          We use the lower of the two suggested limits */
 #define NICE_AGENT_REGULAR_NOMINATION_TIMEOUT_DEFAULT 3000
 
@@ -86,7 +82,7 @@ struct _NiceAgent
   gint agent_mutex_count;
   GThread *agent_mutex_th;
   GRecMutex agent_mutex;          /* Mutex used for thread-safe lib */
-  
+
   GQueue *reliable_transport_events;
   GSource *event_source;
 
@@ -127,13 +123,6 @@ struct _NiceAgent
   NiceCompatibility turn_compatibility; /* property: TURN server compatibility mode */
   StunAgent stun_agent;            /* STUN agent */
   gboolean media_after_tick;       /* Received media after keepalive tick */
-#ifdef HAVE_GUPNP
-  GUPnPSimpleIgdThread* upnp;	   /* GUPnP Single IGD agent */
-  gboolean upnp_enabled;           /* whether UPnP discovery is enabled */
-  guint upnp_timeout;              /* UPnP discovery timeout */
-  GSList *upnp_mapping;            /* list of Candidates being mapped */
-  GSource *upnp_timer_source;      /* source of upnp timeout timer */
-#endif
   gchar *software_attribute;       /* SOFTWARE attribute */
   gboolean reliable;               /* property: reliable */
   /* XXX: add pointer to internal data struct for ABI-safe extensions */
