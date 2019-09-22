@@ -59,6 +59,7 @@ check_headers = [
   'stdbool.h',
   'arpa/inet.h',
   'net/in.h',
+  'net/if_arp.h',
   'ifaddrs.h',
 ]
 foreach h : check_headers
