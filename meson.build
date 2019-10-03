@@ -42,7 +42,7 @@ plugins_install_dir = '@0@/gstreamer-1.0'.format(install_dir)
 
 gir = find_program('g-ir-scanner', required : false)
 gnome = import('gnome')
-build_gir = gir.found()
+build_gir = gir.found() and not meson.is_cross_build()
 
 # config.h generation
 config_h_inc = include_directories('.')
