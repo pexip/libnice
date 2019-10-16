@@ -2839,7 +2839,7 @@ static gboolean priv_map_reply_to_conn_check_request (NiceAgent *agent, Stream *
           trans_found = TRUE;
         } else {
           /* case: STUN error, the check STUN context was freed */
-          GST_INFO_OBJECT (agent, "conncheck %p(%s) FAILED.", p, p->foundation);
+          GST_DEBUG_OBJECT (agent, "conncheck %p(%s) FAILED.", p, p->foundation);
           p->stun_message.buffer = NULL;
           p->stun_message.buffer_len = 0;
           trans_found = TRUE;
