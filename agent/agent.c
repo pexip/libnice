@@ -553,10 +553,20 @@ nice_agent_class_init (NiceAgentClass * klass)
           "Use aggressive nomination when controller",
           TRUE, G_PARAM_READWRITE));
 
-  g_object_class_install_property (gobject_class, PROP_REGULAR_NOMINATION_TIMEOUT, g_param_spec_uint ("regular-nomination-timeout", "Timeout (in ms) before regular nomination will select non-optimal media path", "Timeout (in ms) before regular nomination will select non-optimal media path", 1, 0xffffffff, NICE_AGENT_REGULAR_NOMINATION_TIMEOUT_DEFAULT,       /* Not construct time so ignored */
+  g_object_class_install_property (gobject_class, PROP_REGULAR_NOMINATION_TIMEOUT,
+      g_param_spec_uint ("regular-nomination-timeout",
+          "Timeout (in ms) before regular nomination will select non-optimal media path",
+          "Timeout (in ms) before regular nomination will select non-optimal media path",
+          1, 0xffffffff,
+          NICE_AGENT_REGULAR_NOMINATION_TIMEOUT_DEFAULT,       /* Not construct time so ignored */
           G_PARAM_READWRITE));
 
-  g_object_class_install_property (gobject_class, PROP_TIE_BREAKER, g_param_spec_uint64 ("tie-breaker", "Tie breaker value to send in connectivity checks", "Tie breaker value to send in connectivity checks", 0, 0xffffffffffffffffLL, 0,     /* Not construct time so ignored */
+  g_object_class_install_property (gobject_class, PROP_TIE_BREAKER,
+      g_param_spec_uint64 ("tie-breaker",
+          "Tie breaker value to send in connectivity checks",
+          "Tie breaker value to send in connectivity checks",
+          0, 0xffffffffffffffffLL,
+          0,     /* Not construct time so ignored */
           G_PARAM_READWRITE));
 
   /* install signals */
@@ -2077,6 +2087,14 @@ nice_agent_set_remote_candidates (NiceAgent * agent, guint stream_id,
   }
 
 
+  /*
+   * If we're not using trickle ICE on this stream then signal that
+   * all remote candidates have been seen for this component
+   */
+  if (!stream->trickle_ice) {
+    component->peer_gathering_done = TRUE;
+  }
+
   for (i = candidates; i && added >= 0; i = i->next) {
     NiceCandidate *d = (NiceCandidate *) i->data;
 
@@ -2986,6 +3004,53 @@ nice_agent_set_stream_max_tcp_queue_size (NiceAgent * agent,
 
 done:
   agent_unlock (agent);
+}
+
+void
+nice_agent_set_stream_trickle_ice (NiceAgent * agent,
+    guint stream_id,
+    gboolean trickle_ice)
+{
+  Stream *stream;
+
+  agent_lock (agent);
+  stream = agent_find_stream (agent, stream_id);
+
+  if (!stream) {
+    goto done;
+  }
+
+  GST_DEBUG_OBJECT (agent, "%u/*: setting trickle_ice to %s",
+      stream_id,
+      trickle_ice ? "TRUE" : "FALSE");
+  stream->trickle_ice = trickle_ice;
+
+done:
+  agent_unlock (agent);
+}
+
+NICE_EXPORT void
+nice_agent_end_of_candidates (
+  NiceAgent *agent,
+  guint stream_id,
+  guint component_id)
+{
+  Component *component;
+  Stream *stream;
+
+  agent_lock (agent);
+
+  if (agent_find_component (agent, stream_id, component_id,
+          &stream, &component)) {
+    GST_DEBUG_OBJECT (agent, "%u/%u: end-of-candidates", stream_id, component_id);
+    component->peer_gathering_done = TRUE;
+    conn_check_end_of_candidates (agent, stream, component);
+  } else {
+    GST_WARNING_OBJECT (agent, "%u/%u: end-of-candidates unknown stream/component", stream_id, component_id);
+  }
+
+  agent_unlock (agent);
+
 }
 
 void

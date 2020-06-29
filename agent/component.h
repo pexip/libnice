@@ -129,6 +129,7 @@ struct _Component
   gboolean enable_tcp_passive;
   gboolean enable_tcp_active;
   gboolean writable;
+  gboolean peer_gathering_done;
 };
 
 Component *

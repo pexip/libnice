@@ -63,6 +63,7 @@ stream_new (guint n_components)
   stream->n_components = n_components;
   stream->initial_binding_request_received = FALSE;
   stream->max_tcp_queue_size = NICE_STREAM_DEF_MAX_TCP_QUEUE;
+  stream->trickle_ice = FALSE;
   return stream;
 }
 
@@ -138,7 +139,7 @@ void stream_initialize_credentials (Stream *stream, NiceRNG *rng)
  * Resets the stream state to that of a ICE restarted
  * session.
  */
-gboolean 
+gboolean
 stream_restart (Stream *stream, NiceRNG *rng)
 {
   GSList *i;
@@ -150,10 +151,9 @@ stream_restart (Stream *stream, NiceRNG *rng)
 
   for (i = stream->components; i && res; i = i->next) {
     Component *component = i->data;
-    
+
     res = component_restart (component);
   }
-  
+
   return res;
 }
-

@@ -49,8 +49,8 @@ typedef struct _Stream Stream;
 
 G_BEGIN_DECLS
 
-/* Maximum and default sizes for ICE attributes, 
- * last updated from ICE ID-19 
+/* Maximum and default sizes for ICE attributes,
+ * last updated from ICE ID-19
  * (the below sizes include the terminating NULL): */
 
 #define NICE_STREAM_MAX_UFRAG   256 + 1  /* ufrag + NULL */
@@ -80,6 +80,7 @@ struct _Stream
   guint tick_counter;
   gboolean rtcp_mux;
   guint    max_tcp_queue_size;
+  gboolean trickle_ice;
 };
 
 
@@ -98,10 +99,9 @@ stream_find_component_by_id (const Stream *stream, guint id);
 void
 stream_initialize_credentials (Stream *stream, NiceRNG *rng);
 
-gboolean 
+gboolean
 stream_restart (Stream *stream, NiceRNG *rng);
 
 G_END_DECLS
 
 #endif /* _NICE_STREAM_H */
-

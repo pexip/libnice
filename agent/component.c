@@ -66,6 +66,7 @@ component_new (guint id)
   component->enable_tcp_passive = FALSE;
   component->enable_tcp_active = FALSE;
   component->writable = TRUE;
+  component->peer_gathering_done = FALSE;
   return component;
 }
 
@@ -100,7 +101,7 @@ component_free (Component *cmp)
     g_source_destroy (source);
     g_source_unref (source);
   }
- 
+
   for (i = cmp->incoming_checks; i; i = i->next) {
     IncomingCheck *icheck = i->data;
     g_free (icheck->username);
@@ -196,7 +197,7 @@ component_restart (Component *cmp)
 	nice_candidate_free (cmp->restart_candidate);
       cmp->restart_candidate = candidate;
     }
-    else 
+    else
       nice_candidate_free (candidate);
   }
   g_slist_free (cmp->remote_candidates),
@@ -218,7 +219,7 @@ component_restart (Component *cmp)
 /*
  * Changes the selected pair for the component to 'pair'. Does not
  * emit the "selected-pair-changed" signal.
- */ 
+ */
 void component_update_selected_pair (Component *component, NiceCandidate* local, NiceCandidate* remote, guint64 priority)
 {
   g_assert (component);
@@ -239,7 +240,7 @@ void component_update_selected_pair (Component *component, NiceCandidate* local,
 }
 
 /*
- * Finds a remote candidate with matching address and 
+ * Finds a remote candidate with matching address and
  * transport.
  *
  * @return pointer to candidate or NULL if not found
@@ -257,7 +258,7 @@ component_find_remote_candidate (const Component *component, const NiceAddress *
       return candidate;
 
   }
-  
+
   return NULL;
 }
 
@@ -334,4 +335,3 @@ const char* component_state_to_string(NiceComponentState state)
   }
   return "(invalid)";
 }
-

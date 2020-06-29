@@ -1463,6 +1463,16 @@ void conn_check_remote_candidates_set(NiceAgent *agent, guint stream_id, guint c
   component->incoming_checks = NULL;
 }
 
+/*
+ * Signal that all remote candidates have been received for the given component so we can now
+ * run normal ICE complete checks
+ */
+void conn_check_end_of_candidates (NiceAgent * agent, Stream *stream, Component * component)
+{
+  priv_update_check_list_failed_components (agent, stream);
+  priv_update_check_list_state_for_ready (agent, stream, component);
+}
+
 
 /*
  * Changes the selected pair for the component if 'pair' is nominated
@@ -1528,7 +1538,7 @@ static void priv_update_check_list_failed_components (NiceAgent *agent, Stream *
     /* note: all checks have failed
      * Set the component to FAILED only if it actually had remote candidates
      * that failed.. */
-    if (i == NULL && comp != NULL && comp->remote_candidates != NULL)
+    if (i == NULL && comp != NULL && comp->remote_candidates != NULL && comp->peer_gathering_done)
       agent_signal_component_state_change (agent,
                                            stream->id,
                                            (c + 1), /* component-id */

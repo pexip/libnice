@@ -803,6 +803,17 @@ nice_agent_set_stream_max_tcp_queue_size (
   guint stream_id,
   guint max_tcp_queue_size);
 
+NICE_EXPORT void
+nice_agent_set_stream_trickle_ice (
+  NiceAgent *agent,
+  guint stream_id,
+  gboolean trickle_ice);
+
+NICE_EXPORT void
+nice_agent_end_of_candidates (
+  NiceAgent *agent,
+  guint stream_id,
+  guint component_id);
 
 /**
  * nice_agent_set_software:
