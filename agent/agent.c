@@ -1622,7 +1622,7 @@ nice_agent_gather_candidates (NiceAgent * agent, guint stream_id)
           nice_address_to_string (addr, ip);
           GST_WARNING_OBJECT (agent,
               "%u/%u: Unable to gather tcp-act host candidate for address %s",
-              agent, stream->id, component->id, ip);
+              stream->id, component->id, ip);
           ret = FALSE;
           goto error;
         }
@@ -1932,6 +1932,96 @@ nice_agent_add_stream_local_address_from_string (NiceAgent * agent,
   return nice_agent_add_stream_local_address (agent, stream_id, &nice_addr);
 }
 
+/* Recompute foundations of all candidate pairs from a given stream
+ * having a specific remote candidate, and eventually update the
+ * priority of the selected pair as well.
+ */
+static void priv_update_pair_foundations (NiceAgent *agent,
+    guint stream_id, guint component_id, NiceCandidate *remote)
+{
+  Stream *stream;
+  Component *component;
+
+  if (agent_find_component (agent, stream_id, component_id, &stream,
+      &component)) {
+    GSList *i;
+
+    for (i = stream->conncheck_list; i; i = i->next) {
+      CandidateCheckPair *pair = i->data;
+
+      if (pair->remote == remote) {
+        gchar foundation[NICE_CANDIDATE_PAIR_MAX_FOUNDATION+1];
+
+        g_snprintf (foundation, NICE_CANDIDATE_PAIR_MAX_FOUNDATION, "%s:%s",
+            pair->local->foundation, pair->remote->foundation);
+
+        if (strncmp (pair->foundation, foundation, NICE_CANDIDATE_PAIR_MAX_FOUNDATION)) {
+
+          g_strlcpy (pair->foundation, foundation, NICE_CANDIDATE_PAIR_MAX_FOUNDATION);
+          GST_DEBUG_OBJECT (agent, "%u/%u: Updating pair %p foundation to '%s'",
+              stream_id, component_id, pair, pair->foundation);
+
+          if (pair->state == NICE_CHECK_SUCCEEDED) {
+            conn_check_unfreeze_related (agent, stream, pair);
+          }
+
+          if (component->selected_pair.local == pair->local &&
+              component->selected_pair.remote == pair->remote) {
+            /* the foundation update of the selected pair also implies
+             * an update of its priority. stun_priority doesn't change
+             * because only the remote candidate foundation is modified.
+             */
+            GST_DEBUG_OBJECT (agent, "%u/%u : pair %p is the selected pair, updating "
+                "its priority.", stream_id, component_id, pair);
+            component->selected_pair.priority = pair->priority;
+
+            agent_signal_new_selected_pair (agent, pair->stream_id,
+              component->id, pair->local, pair->remote);
+          }
+        }
+      }
+    }
+  }
+}
+
+/*
+ * After recomputing priorities during trickle ICE this method checks if we
+ * have a new highest priority pair that should be used as the selected
+ * pair
+ */
+static void
+priv_check_for_new_selected_pair (
+  NiceAgent *agent,
+  guint stream_id,
+  guint component_id)
+{
+  Stream *stream;
+  Component *component;
+  CandidateCheckPair *pair;
+  GSList *i;
+
+  if (agent_find_component (agent, stream_id, component_id, &stream,
+      &component)) {
+
+    for (i = stream->conncheck_list; i; i = i->next) {
+      pair = i->data;
+      if (pair->component_id == component_id &&
+          pair->state == NICE_CHECK_SUCCEEDED &&
+          pair->valid_pair != NULL &&
+          pair->valid_pair->nominated) {
+
+        if (pair->priority > component->selected_pair.priority) {
+          GST_INFO_OBJECT (agent, "%u/%u: New trickle candidate has promoted %p as the selected pair",
+              stream_id, component_id, pair);
+          conn_check_update_selected_pair (agent, component, pair->valid_pair);
+        }
+
+        break;
+      }
+    }
+  }
+}
+
 static gboolean
 priv_add_remote_candidate (NiceAgent * agent,
     guint stream_id,
@@ -1944,21 +2034,87 @@ priv_add_remote_candidate (NiceAgent * agent,
     const gchar * username, const gchar * password, const gchar * foundation)
 {
   Component *component;
+  Stream *stream;
   NiceCandidate *candidate;
+  CandidateCheckPair *pair;
 
-  if (!agent_find_component (agent, stream_id, component_id, NULL, &component))
+  if (!agent_find_component (agent, stream_id, component_id, &stream, &component))
     return FALSE;
 
   /* step: check whether the candidate already exists */
   candidate = component_find_remote_candidate (component, addr, transport);
   if (candidate) {
-    gchar tmpbuf[INET6_ADDRSTRLEN];
-    nice_address_to_string (addr, tmpbuf);
-    GST_DEBUG_OBJECT (agent,
-        "%u/%u: Not updating existing remote candidate with addr [%s]:%u"
-        " U/P '%s'/'%s' prio: %u type:%d transport:%d", stream_id, component_id,
-        tmpbuf, nice_address_get_port (addr), username, password, priority,
-        type, transport);
+    gboolean updated = FALSE;
+
+    if (stream->trickle_ice) {
+      if (candidate->type == NICE_CANDIDATE_TYPE_PEER_REFLEXIVE) {
+        GST_DEBUG_OBJECT (agent, "%u/%u: Updating existing prflx candidate to %s",
+            stream_id, component_id, candidate_type_to_string(type));
+
+        candidate->type = type;
+      }
+
+      if (candidate && candidate->type == type) {
+        gchar tmpbuf[INET6_ADDRSTRLEN];
+        nice_address_to_string (addr, tmpbuf);
+        GST_DEBUG_OBJECT (agent, "%u/%u: Updating existing remote candidate with addr [%s]:%u"
+            " U/P '%s'/'%s' prio: %08x",
+            stream_id, component_id,
+            tmpbuf, nice_address_get_port (addr),
+            username, password, priority);
+
+        updated = TRUE;
+
+        if (base_addr)
+          candidate->base_addr = *base_addr;
+        candidate->priority = priority;
+        if (foundation)
+          g_strlcpy(candidate->foundation, foundation,
+              NICE_CANDIDATE_MAX_FOUNDATION);
+
+        if (username) {
+          if (candidate->username == NULL)
+            candidate->username = g_strdup (username);
+          else if (g_strcmp0 (username, candidate->username))
+            GST_WARNING_OBJECT (agent, "%u/%u: Candidate username '%s' is not allowed "
+                "to change to '%s' now (ICE restart only).",
+                stream_id, component_id,
+                candidate->username, username);
+        }
+        if (password) {
+          if (candidate->password == NULL)
+            candidate->password = g_strdup (password);
+          else if (g_strcmp0 (password, candidate->password))
+            GST_WARNING_OBJECT (agent, "%u/%u: Candidate password '%s' is not allowed "
+                "to change to '%s' now (ICE restart only).",
+                stream_id, component_id,
+                candidate->password, password);
+        }
+
+        /* since the type of the existing candidate may have changed,
+         * the pairs priority and foundation related to this candidate need
+         * to be recomputed...
+         */
+        conn_check_recalculate_pair_priorities (agent);
+        priv_update_pair_foundations (agent, stream_id, component_id, candidate);
+
+        /* ... and maybe we now have another nominated pair with a higher
+         * priority as the result of this priorities update.
+         */
+        priv_check_for_new_selected_pair (agent, stream_id, component_id);
+        conn_check_update_check_list_state_for_ready (agent, stream, component);
+      }
+
+      if (!updated) {
+        gchar tmpbuf[INET6_ADDRSTRLEN];
+        nice_address_to_string (addr, tmpbuf);
+        GST_DEBUG_OBJECT (agent,
+            "%u/%u: Not updating existing remote candidate with addr [%s]:%u"
+            " U/P '%s'/'%s' prio: %u type:%s transport:%d", stream_id, component_id,
+            tmpbuf, nice_address_get_port (addr), username, password, priority,
+            candidate_type_to_string(type), transport);
+      }
+    }
   } else {
     /* case 2: add a new candidate */
 

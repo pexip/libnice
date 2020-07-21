@@ -68,7 +68,6 @@ GST_DEBUG_CATEGORY_EXTERN (niceagent_debug);
 
 static const char* priv_state_to_string(NiceCheckState state);
 static void priv_update_check_list_failed_components (NiceAgent *agent, Stream *stream);
-static void priv_update_check_list_state_for_ready (NiceAgent *agent, Stream *stream, Component *component);
 static guint priv_prune_pending_checks (NiceAgent *agent, Stream *stream, guint component_id);
 static gboolean priv_schedule_triggered_check (NiceAgent *agent, Stream *stream, Component *component, NiceSocket *local_socket, NiceCandidate *remote_cand, gboolean use_candidate);
 static void priv_mark_pair_nominated (NiceAgent *agent, Stream *stream, Component *component, NiceSocket *local_socket, NiceCandidate *remotecand);
@@ -107,12 +106,13 @@ static void priv_print_check_pair (NiceAgent* agent, Stream* stream, CandidateCh
       addr_str, nice_address_get_port (&p->remote->addr),
       candidate_transport_to_string (p->remote->transport));
 
-  GST_DEBUG_OBJECT (agent, "%u/%u:   %s %s -> %s %s nom=%s",
+  GST_DEBUG_OBJECT (agent, "%u/%u:   %s %s -> %s %s nom=%s prio:%" G_GUINT64_FORMAT,
       stream->id, p->component_id,
       p->foundation,
       lcand_str, rcand_str,
       priv_state_to_string (p->state),
-      p->nominated ? "YES" : "NO");
+      p->nominated ? "YES" : "NO",
+    p->priority);
 
   g_free (lcand_str);
   g_free (rcand_str);
@@ -504,7 +504,7 @@ static guint priv_unfreeze_checks_for_valid_pairs (NiceAgent* agent, Stream* str
  * See sect 7.1.3.2.3 (Updating Pair States) of RFC 5245
  *
  */
-static void priv_conn_check_unfreeze_related (NiceAgent *agent, Stream *stream, CandidateCheckPair *ok_check)
+void conn_check_unfreeze_related (NiceAgent *agent, Stream *stream, CandidateCheckPair *ok_check)
 {
   GSList *i;
 
@@ -930,7 +930,7 @@ static gboolean priv_conn_check_tick_unlocked (gpointer pointer)
       priv_update_check_list_failed_components (agent, stream);
       for (j = stream->components; j; j = j->next) {
         Component *component = j->data;
-        priv_update_check_list_state_for_ready (agent, stream, component);
+        conn_check_update_check_list_state_for_ready (agent, stream, component);
       }
     }
 
@@ -1470,7 +1470,7 @@ void conn_check_remote_candidates_set(NiceAgent *agent, guint stream_id, guint c
 void conn_check_end_of_candidates (NiceAgent * agent, Stream *stream, Component * component)
 {
   priv_update_check_list_failed_components (agent, stream);
-  priv_update_check_list_state_for_ready (agent, stream, component);
+  conn_check_update_check_list_state_for_ready (agent, stream, component);
 }
 
 
@@ -1479,10 +1479,16 @@ void conn_check_end_of_candidates (NiceAgent * agent, Stream *stream, Component 
  * and has higher priority than the currently selected pair. See
  * ICE sect 11.1.1. "Procedures for Full Implementations" (ID-19).
  */
-static gboolean priv_update_selected_pair (NiceAgent *agent, Component *component, CandidateCheckPair *pair)
+gboolean
+conn_check_update_selected_pair (NiceAgent *agent, Component *component, CandidateCheckPair *pair)
 {
   g_assert (component);
   g_assert (pair);
+
+  GST_DEBUG_OBJECT (agent, "%u/%u: Checking for updated selected pair (old-prio:%" G_GUINT64_FORMAT " prio:%" G_GUINT64_FORMAT ").",
+      pair->local->stream_id, component->id,
+      component->selected_pair.priority, pair->priority);
+
   if (pair->priority > component->selected_pair.priority) {
     GST_DEBUG_OBJECT (agent, "%u/%u: changing selected pair to %p(%s) "
         "(old-prio:%" G_GUINT64_FORMAT " prio:%" G_GUINT64_FORMAT ").",
@@ -1557,7 +1563,8 @@ static void priv_update_check_list_failed_components (NiceAgent *agent, Stream *
  *
  * Sends a component state changesignal via 'agent'.
  */
-static void priv_update_check_list_state_for_ready (NiceAgent *agent, Stream *stream, Component *component)
+void
+conn_check_update_check_list_state_for_ready (NiceAgent *agent, Stream *stream, Component *component)
 {
   GSList *i;
   guint succeeded = 0, nominated = 0;
@@ -1629,8 +1636,8 @@ static void priv_mark_pair_nominated (NiceAgent *agent, Stream *stream, Componen
               stream->id, component->id, valid_pair, valid_pair->foundation);
           valid_pair->nominated = TRUE;
 
-          priv_update_selected_pair (agent, component, pair->valid_pair);
-          priv_update_check_list_state_for_ready (agent, stream, component);
+          conn_check_update_selected_pair (agent, component, pair->valid_pair);
+          conn_check_update_check_list_state_for_ready (agent, stream, component);
 
         } else {
           /*
@@ -2202,6 +2209,26 @@ static guint priv_prune_pending_checks_regular_nomination (NiceAgent *agent, Str
   return in_progress;
 }
 
+static gboolean
+priv_attempt_to_cancel_pair (NiceAgent *agent, Stream *stream, Component *component, CandidateCheckPair *p)
+{
+  if (stream->trickle_ice && !component->peer_gathering_done) {
+    /*
+     * For trickle ICE we don't want to cancel checks until we are sure we have all the
+     * remote candidate type and priority.
+    */
+    GST_DEBUG_OBJECT (agent, "%u/%u: Not cancelling check-pair %p (%s:%s) as we haven't seen all candidates yet",
+        stream->id, component->id, p, p->local->foundation, p->remote->foundation);
+    return FALSE;
+  } else {
+    /* Not trickle or we've seen all remote candidates, we can always cancel */
+    GST_DEBUG_OBJECT (agent, "%u/%u: cancelling check-pair %p (%s:%s)",
+        stream->id, component->id, p, p->local->foundation, p->remote->foundation);
+    priv_set_pair_state (agent, p, NICE_CHECK_CANCELLED);
+    return TRUE;
+  }
+}
+
 static guint priv_prune_pending_checks_aggressive_or_controlled (NiceAgent *agent, Stream *stream, guint component_id)
 {
   GSList *i;
@@ -2209,7 +2236,7 @@ static guint priv_prune_pending_checks_aggressive_or_controlled (NiceAgent *agen
   guint in_progress = 0;
   CandidateCheckPair *highest_nominated_pair = NULL;
   gboolean prune_all_checks = FALSE;
-
+  Component *component = stream_find_component_by_id (stream, component_id);
 
   for (i = stream->valid_list; i; i = i->next) {
     CandidateCheckPair *p = i->data;
@@ -2225,6 +2252,7 @@ static guint priv_prune_pending_checks_aggressive_or_controlled (NiceAgent *agen
   GST_DEBUG_OBJECT (agent, "%u/%u: Pruning pending checks. Highest nominated pair %s priority "
       "is %" G_GUINT64_FORMAT,
       stream->id, component_id, highest_nominated_pair->foundation, highest_nominated_priority);
+  priv_print_check_list (agent, stream, stream->conncheck_list, "Check list (before pruning)");
 
   /*
    * For Microsoft TCP once we have a nominated RTP pair then cancel all outstanding pairs for any
@@ -2260,12 +2288,16 @@ static guint priv_prune_pending_checks_aggressive_or_controlled (NiceAgent *agen
       if (p->state == NICE_CHECK_FROZEN ||
           p->state == NICE_CHECK_WAITING) {
         if (!controlling_microsoft) {
-          priv_set_pair_state (agent, p, NICE_CHECK_CANCELLED);
+          if (!priv_attempt_to_cancel_pair (agent, stream, component, p)) {
+            in_progress++;
+          }
         } else {
           /* Microsoft mode only cancel if it's lower priority */
           if ((highest_nominated_priority != 0 && p->priority < highest_nominated_priority ) ||
               prune_all_checks) {
-            priv_set_pair_state (agent, p, NICE_CHECK_CANCELLED);
+            if (!priv_attempt_to_cancel_pair (agent, stream, component, p)) {
+              in_progress++;
+            }
           } else {
             GST_DEBUG_OBJECT (agent, "%u/%u: pair %p(%s) kept %s because microsoft mode and priority %"
                 G_GUINT64_FORMAT " is higher than currently nominated pair %s %"
@@ -2283,9 +2315,12 @@ static guint priv_prune_pending_checks_aggressive_or_controlled (NiceAgent *agen
         if ((highest_nominated_priority != 0 && p->priority < highest_nominated_priority ) ||
             prune_all_checks ||
             (highest_nominated_pair != NULL && agent->compatibility == NICE_COMPATIBILITY_OC2007R2 && !agent->controlling_mode)) {
-          p->stun_message.buffer = NULL;
-          p->stun_message.buffer_len = 0;
-          priv_set_pair_state (agent, p, NICE_CHECK_CANCELLED);
+          if (priv_attempt_to_cancel_pair (agent, stream, component, p)) {
+            p->stun_message.buffer = NULL;
+            p->stun_message.buffer_len = 0;
+          } else {
+            in_progress++;
+          }
         } else {
           /* We must keep the higher priority pairs running because if a udp
            * packet was lost, we might end up using a bad candidate */
@@ -2299,6 +2334,7 @@ static guint priv_prune_pending_checks_aggressive_or_controlled (NiceAgent *agen
     }
   }
 
+  priv_print_check_list (agent, stream, stream->conncheck_list, "Check list (after pruning)");
   return in_progress;
 }
 
@@ -2362,7 +2398,7 @@ static gboolean priv_schedule_triggered_check (NiceAgent *agent, Stream *stream,
         GST_DEBUG_OBJECT (agent, "Skipping triggered check, already completed..");
         /* note: this is a bit unsure corner-case -- let's do the
            same state update as for processing responses to our own checks */
-        priv_update_check_list_state_for_ready (agent, stream, component);
+        conn_check_update_check_list_state_for_ready (agent, stream, component);
 
         /* note: to take care of the controlling-controlling case in
          *       aggressive nomination mode, send a new triggered
@@ -2531,7 +2567,7 @@ static CandidateCheckPair *priv_create_peer_reflexive_pair (NiceAgent *agent, gu
  * Recalculates priorities of all candidate pairs. This
  * is required after a conflict in ICE roles.
  */
-static void priv_recalculate_pair_priorities (NiceAgent *agent)
+void conn_check_recalculate_pair_priorities (NiceAgent *agent)
 {
   GSList *i, *j;
 
@@ -2562,7 +2598,7 @@ static void priv_check_for_role_conflict (NiceAgent *agent, gboolean control)
     agent->controlling_mode = control;
     /* the pair priorities depend on the roles, so recalculation
      * is needed */
-    priv_recalculate_pair_priorities (agent);
+    conn_check_recalculate_pair_priorities (agent);
   }
   else
     GST_DEBUG_OBJECT (agent, "Role conflict, agent role already changed to %d.", control);
@@ -2705,7 +2741,7 @@ static CandidateCheckPair* priv_process_response_check_for_peer_reflexive(NiceAg
    */
   priv_add_pair_to_valid_list (agent, stream, component, valid_pair, p);
   priv_set_pair_state (agent, p, NICE_CHECK_SUCCEEDED);
-  priv_conn_check_unfreeze_related (agent, stream, p);
+  conn_check_unfreeze_related (agent, stream, p);
 
   return valid_pair;
 }
@@ -2787,7 +2823,7 @@ static gboolean priv_map_reply_to_conn_check_request (NiceAgent *agent, Stream *
              */
             priv_add_pair_to_valid_list (agent, stream, component, p, p);
             priv_set_pair_state (agent, p, NICE_CHECK_SUCCEEDED);
-            priv_conn_check_unfreeze_related (agent, stream, p);
+            conn_check_unfreeze_related (agent, stream, p);
             valid_pair = p;
           } else {
             valid_pair = priv_process_response_check_for_peer_reflexive(agent,
@@ -2826,12 +2862,12 @@ static gboolean priv_map_reply_to_conn_check_request (NiceAgent *agent, Stream *
           }
 
           if (valid_pair->nominated == TRUE) {
-            priv_update_selected_pair (agent, component, valid_pair);
+            conn_check_update_selected_pair (agent, component, valid_pair);
           }
 
           /* step: update pair states (ICE 7.1.2.2.3 "Updating pair
              states" and 8.1.2 "Updating States", ID-19) */
-          priv_update_check_list_state_for_ready (agent, stream, component);
+          conn_check_update_check_list_state_for_ready (agent, stream, component);
 
           trans_found = TRUE;
         } else if (res == STUN_USAGE_ICE_RETURN_ROLE_CONFLICT) {
