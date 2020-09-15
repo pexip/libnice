@@ -181,7 +181,7 @@ component_find_pair (Component *cmp, NiceAgent *agent, const gchar *lfoundation,
  * Resets the component state to that of a ICE restarted
  * session.
  */
-gboolean
+void
 component_restart (Component *cmp)
 {
   GSList *i;
@@ -194,7 +194,7 @@ component_restart (Component *cmp)
      *       9.1.1.1. "ICE Restarts" (ID-19) */
     if (candidate == cmp->selected_pair.remote) {
       if (cmp->restart_candidate)
-	nice_candidate_free (cmp->restart_candidate);
+        nice_candidate_free (cmp->restart_candidate);
       cmp->restart_candidate = candidate;
     }
     else
@@ -213,7 +213,8 @@ component_restart (Component *cmp)
 
   /* note: component state managed by agent */
 
-  return TRUE;
+  /* Reset the priority to 0 to make sure we get a new pair */
+  cmp->selected_pair.priority = 0;
 }
 
 /*

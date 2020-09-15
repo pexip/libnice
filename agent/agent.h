@@ -691,6 +691,7 @@ nice_agent_get_remote_candidates (
   guint stream_id,
   guint component_id);
 
+
 /**
  * nice_agent_restart:
  * @agent: The #NiceAgent Object
@@ -702,10 +703,31 @@ nice_agent_get_remote_candidates (
  *
  * Returns: %TRUE on success %FALSE on error
  **/
-NICE_EXPORT gboolean
+gboolean
 nice_agent_restart (
   NiceAgent *agent);
 
+/**
+ * nice_agent_restart_stream:
+ * @agent: The #NiceAgent Object
+ * @stream_id: The ID of the stream
+ *
+ * Restarts a single stream as defined in RFC 5245. This function
+ * needs to be called both when initiating (ICE spec section 9.1.1.1.
+ * "ICE Restarts"), as well as when reacting (spec section 9.2.1.1.
+ * "Detecting ICE Restart") to a restart.
+ *
+ * Unlike nice_agent_restart(), this applies to a single stream. It also
+ * does not generate a new tie breaker.
+ *
+ * Returns: %TRUE on success %FALSE on error
+ *
+ * Since: 0.1.6
+ **/
+gboolean
+nice_agent_restart_stream (
+  NiceAgent *agent,
+  guint stream_id);
 
 /**
  * nice_agent_attach_recv: (skip)

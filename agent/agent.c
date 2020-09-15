@@ -2036,7 +2036,6 @@ priv_add_remote_candidate (NiceAgent * agent,
   Component *component;
   Stream *stream;
   NiceCandidate *candidate;
-  CandidateCheckPair *pair;
 
   if (!agent_find_component (agent, stream_id, component_id, &stream, &component))
     return FALSE;
@@ -2495,33 +2494,55 @@ nice_agent_get_remote_candidates (NiceAgent * agent,
   return ret;
 }
 
-
 gboolean
-nice_agent_restart (NiceAgent * agent)
+nice_agent_restart (NiceAgent *agent)
 {
   GSList *i;
-  gboolean res = TRUE;
 
   agent_lock (agent);
-
-  /* step: clean up all connectivity checks */
-  conn_check_prune_all_streams (agent);
 
   /* step: regenerate tie-breaker value */
   priv_generate_tie_breaker (agent);
 
-  for (i = agent->streams; i && res; i = i->next) {
+  for (i = agent->streams; i; i = i->next) {
     Stream *stream = i->data;
 
     /* step: reset local credentials for the stream and
      * clean up the list of remote candidates */
-    res = stream_restart (stream, agent->rng);
+    stream_restart (agent, stream, agent->rng);
   }
 
   agent_unlock (agent);
-  return res;
+  return TRUE;
 }
 
+gboolean
+nice_agent_restart_stream (NiceAgent *agent,
+    guint stream_id)
+{
+  gboolean res = FALSE;
+  Stream *stream;
+
+  agent_lock (agent);
+
+  stream = agent_find_stream (agent, stream_id);
+  if (!stream) {
+    GST_WARNING_OBJECT (agent,
+        "Could not find stream %u for ICE restart", stream_id);
+    goto done;
+  }
+
+  GST_INFO_OBJECT (agent, "Restarting stream %u", stream_id);
+
+  /* step: reset local credentials for the stream and
+   * clean up the list of remote candidates */
+  stream_restart (agent, stream, agent->rng);
+
+  res = TRUE;
+ done:
+  agent_unlock (agent);
+  return res;
+}
 
 static void
 nice_agent_dispose (GObject * object)
