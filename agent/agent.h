@@ -703,7 +703,7 @@ nice_agent_get_remote_candidates (
  *
  * Returns: %TRUE on success %FALSE on error
  **/
-gboolean
+NICE_EXPORT gboolean
 nice_agent_restart (
   NiceAgent *agent);
 
@@ -724,7 +724,7 @@ nice_agent_restart (
  *
  * Since: 0.1.6
  **/
-gboolean
+NICE_EXPORT gboolean
 nice_agent_restart_stream (
   NiceAgent *agent,
   guint stream_id);
