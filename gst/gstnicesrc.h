@@ -73,6 +73,7 @@ struct _GstNiceSrc
   gboolean unlocked;
   GSource *idle_source;
   GstCaps *caps;
+  GHashTable *socket_addresses;
 };
 
 typedef struct _GstNiceSrcClass GstNiceSrcClass;
