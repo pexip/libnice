@@ -225,6 +225,107 @@ gst_nice_src_class_init (GstNiceSrcClass *klass)
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
+static guint
+gst_nice_src_data_hash(const char* bytes, size_t length, guint h)
+{
+  /* This was copied from glib byte array, and can probably be optimized
+     signifcantly, e.g by hashing words (or SIMD) instead of bytes */
+  const signed char *p, *e;
+  if (h == 0)
+  {
+    h = 5381;
+  }
+  for (p = (signed char *)bytes, e = (signed char *)(bytes + length); p != e; p++)
+  {
+    h = (h << 5) + h + *p;
+  }
+  return h;
+}
+
+static guint
+gst_nice_src_address_hash (gconstpointer key)
+{
+  const NiceAddress *from = (NiceAddress *)key;
+
+  guint hash = gst_nice_src_data_hash((gpointer)&from->s.addr.sa_family, sizeof(from->s.addr.sa_family), 0);
+
+  switch (from->s.addr.sa_family) {
+    case AF_INET:
+      hash = gst_nice_src_data_hash((gpointer)&from->s.ip4, sizeof (from->s.ip4), hash);
+      break;
+    case AF_INET6:
+      hash = gst_nice_src_data_hash((gpointer)&from->s.ip6, sizeof (from->s.ip6), hash);
+      break;
+    default:
+      GST_ERROR_OBJECT (from, "Unknown address family");
+      break;
+  }
+
+  return hash;
+}
+
+static GSocketAddress*
+gst_nice_src_gsocket_addr_create_or_retrieve (GstNiceSrc *src,
+                                              const NiceAddress *native_addr)
+{
+  GSocketAddress *result = g_hash_table_lookup(src->socket_addresses,
+                                               native_addr);
+  if (G_UNLIKELY(result == NULL)) {
+    /* Convert and insert into hash table if it is not present already */
+    switch (native_addr->s.addr.sa_family) {
+      case AF_INET:
+        result = g_socket_address_new_from_native ((gpointer)&native_addr->s.ip4,
+                                                   sizeof (native_addr->s.ip4));
+        break;
+      case AF_INET6:
+        result = g_socket_address_new_from_native ((gpointer)&native_addr->s.ip6,
+                                                   sizeof (native_addr->s.ip6));
+        break;
+      default:
+        GST_ERROR_OBJECT (src, "Unknown address family");
+        break;
+    }
+
+    if (G_UNLIKELY(result == NULL)) {
+        GST_ERROR_OBJECT (src, "Could not create address gobject");
+        return result;
+    }
+
+    NiceAddress *key = g_slice_new(NiceAddress);
+    memcpy(key, native_addr, sizeof(NiceAddress));
+
+    gst_object_ref(result);
+    g_hash_table_insert(src->socket_addresses, key, result);
+  } else {
+    gst_object_ref(result);
+  }
+  return result;
+}
+
+static gboolean
+gst_nice_src_nice_address_compare (gconstpointer a, gconstpointer b)
+{
+    const NiceAddress *a_addr = (const NiceAddress*)a;
+    const NiceAddress *b_addr = (const NiceAddress*)b;
+
+    if ((a_addr->s.addr.sa_family == b_addr->s.addr.sa_family))
+    {
+      switch (a_addr->s.addr.sa_family) {
+        case AF_INET:
+          return memcmp(&a_addr->s.ip4, &b_addr->s.ip4, sizeof (a_addr->s.ip4)) == 0;
+        case AF_INET6:
+          return memcmp(&a_addr->s.ip6, &b_addr->s.ip6, sizeof (a_addr->s.ip6)) == 0;
+      }
+    }
+    return FALSE;
+}
+
+static void
+gst_nice_src_destroy_hash_key(void *key)
+{
+  g_slice_free(NiceAddress, key);
+}
+
 static void
 gst_nice_src_init (GstNiceSrc *src)
 {
@@ -240,6 +341,10 @@ gst_nice_src_init (GstNiceSrc *src)
   src->idle_source = NULL;
   src->outbufs = g_queue_new ();
   src->caps = gst_caps_new_any ();
+  src->socket_addresses = g_hash_table_new_full(gst_nice_src_address_hash,
+                                                gst_nice_src_nice_address_compare,
+                                                gst_nice_src_destroy_hash_key,
+                                                gst_object_unref);
 }
 
 static void
@@ -270,23 +375,13 @@ gst_nice_src_read_callback (NiceAgent *agent,
   gst_buffer_fill (buffer, 0, buf, len);
 
   if (from != NULL) {
-    GSocketAddress * saddr;
-    switch (from->s.addr.sa_family) {
-      case AF_INET:
-        if ((saddr = g_socket_address_new_from_native ((gpointer)&from->s.ip4, sizeof (from->s.ip4))) != NULL) {
-          gst_buffer_add_net_address_meta (buffer, saddr);
-          g_object_unref (saddr);
-        }
-        break;
-      case AF_INET6:
-        if ((saddr = g_socket_address_new_from_native ((gpointer)&from->s.ip6, sizeof (from->s.ip6))) != NULL) {
-          gst_buffer_add_net_address_meta (buffer, saddr);
-          g_object_unref (saddr);
-        }
-        break;
-      default:
-        GST_ERROR_OBJECT (nicesrc, "Unknown address family");
-        break;
+    GSocketAddress * saddr = gst_nice_src_gsocket_addr_create_or_retrieve(
+      nicesrc, from);
+    if (saddr != NULL) {
+      gst_buffer_add_net_address_meta (buffer, saddr);
+      g_object_unref (saddr);
+    } else {
+      GST_ERROR_OBJECT (nicesrc, "Could not convert address to GSocketAddress");
     }
   }
 #else
@@ -488,6 +583,10 @@ gst_nice_src_dispose (GObject *object)
   if (src->outbufs)
     g_queue_free_full (src->outbufs, (GDestroyNotify)gst_buffer_unref);
   src->outbufs = NULL;
+
+  g_hash_table_remove_all(src->socket_addresses);
+  g_hash_table_unref(src->socket_addresses);
+  src->socket_addresses = NULL;
 
   gst_caps_replace (&src->caps, NULL);
 
