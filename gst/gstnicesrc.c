@@ -254,6 +254,7 @@ gst_nice_src_read_callback (NiceAgent *agent,
 {
   GstBaseSrc *basesrc = GST_BASE_SRC (data);
   GstNiceSrc *nicesrc = GST_NICE_SRC (basesrc);
+  GstBaseSrcClass *bclass = GST_BASE_SRC_GET_CLASS (basesrc);
 #if !GST_CHECK_VERSION (1,0,0)
   GstNetBuffer *netbuffer = NULL;
 #endif
@@ -266,7 +267,13 @@ gst_nice_src_read_callback (NiceAgent *agent,
 
 #if GST_CHECK_VERSION (1,0,0)
   (void)to;
-  buffer = gst_buffer_new_allocate (NULL, len, NULL);
+  GstFlowReturn status = bclass->alloc(basesrc, 0, len, &buffer);
+  if (status != GST_FLOW_OK)
+  {
+    GST_LOG_OBJECT (nicesrc, "Could not allocate buffer using common allocator"
+                               ", allocate using local allocator instead");
+    buffer = gst_buffer_new_allocate (NULL, len, NULL);
+  }
   gst_buffer_fill (buffer, 0, buf, len);
 
   if (from != NULL) {
