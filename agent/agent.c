@@ -71,6 +71,8 @@
 #include "stream.h"
 #include "interfaces.h"
 
+#include <gasyncio.h>
+
 /* This is the max size of a UDP packet
  * will it work tcp relaying??
  */
@@ -364,6 +366,66 @@ agent_find_component (NiceAgent * agent,
   return TRUE;
 }
 
+void
+agent_async_recv (gpointer userdata, gint32 result,
+    GAsyncConnectionSocket * socket)
+{
+}
+
+void
+agent_async_send (gpointer userdata, gint32 result,
+    GAsyncConnectionSocket * socket)
+{
+}
+
+void
+agent_async_connect (gpointer userdata, gint32 result,
+    GAsyncConnectionSocket * socket)
+{
+}
+
+void
+agent_async_shutdown (gpointer userdata, gint32 result,
+    GAsyncConnectionSocket * socket)
+{
+}
+
+void
+agent_async_close (gpointer userdata, gint32 result,
+    GAsyncConnectionSocket * socket)
+{
+}
+
+void
+agent_async_close_server (gpointer userdata, gint32 result,
+    GAsyncServerSocket * socket)
+{
+}
+
+void
+agent_async_accept (gpointer userdata, gint32 result,
+    GAsyncConnectionSocket * socket, struct sockaddr_in *client_addr,
+    socklen_t client_addr_len)
+{
+}
+
+void
+async_dispose (gpointer userdata)
+{
+
+}
+/* Socket is not locked when these callbacks are called */
+const GAsyncCallbacks gasyncio_fixture_callbacks = {
+  .recv_cb = agent_async_recv,
+  .send_cb = agent_async_send,
+  .connect_cb = agent_async_connect,
+  .close_cb = agent_async_close,
+  .close_server_cb = agent_async_close_server,
+  .accept_cb = agent_async_accept,
+  .userdata_dispose = async_dispose,
+  .shutdown_cb = agent_async_shutdown,
+};
+
 
 static void
 nice_agent_class_init (NiceAgentClass * klass)
@@ -373,6 +435,10 @@ nice_agent_class_init (NiceAgentClass * klass)
   gobject_class->get_property = nice_agent_get_property;
   gobject_class->set_property = nice_agent_set_property;
   gobject_class->dispose = nice_agent_dispose;
+
+  GAsync *async =
+      gasync_gasync_create (0, &gasyncio_fixture_callbacks,
+      NULL, 4, 1);
 
   /* install properties */
   /**
