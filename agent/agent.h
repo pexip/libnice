@@ -99,7 +99,7 @@
 
 
 #include <glib-object.h>
-
+#include <gasyncio.h>
 /**
  * NiceAgent:
  *
@@ -269,6 +269,7 @@ typedef void (*NiceAgentRecvFunc) (
  * @ctx: The Glib Mainloop Context to use for timers
  * @compat: The compatibility mode of the agent
  * @turn_compat: The TURN compatibility mode of the agent
+ * @async: Async context used for io.
  *
  * Create a new #NiceAgent.
  * The returned object must be freed with g_object_unref()
@@ -276,7 +277,8 @@ typedef void (*NiceAgentRecvFunc) (
  * Returns: The new agent GObject
  */
 NICE_EXPORT NiceAgent *
-nice_agent_new (GMainContext *ctx, NiceCompatibility compat, NiceCompatibility turn_compat);
+nice_agent_new (GMainContext *ctx, NiceCompatibility compat,
+                NiceCompatibility turn_compat, GAsync *async);
 
 
 /**
