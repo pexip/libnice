@@ -50,6 +50,7 @@
 #endif
 
 #include <glib.h>
+#include <gasyncio.h>
 
 #include "agent.h"
 #include "socket.h"
@@ -125,6 +126,7 @@ struct _NiceAgent
   gboolean media_after_tick;       /* Received media after keepalive tick */
   gchar *software_attribute;       /* SOFTWARE attribute */
   gboolean reliable;               /* property: reliable */
+  GAsync* async;                   /* property: used for async io */
   /* XXX: add pointer to internal data struct for ABI-safe extensions */
 };
 

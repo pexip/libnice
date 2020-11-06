@@ -110,7 +110,8 @@ enum
   PROP_CONNCHECK_RETRANSMISSIONS,
   PROP_AGGRESSIVE_MODE,
   PROP_REGULAR_NOMINATION_TIMEOUT,
-  PROP_TIE_BREAKER
+  PROP_TIE_BREAKER,
+  PROP_ASYNC
 };
 
 
@@ -436,9 +437,6 @@ nice_agent_class_init (NiceAgentClass * klass)
   gobject_class->set_property = nice_agent_set_property;
   gobject_class->dispose = nice_agent_dispose;
 
-  GAsync *async =
-      gasync_gasync_create (0, &gasyncio_fixture_callbacks,
-      NULL, 4, 1);
 
   /* install properties */
   /**
@@ -852,12 +850,13 @@ nice_agent_init (NiceAgent * agent)
 
 NICEAPI_EXPORT NiceAgent *
 nice_agent_new (GMainContext * ctx, NiceCompatibility compat,
-    NiceCompatibility turn_compat)
+    NiceCompatibility turn_compat, GAsync *async_transport)
 {
   NiceAgent *agent = g_object_new (NICE_TYPE_AGENT,
       "compatibility", compat,
       "turn-compatibility", turn_compat,
       "main-context", ctx,
+      "async-transport", async_transport,
       NULL);
 
   return agent;
@@ -956,6 +955,10 @@ nice_agent_get_property (GObject * object,
 
     case PROP_TIE_BREAKER:
       g_value_set_uint64 (value, agent->tie_breaker);
+      break;
+
+    case PROP_ASYNC:
+      g_value_set_pointer (value, agent->async);
       break;
 
     default:
@@ -1076,6 +1079,13 @@ nice_agent_set_property (GObject * object,
     case PROP_TIE_BREAKER:
       agent->override_tie_breaker = TRUE;
       agent->tie_breaker = g_value_get_uint64 (value);
+      break;
+
+    case PROP_ASYNC:
+      agent->async = g_value_get_pointer (value);
+      if (agent->async != NULL) {
+        g_object_ref (agent->async);
+      }
       break;
 
     default:
