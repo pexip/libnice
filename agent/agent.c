@@ -367,65 +367,88 @@ agent_find_component (NiceAgent * agent,
   return TRUE;
 }
 
+
 void
-agent_async_recv (gpointer userdata, gint32 result,
+nice_agent_async_recvmsg_callback (
+    void **userdata_pointer,
+    struct msghdr *msg,
+    gint32 result,
     GAsyncConnectionSocket * socket)
 {
+  nice_socket_async_recvmsg_callback(userdata_pointer, msg, result, socket);
+}
+
+
+void
+nice_agent_async_sendmsg_callback (
+    void **userdata_pointer,
+    struct msghdr *msg,
+    gint32 result,
+    GAsyncConnectionSocket * socket)
+{
+  nice_socket_async_sendmsg_callback(userdata_pointer, msg, result, socket);
 }
 
 void
-agent_async_send (gpointer userdata, gint32 result,
+nice_agent_async_connect_callback (
+    void **userdata_pointer,
+    gint32 result,
     GAsyncConnectionSocket * socket)
 {
+  nice_agent_async_connect_callback(userdata_pointer, result, socket);
+
+}
+
+
+void
+nice_agent_async_close_callback (
+    void **userdata_pointer,
+    gint32 result,
+    GAsyncConnectionSocket * socket)
+{
+  nice_agent_async_close_callback(userdata_pointer, result, socket);
+
 }
 
 void
-agent_async_connect (gpointer userdata, gint32 result,
-    GAsyncConnectionSocket * socket)
-{
-}
-
-void
-agent_async_shutdown (gpointer userdata, gint32 result,
-    GAsyncConnectionSocket * socket)
-{
-}
-
-void
-agent_async_close (gpointer userdata, gint32 result,
-    GAsyncConnectionSocket * socket)
-{
-}
-
-void
-agent_async_close_server (gpointer userdata, gint32 result,
+nice_agent_async_close_server_callback (
+    void **userdata_pointer,
+    gint32 result,
     GAsyncServerSocket * socket)
 {
+  nice_agent_async_close_server_callback(userdata_pointer, result, socket);
+
 }
 
 void
-agent_async_accept (gpointer userdata, gint32 result,
-    GAsyncConnectionSocket * socket, struct sockaddr_in *client_addr,
+nice_agent_async_accept_callback (
+    void **server_userdata_pointer,
+    void **connection_userdata_pointer,
+    gint32 result,
+    GAsyncServerSocket* server_socket,
+    GAsyncConnectionSocket * connection_socket,
+    struct sockaddr_in *client_addr,
     socklen_t client_addr_len)
 {
+  nice_agent_async_accept_callback(server_userdata_pointer,
+    connection_userdata_pointer, result, server_socket, connection_socket,
+     client_addr, client_addr_len);
 }
 
-void
-async_dispose (gpointer userdata)
+void nice_agent_async_connection_socket_dispose_callback(
+    void **userdata_pointer,
+   GAsyncConnectionSocket *socket)
 {
-
+  nice_agent_async_connection_socket_dispose_callback(userdata_pointer, socket);
 }
-/* Socket is not locked when these callbacks are called */
-const GAsyncCallbacks gasyncio_fixture_callbacks = {
-  .recv_cb = agent_async_recv,
-  .send_cb = agent_async_send,
-  .connect_cb = agent_async_connect,
-  .close_cb = agent_async_close,
-  .close_server_cb = agent_async_close_server,
-  .accept_cb = agent_async_accept,
-  .userdata_dispose = async_dispose,
-  .shutdown_cb = agent_async_shutdown,
-};
+
+void nice_agent_async_server_socket_dispose_callback(
+   void **userdata_pointer,
+   GAsyncServerSocket *socket)
+{
+  nice_agent_async_server_socket_dispose_callback(userdata_pointer, socket);
+}
+
 
 
 static void
@@ -849,13 +872,12 @@ nice_agent_init (NiceAgent * agent)
 
 
 NICEAPI_EXPORT NiceAgent *
-nice_agent_new (GMainContext * ctx, NiceCompatibility compat,
-    NiceCompatibility turn_compat, GAsync *async_transport)
+nice_agent_new (GAsync *async_transport, NiceCompatibility compat,
+    NiceCompatibility turn_compat)
 {
   NiceAgent *agent = g_object_new (NICE_TYPE_AGENT,
       "compatibility", compat,
       "turn-compatibility", turn_compat,
-      "main-context", ctx,
       "async-transport", async_transport,
       NULL);
 
@@ -2998,9 +3020,9 @@ agent_attach_stream_component_socket (NiceAgent * agent,
   GSource *source;
   IOCtx *ctx;
 
-  nice_socket_attach (socket, component->ctx);
+  nice_socket_attach (socket, component->async);
 
-  if (!component->ctx)
+  if (!component->async)
     return;
 
   if (socket->fileno) {
@@ -3012,8 +3034,8 @@ agent_attach_stream_component_socket (NiceAgent * agent,
     g_source_set_callback (source, (GSourceFunc) nice_agent_g_source_cb,
         ctx, (GDestroyNotify) io_ctx_free);
     GST_DEBUG_OBJECT (agent, "%u/%u: Attach source %p ctx %p", stream->id,
-        component->id, source, component->ctx);
-    g_source_attach (source, component->ctx);
+        component->id, source, component->async);
+    g_source_attach (source, component->async);
     component->gsources = g_slist_append (component->gsources, source);
   } else {
     GST_DEBUG_OBJECT (agent, "%u/%u: Source has no fileno", stream->id,
@@ -3066,7 +3088,7 @@ NICEAPI_EXPORT gboolean
 nice_agent_attach_recv (NiceAgent * agent,
     guint stream_id,
     guint component_id,
-    GMainContext * ctx, NiceAgentRecvFunc func, gpointer data)
+  NiceAgentRecvFunc func, gpointer data)
 {
   Component *component = NULL;
   Stream *stream = NULL;
@@ -3091,16 +3113,16 @@ nice_agent_attach_recv (NiceAgent * agent,
 
   component->g_source_io_cb = NULL;
   component->data = NULL;
-  if (component->ctx)
-    g_main_context_unref (component->ctx);
-  component->ctx = NULL;
+  if (component->async)
+    g_object_unref(component->async);
+  component->async = NULL;
 
   if (func) {
     component->g_source_io_cb = func;
     component->data = data;
-    component->ctx = ctx;
-    if (ctx)
-      g_main_context_ref (ctx);
+    component->async = agent->async;
+    if (agent->async)
+      g_object_ref (agent->async);
 
     priv_attach_stream_component (agent, stream, component);
   }

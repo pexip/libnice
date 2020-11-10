@@ -131,9 +131,8 @@ component_free (Component *cmp)
     cmp->selected_pair.keepalive.tick_source = NULL;
   }
 
-  if (cmp->ctx != NULL) {
-    g_main_context_unref (cmp->ctx);
-    cmp->ctx = NULL;
+  if (cmp->async != NULL) {
+    g_clear_object(&cmp->async);
   }
 
   g_slice_free (Component, cmp);

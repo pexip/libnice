@@ -61,9 +61,7 @@ typedef struct {
   NiceAgent          *nice_agent;
   NiceAddress         remote_addr;
   GQueue              send_queue;
-  GMainContext       *context;
-  GSource            *read_source;
-  GSource            *write_source;
+  GAsync             *async;
   gboolean            error;
   SocketRXCallback    rxcb;
   SocketTXCallback    txcb;
@@ -87,7 +85,7 @@ typedef struct {
   NiceSocket         *sock;
 } TcpEstablishedCallbackData;
 
-static void socket_attach (NiceSocket* sock, GMainContext* ctx);
+static void socket_attach (NiceSocket* sock);
 static void socket_close (NiceSocket *sock);
 static gint socket_recv (NiceSocket *sock, NiceAddress *from,
     guint len, gchar *buf);
@@ -121,8 +119,8 @@ tcp_established_callback_data_free (TcpEstablishedCallbackData *p)
 }
 
 NiceSocket *
-nice_tcp_established_socket_new (GSocket *gsock, GObject *nice_agent,
-    NiceAddress *local_addr, const NiceAddress *remote_addr, GMainContext *ctx,
+nice_tcp_established_socket_new (GAsyncConnectionSocket *conn_sock, GObject *nice_agent,
+    NiceAddress *local_addr, const NiceAddress *remote_addr, GAsync *async,
     SocketRXCallback rxcb, SocketTXCallback txcb, gpointer userdata,
     GDestroyNotify destroy_notify, gboolean connect_pending, guint max_tcp_queue_size)
 {
@@ -137,7 +135,7 @@ nice_tcp_established_socket_new (GSocket *gsock, GObject *nice_agent,
   sock->priv = priv = g_slice_new0 (TcpEstablishedPriv);
 
   priv->nice_agent = NICE_AGENT (nice_agent);
-  priv->context = g_main_context_ref (ctx);
+  priv->async = g_object_ref (async);
   priv->remote_addr = *remote_addr;
   priv->rxcb = rxcb;
   priv->txcb = txcb;
@@ -149,13 +147,14 @@ nice_tcp_established_socket_new (GSocket *gsock, GObject *nice_agent,
   priv->rx_enabled = TRUE;
 
   sock->type = NICE_SOCKET_TYPE_TCP_ESTABLISHED;
-  sock->fileno = gsock;
+  sock->transport.conection = conn_sock;
   sock->addr = *local_addr;
-  sock->send = socket_send;
-  sock->recv = socket_recv;
+  sock->request_send = socket_send;
+  sock->recv_callback = socket_recv;
   sock->is_reliable = socket_is_reliable;
-  sock->close = socket_close;
-  sock->attach = socket_attach;
+  sock->request_close = socket_request_close;
+  sock->closed_callback= socket_closed_callback;
+  //sock->attach = socket_attach;
   sock->get_tx_queue_size = socket_get_tx_queue_size;
   sock->set_rx_enabled = socket_set_rx_enabled;
 
@@ -164,79 +163,34 @@ nice_tcp_established_socket_new (GSocket *gsock, GObject *nice_agent,
      * Reduce the tx queue size so the minimum number of packets
      * are queued in the kernel
      */
-    gint fd = g_socket_get_fd (gsock);
+    gint fd = gasync_connection_socket_get_fd (conn_sock);
     gint sendbuff = 2048;
     setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sendbuff, sizeof (gint));
   }
 
-  priv->read_source = g_socket_create_source(sock->fileno, G_IO_IN | G_IO_ERR, NULL);
-  g_source_set_callback (priv->read_source, (GSourceFunc) socket_recv_more,
-                         tcp_established_callback_data_new(priv->nice_agent, sock),
-                         (GDestroyNotify)tcp_established_callback_data_free);
-  g_source_attach (priv->read_source, priv->context);
+  //priv->read_source = g_socket_create_source(sock->fileno, G_IO_IN | G_IO_ERR, NULL);
+  //g_source_set_callback (priv->read_source, (GSourceFunc) socket_recv_more,
+  //                       tcp_established_callback_data_new(priv->nice_agent, sock),
+  //                       (GDestroyNotify)tcp_established_callback_data_free);
+  //g_source_attach (priv->read_source, priv->context);
   return sock;
 }
 
 static void
-socket_attach (NiceSocket* sock, GMainContext* ctx)
+socket_attach (NiceSocket* sock)
 {
   TcpEstablishedPriv *priv = sock->priv;
   gboolean write_pending = FALSE;
-
-  if (priv->context)
-    g_main_context_unref (priv->context);
-
-  if (priv->read_source) {
-    g_source_destroy (priv->read_source);
-    g_source_unref (priv->read_source);
-  }
-
-  if (priv->write_source) {
-    write_pending = TRUE;
-    g_source_destroy (priv->write_source);
-    g_source_unref (priv->write_source);
-  }
-
-  priv->context = ctx;
-  if (priv->context) {
-    g_main_context_ref (priv->context);
-
-    priv->read_source = g_socket_create_source(sock->fileno, G_IO_IN | G_IO_ERR, NULL);
-    g_source_set_callback (priv->read_source, (GSourceFunc) socket_recv_more,
-                           tcp_established_callback_data_new(priv->nice_agent, sock),
-                           (GDestroyNotify)tcp_established_callback_data_free);
-    g_source_attach (priv->read_source, priv->context);
-    if (write_pending) {
-        priv->write_source = g_socket_create_source(sock->fileno, G_IO_OUT, NULL);
-        g_source_set_callback (priv->write_source, (GSourceFunc) socket_send_more,
-                               tcp_established_callback_data_new(priv->nice_agent, sock),
-                               (GDestroyNotify)tcp_established_callback_data_free);
-        g_source_attach (priv->write_source, priv->context);
-    }
-  }
 }
 
 static void
-socket_close (NiceSocket *sock)
+socket_request_close (NiceSocket *sock)
 {
   TcpEstablishedPriv *priv = sock->priv;
   NiceAgent *agent = priv->nice_agent;
 
   g_assert (agent->agent_mutex_th != NULL);
 
-  if (sock->fileno) {
-    g_socket_close (sock->fileno, NULL);
-    g_object_unref (sock->fileno);
-    sock->fileno = NULL;
-  }
-  if (priv->read_source) {
-    g_source_destroy (priv->read_source);
-    g_source_unref (priv->read_source);
-  }
-  if (priv->write_source) {
-    g_source_destroy (priv->write_source);
-    g_source_unref (priv->write_source);
-  }
   g_queue_foreach (&priv->send_queue, (GFunc) free_to_be_sent, NULL);
   g_queue_clear (&priv->send_queue);
 
@@ -254,6 +208,8 @@ socket_close (NiceSocket *sock)
 static gint
 socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
 {
+  g_assert(false);
+#if 0
   TcpEstablishedPriv *priv = sock->priv;
   int ret;
   GError *gerr = NULL;
@@ -282,6 +238,7 @@ socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
   if (from)
     *from = priv->remote_addr;
   return ret;
+#endif
 }
 
 static gint
