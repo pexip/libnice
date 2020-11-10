@@ -40,7 +40,7 @@
 
 G_BEGIN_DECLS
 
-NiceSocket * nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr,
+NiceSocket * nice_tcp_active_socket_new (GAsync *async, NiceAddress *addr,
     SocketRXCallback rxcb, SocketTXCallback txcb, gpointer userdata,
     GDestroyNotify destroy_notify, guint max_tcp_queue_size);
 NiceSocket * nice_tcp_active_socket_connect (NiceSocket *socket, const NiceAddress *addr);

@@ -119,7 +119,7 @@ struct _Component
   NiceCandidate *restart_candidate; /**< for storing active remote candidate during a restart */
   NiceAgentRecvFunc g_source_io_cb; /**< function called on io cb */
   gpointer data;                    /**< data passed to the io function */
-  GMainContext *ctx;                /**< context for data callbacks for this
+  GAsync *async;                    /**< context for data callbacks for this
                                        component */
   guint min_port;
   guint max_port;

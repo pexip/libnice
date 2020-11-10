@@ -70,7 +70,7 @@ typedef struct {
 } TcpPassivePriv;
 
 
-static void socket_attach (NiceSocket* sock, GMainContext* ctx);
+static void socket_attach (NiceSocket* sock);
 static void socket_close (NiceSocket *sock);
 static gint socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf);
@@ -80,7 +80,7 @@ static gint socket_get_tx_queue_size (NiceSocket *sock);
 static void socket_set_rx_enabled (NiceSocket *sock, gboolean enabled);
 
 NiceSocket *
-nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr,
+nice_tcp_passive_socket_new (GAsync *async, NiceAddress *addr,
     SocketRXCallback rxcb, SocketTXCallback txcb, gpointer userdata,
     GDestroyNotify destroy_notify, guint max_tcp_queue_size)
 {
@@ -172,22 +172,14 @@ nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr,
 }
 
 static void
-socket_attach (NiceSocket* sock, GMainContext* ctx)
+socket_attach (NiceSocket* sock)
 {
   TcpPassivePriv *priv = sock->priv;
   GSList *i;
-
-  if (priv->context)
-    g_main_context_unref (priv->context);
-
-  priv->context = ctx;
-  if (priv->context) {
-    g_main_context_ref (priv->context);
-  }
-
+  
   for (i = priv->established_sockets; i; i = i->next) {
     NiceSocket *socket = i->data;
-    nice_socket_attach (socket, ctx);
+    nice_socket_attach (socket);
   }
 }
 
@@ -220,19 +212,9 @@ socket_close (NiceSocket *sock)
 static gint
 socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
 {
-  TcpPassivePriv *priv = sock->priv;
-
-  /*
-   * Accept new connection, TODO: dos prevention, reconnects etc
-   */
-  NiceSocket* new_socket = nice_tcp_passive_socket_accept (sock);
-  if (!new_socket) {
-    GST_WARNING ("tcp-pass %p: Failed to accept new connection", sock);
-    return -1;
-  }
-
-  priv->established_sockets = g_slist_append (priv->established_sockets, new_socket);
-  return 0;
+  /* Earlier used for accepting, now for nothing
+    TcpPassivePriv *priv = sock->priv;
+  */
 }
 
 static gint
@@ -279,41 +261,24 @@ tcp_passive_established_socket_tx_cb (NiceSocket* socket,
   priv->txcb (passive, buf, len, queued, priv->userdata);
 }
 
-NiceSocket *
-nice_tcp_passive_socket_accept (NiceSocket *socket)
+void nice_tcp_passive_socket_accept(NiceSocket *server_socket, NiceSocket* client_socket, gint32 result, NiceAddress remote_address)
 {
   struct sockaddr_storage name;
-  TcpPassivePriv *priv = socket->priv;
+  TcpPassivePriv *priv = server_socket->priv;
   GSocket *gsock = NULL;
   GSocketAddress *gaddr;
-  NiceAddress remote_addr;
 
-  gsock = g_socket_accept (socket->fileno, NULL, NULL);
-
-  if (gsock == NULL) {
-    GST_WARNING("tcp-pass %p: Accept failed", socket);
-    return NULL;
+  if (result != 0) {
+    GST_WARNING("tcp-pass %p: Accept failed", server_socket);
+    return;
   }
 
-  /* GSocket: All socket file descriptors are set to be close-on-exec. */
-  g_socket_set_blocking (gsock, false);
-
-  gaddr = g_socket_get_remote_address (gsock, NULL);
-  if (gaddr == NULL ||
-      !g_socket_address_to_native (gaddr, &name, sizeof (name), NULL)) {
-    g_socket_close (gsock, NULL);
-    g_object_unref (gsock);
-    return NULL;
-  }
-  g_object_unref (gaddr);
-
-  nice_address_set_from_sockaddr (&remote_addr, (struct sockaddr *)&name);
-
-  return nice_tcp_established_socket_new (gsock,
+  NiceSocket *new_socket = nice_tcp_established_socket_new (client_socket,
       G_OBJECT (priv->userdata->agent),
-      &socket->addr, &remote_addr, priv->context,
+      &server_socket->addr, &remote_address, priv->context,
       tcp_passive_established_socket_rx_cb, tcp_passive_established_socket_tx_cb,
       (gpointer)socket, NULL, FALSE, priv->max_tcp_queue_size);
+  priv->established_sockets = g_slist_append (priv->established_sockets, new_socket);
 }
 
 static gint

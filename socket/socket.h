@@ -39,6 +39,7 @@
 
 #include "address.h"
 #include <gio/gio.h>
+#include <gasyncio.h>
 
 #ifdef G_OS_WIN32
 #include <winsock2.h>
@@ -71,14 +72,23 @@ struct _NiceSocket
 {
   NiceAddress addr;
   NiceSocketType type;
-  GSocket *fileno;
-  gint (*recv) (NiceSocket *sock, NiceAddress *from, guint len,
+  union{
+    GAsyncServerSocket *server;
+    GAsyncServerSocket *conection;
+  } transport;
+  /* Asyncronous functions */
+  gboolean (*recv_callback) (NiceSocket *sock, NiceAddress *from, guint len,
       gchar *buf);
-  gint (*send) (NiceSocket *sock, const NiceAddress *to, guint len,
+  void (*accept_callback) (NiceSocket *server_socket, NiceSocket* client_socket, gint32 result, NiceAddress client_address);
+  
+  /* Used when a socket is requested to be freed/closed.  */
+ void (*request_close) (NiceSocket *sock);
+ void (*closed_callback) (NiceSocket *sock);
+  /* Async function, but backed by a queue */
+  gboolean (*request_send) (NiceSocket *sock, const NiceAddress *to, guint len,
       const gchar *buf);
+  
   gboolean (*is_reliable) (NiceSocket *sock);
-  void (*close) (NiceSocket *sock);
-  void (*attach) (NiceSocket *sock, GMainContext* ctx);
   int (*get_tx_queue_size) (NiceSocket *sock);
   void (*set_rx_enabled) (NiceSocket *sock, gboolean enabled);
 
@@ -100,7 +110,7 @@ gboolean
 nice_socket_is_reliable (NiceSocket *sock);
 
 void
-nice_socket_attach (NiceSocket *sock, GMainContext* ctx);
+nice_socket_attach (NiceSocket *sock);
 
 gint
 nice_socket_get_tx_queue_size (NiceSocket *sock);
@@ -112,6 +122,59 @@ void
 nice_socket_free (NiceSocket *sock);
 
 const char *socket_type_to_string (NiceSocketType type);
+
+void
+nice_socket_async_recvmsg_callback (
+    void **userdata_pointer,
+    struct msghdr *msg,
+    gint32 result,
+    GAsyncConnectionSocket * socket);
+
+void
+nice_socket_async_sendmsg_callback (
+    void **userdata_pointer,
+    struct msghdr *msg,
+    gint32 result,
+    GAsyncConnectionSocket * socket);
+
+void
+nice_socket_async_connect_callback (
+    void **userdata_pointer,
+    gint32 result,
+    GAsyncConnectionSocket * socket);
+
+void
+nice_socket_async_close_callback (
+    void **userdata_pointer,
+    gint32 result,
+    GAsyncConnectionSocket * socket);
+
+void
+nice_socket_async_close_server_callback (
+    void **userdata_pointer,
+    gint32 result,
+    GAsyncServerSocket * socket);
+
+void
+nice_socket_async_accept_callback (
+    void **server_userdata_pointer,
+    void **connection_userdata_pointer,
+    gint32 result,
+    GAsyncServerSocket* server_socket,
+    GAsyncConnectionSocket * connection_socket,
+    struct sockaddr_in *client_addr,
+    socklen_t client_addr_len);
+
+void nice_socket_async_connection_socket_dispose_callback(
+    void **userdata_pointer,
+   GAsyncConnectionSocket *socket);
+
+void nice_socket_async_server_socket_dispose_callback(
+   void **userdata_pointer,
+   GAsyncServerSocket *socket);
+
+void nice_socket_async_timeout_callback (gpointer userdata, gint32 result,
+      GAsyncConnectionSocket * socket);
 
 #include "udp-bsd.h"
 #include "tcp-bsd.h"

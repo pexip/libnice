@@ -1,3 +1,4 @@
+#if 0
 /*
  * This file is part of the Nice GLib ICE library.
  *
@@ -225,3 +226,4 @@ socket_is_reliable (NiceSocket *sock)
   return FALSE;
 }
 
+#endif

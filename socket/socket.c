@@ -90,14 +90,6 @@ nice_socket_free (NiceSocket *sock)
   }
 }
 
-void
-nice_socket_attach (NiceSocket *sock, GMainContext* ctx)
-{
-  if (sock && sock->attach) {
-    sock->attach (sock, ctx);
-  }
-}
-
 const char* socket_type_to_string (NiceSocketType type)
 {
   switch (type) {
@@ -116,3 +108,91 @@ const char* socket_type_to_string (NiceSocketType type)
   return "(invalid)";
 }
 
+
+void
+nice_socket_async_recvmsg_callback (
+    void **userdata_pointer,
+    struct msghdr *msg,
+    gint32 result,
+    GAsyncConnectionSocket * socket)
+{
+  
+}
+
+void
+nice_socket_async_sendmsg_callback (
+    void **userdata_pointer,
+    struct msghdr *msg,
+    gint32 result,
+    GAsyncConnectionSocket * socket)
+{
+  
+}
+
+void
+nice_socket_async_connect_callback (
+    void **userdata_pointer,
+    gint32 result,
+    GAsyncConnectionSocket * socket)
+{
+
+
+}
+
+void
+nice_socket_async_close_callback (
+    void **userdata_pointer,
+    gint32 result,
+    GAsyncConnectionSocket * socket)
+{
+  
+}
+
+void
+nice_socket_async_close_server_callback (
+    void **userdata_pointer,
+    gint32 result,
+    GAsyncServerSocket * socket)
+{
+  
+}
+
+void
+nice_socket_async_accept_callback (
+    void **server_userdata_pointer,
+    void **connection_userdata_pointer,
+    gint32 result,
+    GAsyncServerSocket* server_socket,
+    GAsyncConnectionSocket * connection_socket,
+    struct sockaddr_in *client_addr,
+    socklen_t client_addr_len)
+{
+  NiceSocket *socket = *server_userdata_pointer;
+  if (connection_userdata_pointer != NULL)
+  {
+    *connection_userdata_pointer = socket;
+  }
+  NiceAddress client_niceaddr;
+  nice_address_init(&client_niceaddr); 
+  nice_address_set_from_sockaddr (&client_niceaddr, client_addr);
+  socket->accept(server_socket, connection_socket, result, client_niceaddr);
+}
+
+void nice_socket_async_connection_socket_dispose_callback(
+    void **userdata_pointer,
+   GAsyncConnectionSocket *socket)
+{
+  
+}
+
+void nice_socket_async_server_socket_dispose_callback(
+   void **userdata_pointer,
+   GAsyncServerSocket *socket)
+{
+  
+}
+
+void nice_socket_async_timeout_callback (gpointer userdata, gint32 result,
+      GAsyncConnectionSocket * socket)
+{
+}

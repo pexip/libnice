@@ -266,10 +266,9 @@ typedef void (*NiceAgentRecvFunc) (
 
 /**
  * nice_agent_new:
- * @ctx: The Glib Mainloop Context to use for timers
+ * @async: Async context used for io.
  * @compat: The compatibility mode of the agent
  * @turn_compat: The TURN compatibility mode of the agent
- * @async: Async context used for io.
  *
  * Create a new #NiceAgent.
  * The returned object must be freed with g_object_unref()
@@ -277,8 +276,8 @@ typedef void (*NiceAgentRecvFunc) (
  * Returns: The new agent GObject
  */
 NICE_EXPORT NiceAgent *
-nice_agent_new (GMainContext *ctx, NiceCompatibility compat,
-                NiceCompatibility turn_compat, GAsync *async);
+nice_agent_new (GAsync *async, NiceCompatibility compat,
+                NiceCompatibility turn_compat);
 
 
 /**
@@ -736,7 +735,6 @@ nice_agent_restart_stream (
  * @agent: The #NiceAgent Object
  * @stream_id: The ID of stream
  * @component_id: The ID of the component
- * @ctx: The Glib Mainloop Context to use for listening on the component
  * @func: The callback function to be called when data is received on
  * the stream's component
  * @data: user data associated with the callback
@@ -751,7 +749,6 @@ nice_agent_attach_recv (
   NiceAgent *agent,
   guint stream_id,
   guint component_id,
-  GMainContext *ctx,
   NiceAgentRecvFunc func,
   gpointer data);
 
@@ -896,6 +893,56 @@ nice_agent_set_rx_enabled (
   guint stream_id,
   guint component_id,
   gboolean enabled);
+
+NICE_EXPORT void
+nice_agent_async_recvmsg_callback (
+    void **userdata_pointer,
+    struct msghdr *msg,
+    gint32 result,
+    GAsyncConnectionSocket * socket);
+
+NICE_EXPORT void
+nice_agent_async_sendmsg_callback (
+    void **userdata_pointer,
+    struct msghdr *msg,
+    gint32 result,
+    GAsyncConnectionSocket * socket);
+
+NICE_EXPORT void
+nice_agent_async_connect_callback (
+    void **userdata_pointer,
+    gint32 result,
+    GAsyncConnectionSocket * socket);
+
+NICE_EXPORT void
+nice_agent_async_close_callback (
+    void **userdata_pointer,
+    gint32 result,
+    GAsyncConnectionSocket * socket);
+
+NICE_EXPORT void
+nice_agent_async_close_server_callback (
+    void **userdata_pointer,
+    gint32 result,
+    GAsyncServerSocket * socket);
+
+NICE_EXPORT void
+nice_agent_async_accept_callback (
+    void **server_userdata_pointer,
+    void **connection_userdata_pointer,
+    gint32 result,
+    GAsyncServerSocket* server_socket,
+    GAsyncConnectionSocket * connection_socket,
+    struct sockaddr_in *client_addr,
+    socklen_t client_addr_len);
+
+NICE_EXPORT void nice_agent_async_connection_socket_dispose_callback(
+    void **userdata_pointer,
+    GAsyncConnectionSocket *socket);
+
+NICE_EXPORT void nice_agent_async_server_socket_dispose_callback(
+    void **userdata_pointer,
+    GAsyncServerSocket *socket);
 
 G_END_DECLS
 
