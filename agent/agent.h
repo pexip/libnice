@@ -266,7 +266,8 @@ typedef void (*NiceAgentRecvFunc) (
 
 /**
  * nice_agent_new:
- * @async: Async context used for io.
+ * @async: Async context used for timers and io for udp.
+ * @context: The Glib Mainloop Context to use for timers and tcp sockets.
  * @compat: The compatibility mode of the agent
  * @turn_compat: The TURN compatibility mode of the agent
  *
@@ -276,8 +277,10 @@ typedef void (*NiceAgentRecvFunc) (
  * Returns: The new agent GObject
  */
 NICE_EXPORT NiceAgent *
-nice_agent_new (GAsync *async, NiceCompatibility compat,
-                NiceCompatibility turn_compat);
+nice_agent_new (GAsync *async,
+    GMainContext *context,
+    NiceCompatibility compat,
+    NiceCompatibility turn_compat);
 
 
 /**
