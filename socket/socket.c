@@ -55,7 +55,7 @@ nice_socket_send (NiceSocket *sock, const NiceAddress *to,
 {
   return sock->functions->send (sock, to, len, buf);
 }
-int 
+int
 nice_socket_get_fd (NiceSocket *sock)
 {
   return sock->functions->get_fd(sock);
@@ -121,7 +121,7 @@ nice_socket_async_recvmsg_callback (
     gint32 result,
     GAsyncConnectionSocket * socket)
 {
-  
+
 }
 
 void
@@ -131,7 +131,7 @@ nice_socket_async_sendmsg_callback (
     gint32 result,
     GAsyncConnectionSocket * socket)
 {
-  
+
 }
 
 void
@@ -150,7 +150,7 @@ nice_socket_async_close_callback (
     gint32 result,
     GAsyncConnectionSocket * socket)
 {
-  
+
 }
 
 void
@@ -159,7 +159,7 @@ nice_socket_async_close_server_callback (
     gint32 result,
     GAsyncServerSocket * socket)
 {
-  
+
 }
 
 void
@@ -178,23 +178,23 @@ nice_socket_async_accept_callback (
     *connection_userdata_pointer = socket;
   }
   NiceAddress client_niceaddr;
-  nice_address_init(&client_niceaddr); 
-  nice_address_set_from_sockaddr (&client_niceaddr, client_addr);
-  socket->functions->accept_callback(server_socket, connection_socket, result, client_niceaddr);
+  nice_address_init(&client_niceaddr);
+  nice_address_set_from_sockaddr (&client_niceaddr, (const struct sockaddr *)client_addr);
+  socket->functions->accept_callback(socket, connection_socket, result, client_niceaddr);
 }
 
 void nice_socket_async_connection_socket_dispose_callback(
     void **userdata_pointer,
    GAsyncConnectionSocket *socket)
 {
-  
+
 }
 
 void nice_socket_async_server_socket_dispose_callback(
    void **userdata_pointer,
    GAsyncServerSocket *socket)
 {
-  
+
 }
 
 void nice_socket_async_timeout_callback (gpointer userdata, gint32 result,

@@ -70,20 +70,30 @@ typedef enum {
 
 typedef struct _NiceSocketFunctionTable NiceSocketFunctionTable;
 
+union _NiceSocketTransport{
+    GSocket *fileno;
+    GAsyncServerSocket *server;
+    GAsyncServerSocket *connection;
+};
+
+typedef union _NiceSocketTransport NiceSocketTransport;
+
 struct _NiceSocketFunctionTable
 {
   /* Asyncronous functions */
-  void (*accept_callback) (NiceSocket *server_socket, NiceSocket* client_socket, gint32 result, NiceAddress client_address);
+  /* Accept callback is only called for async sockets,  */
+  void (*accept_callback) (NiceSocket *server_socket, NiceSocketTransport* client_socket, gint32 result, NiceAddress client_address);
+
   void (*request_recv) (NiceSocket *sock, struct msghdr * msg);
   void (*recv_callback) (NiceSocket *sock, struct msghdr * msg);
 
   gboolean (*request_send) (NiceSocket *sock,  struct msghdr * msg);
   gboolean (*send_callback) (NiceSocket *sock,  struct msghdr * msg);
-  
+
   /* Used when a socket is requested to be freed/closed.  */
   void (*request_close) (NiceSocket *sock);
   void (*closed_callback) (NiceSocket *sock);
-  
+
   /* Sync versions of async functions */
   void (*close) (NiceSocket *sock);
   void (*attach) (NiceSocket *sock, GMainContext* ctx);
@@ -101,11 +111,7 @@ struct _NiceSocket
 {
   NiceAddress addr;
   NiceSocketType type;
-  union{
-    GSocket *fileno;
-    GAsyncServerSocket *server;
-    GAsyncServerSocket *connection;
-  } transport;
+  NiceSocketTransport transport;
   NiceSocketFunctionTable const * functions;
   void *priv;
 };

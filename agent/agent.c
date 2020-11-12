@@ -872,12 +872,15 @@ nice_agent_init (NiceAgent * agent)
 
 
 NICEAPI_EXPORT NiceAgent *
-nice_agent_new (GAsync *async_transport, NiceCompatibility compat,
+nice_agent_new (GAsync *async_transport,
+    GMainContext *context,
+    NiceCompatibility compat,
     NiceCompatibility turn_compat)
 {
   NiceAgent *agent = g_object_new (NICE_TYPE_AGENT,
       "compatibility", compat,
       "turn-compatibility", turn_compat,
+      "main-context", context,
       "async-transport", async_transport,
       NULL);
 
