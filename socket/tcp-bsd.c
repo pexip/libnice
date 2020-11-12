@@ -81,7 +81,15 @@ static gint socket_recv (NiceSocket *sock, NiceAddress *from,
 static gint socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf);
 static gboolean socket_is_reliable (NiceSocket *sock);
+static int socket_get_fd (NiceSocket *sock);
 
+static const NiceSocketFunctionTable socket_functions = {
+    .send = socket_send,
+    .recv = socket_recv,
+    .is_reliable = socket_is_reliable,
+    .close = socket_close,
+    .get_fd = socket_get_fd,
+};
 
 static void add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len,
     gboolean head);
@@ -176,13 +184,8 @@ nice_tcp_bsd_socket_new (GMainContext *ctx,
   priv->error = FALSE;
 
   sock->type = NICE_SOCKET_TYPE_TCP_BSD;
-  sock->fileno = gsock;
-  sock->send = socket_send;
-  sock->recv = socket_recv;
-  sock->is_reliable = socket_is_reliable;
-  sock->close = socket_close;
-  sock->attach = NULL;
-
+  sock->transport.connection = NULL;
+  sock->functions = &socket_functions;
   return sock;
 }
 
@@ -192,10 +195,10 @@ socket_close (NiceSocket *sock)
 {
   TcpPriv *priv = sock->priv;
 
-  if (sock->fileno) {
-    g_socket_close (sock->fileno, NULL);
-    g_object_unref (sock->fileno);
-    sock->fileno = NULL;
+  if (sock->transport.fileno) {
+    g_socket_close (sock->transport.fileno, NULL);
+    g_object_unref (sock->transport.fileno);
+    sock->transport.fileno = NULL;
   }
   if (priv->io_source) {
     g_source_destroy (priv->io_source);
@@ -221,7 +224,7 @@ socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
   if (priv->error)
     return -1;
 
-  ret = g_socket_receive (sock->fileno, buf, len, NULL, &gerr);
+  ret = g_socket_receive (sock->transport.fileno, buf, len, NULL, &gerr);
 
   /* recv returns 0 when the peer performed a shutdown.. we must return -1 here
    * so that the agent destroys the g_source */
@@ -262,7 +265,7 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
   /* First try to send the data, don't send it later if it can be sent now
      this way we avoid allocating memory on every send */
   if (g_queue_is_empty (&priv->send_queue)) {
-    ret = g_socket_send (sock->fileno, buf, len, NULL, &gerr);
+    ret = g_socket_send (sock->transport.fileno, buf, len, NULL, &gerr);
     if (ret < 0) {
       if(g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK)
          || g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_FAILED)) {
@@ -340,7 +343,7 @@ socket_send_more (
       /* connection hangs up */
       ret = -1;
     } else {
-      ret = g_socket_send (sock->fileno, tbs->buf, tbs->length, NULL, &gerr);
+      ret = g_socket_send (sock->transport.fileno, tbs->buf, tbs->length, NULL, &gerr);
     }
 
     if (ret < 0) {
@@ -397,7 +400,7 @@ add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len, gboolean head)
     g_queue_push_tail (&priv->send_queue, tbs);
 
   if (priv->io_source == NULL) {
-    priv->io_source = g_socket_create_source(sock->fileno, G_IO_OUT, NULL);
+    priv->io_source = g_socket_create_source(sock->transport.fileno, G_IO_OUT, NULL);
     g_source_set_callback (priv->io_source, (GSourceFunc) socket_send_more,
         sock, NULL);
     g_source_attach (priv->io_source, priv->context);
@@ -411,4 +414,10 @@ free_to_be_sent (struct to_be_sent *tbs)
 {
   g_free (tbs->buf);
   g_slice_free (struct to_be_sent, tbs);
+}
+
+static int
+socket_get_fd (NiceSocket *sock)
+{
+  return sock->transport.fileno ? g_socket_get_fd(sock->transport.fileno) : -1;
 }

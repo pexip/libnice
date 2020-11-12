@@ -68,7 +68,15 @@ static gint socket_recv (NiceSocket *sock, NiceAddress *from,
 static gint socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf);
 static gboolean socket_is_reliable (NiceSocket *sock);
+static int socket_get_fd (NiceSocket *sock);
 
+static const NiceSocketFunctionTable socket_functions = {
+    .send = socket_send,
+    .recv = socket_recv,
+    .is_reliable = socket_is_reliable,
+    .close = socket_close,
+    .get_fd = socket_get_fd,
+};
 NiceSocket *
 nice_tcp_turn_socket_new (NiceSocket *base_socket,
     NiceTurnSocketCompatibility compatibility)
@@ -81,13 +89,8 @@ nice_tcp_turn_socket_new (NiceSocket *base_socket,
   priv->base_socket = base_socket;
 
   sock->type = NICE_SOCKET_TYPE_TCP_TURN;
-  sock->fileno = priv->base_socket->fileno;
+  sock->transport.connection = NULL;
   sock->addr = priv->base_socket->addr;
-  sock->send = socket_send;
-  sock->recv = socket_recv;
-  sock->is_reliable = socket_is_reliable;
-  sock->close = socket_close;
-  sock->attach = NULL;
 
   return sock;
 }
@@ -219,3 +222,9 @@ socket_is_reliable (NiceSocket *sock)
   return TRUE;
 }
 
+static int
+socket_get_fd (NiceSocket *sock)
+{
+  TurnTcpPriv *priv = (TurnTcpPriv *)sock->priv;
+  return nice_socket_get_fd(priv->base_socket);
+}

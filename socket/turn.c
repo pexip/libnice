@@ -125,6 +125,15 @@ static gint socket_recv (NiceSocket *sock, NiceAddress *from,
 static gint socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf);
 static gboolean socket_is_reliable (NiceSocket *sock);
+static int socket_get_fd (NiceSocket *sock);
+
+static const NiceSocketFunctionTable socket_functions = {
+    .send = socket_send,
+    .recv = socket_recv,
+    .is_reliable = socket_is_reliable,
+    .close = socket_close,
+    .get_fd = socket_get_fd,
+};
 
 static void priv_process_pending_bindings (TurnPriv *priv);
 static gboolean priv_retransmissions_tick_unlocked (TurnPriv *priv);
@@ -240,12 +249,8 @@ nice_turn_socket_new (GMainContext *ctx,
 
   sock->type = NICE_SOCKET_TYPE_TURN;
   sock->addr = *addr;
-  sock->fileno = base_socket->fileno;
-  sock->send = socket_send;
-  sock->recv = socket_recv;
-  sock->is_reliable = socket_is_reliable;
-  sock->close = socket_close;
-  sock->attach = NULL;
+  /* We don't really have a transport, everything is done via the base socket */
+  sock->functions = &socket_functions;
 
   sock->priv = (void *) priv;
 
@@ -1678,4 +1683,11 @@ nice_turn_socket_set_ms_connection_id (NiceSocket *sock, StunMessage *msg)
     priv->ms_sequence_num = ntohl((uint32_t)*(ms_seq_num + 20));
     priv->ms_connection_id_valid = TRUE;
   }
+}
+
+static int
+socket_get_fd (NiceSocket *sock)
+{
+  TurnPriv *priv = (TurnPriv *)sock->priv;
+  return nice_socket_get_fd(priv->base_socket);
 }

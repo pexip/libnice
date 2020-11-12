@@ -2468,7 +2468,7 @@ static void priv_reply_to_conn_check (NiceAgent *agent, Stream *stream, Componen
       stream->id, component->id,
       tmpbuf,
       nice_address_get_port (toaddr),
-      socket->fileno ? g_socket_get_fd(socket->fileno) : 0,
+      nice_socket_get_fd(socket),
       (unsigned)rbuf_len,
       rcand, component->id,
       (int)use_candidate);

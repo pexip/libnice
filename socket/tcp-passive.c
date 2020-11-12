@@ -78,9 +78,21 @@ static gint socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *
 static gboolean socket_is_reliable (NiceSocket *sock);
 static gint socket_get_tx_queue_size (NiceSocket *sock);
 static void socket_set_rx_enabled (NiceSocket *sock, gboolean enabled);
+static int socket_get_fd (NiceSocket *sock);
+
+static const NiceSocketFunctionTable socket_functions = {
+    .send = socket_send,
+    .recv = socket_recv,
+    .is_reliable = socket_is_reliable,
+    .close = socket_close,
+    .get_fd = socket_get_fd,
+    .attach = socket_attach,
+    .get_tx_queue_size = socket_get_tx_queue_size,
+    .set_rx_enabled = socket_set_rx_enabled,
+};
 
 NiceSocket *
-nice_tcp_passive_socket_new (GAsync *async, NiceAddress *addr,
+nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr,
     SocketRXCallback rxcb, SocketTXCallback txcb, gpointer userdata,
     GDestroyNotify destroy_notify, guint max_tcp_queue_size)
 {
@@ -159,28 +171,23 @@ nice_tcp_passive_socket_new (GAsync *async, NiceAddress *addr,
   priv->max_tcp_queue_size = max_tcp_queue_size;
 
   sock->type = NICE_SOCKET_TYPE_TCP_PASSIVE;
-  sock->fileno = gsock;
-  sock->send = socket_send;
-  sock->recv = socket_recv;
-  sock->is_reliable = socket_is_reliable;
-  sock->close = socket_close;
-  sock->attach = socket_attach;
-  sock->get_tx_queue_size = socket_get_tx_queue_size;
-  sock->set_rx_enabled = socket_set_rx_enabled;
-
+  sock->transport.fileno = gsock;
+  sock->functions = &socket_functions;
   return sock;
 }
 
 static void
 socket_attach (NiceSocket* sock)
 {
+#if 0
   TcpPassivePriv *priv = sock->priv;
   GSList *i;
-  
+
   for (i = priv->established_sockets; i; i = i->next) {
     NiceSocket *socket = i->data;
     nice_socket_attach (socket);
   }
+#endif
 }
 
 static void
@@ -200,10 +207,10 @@ socket_close (NiceSocket *sock)
     nice_socket_free (socket);
   }
 
-  if (sock->fileno) {
-    g_socket_close (sock->fileno, NULL);
-    g_object_unref (sock->fileno);
-    sock->fileno = NULL;
+  if (sock->transport.fileno) {
+    g_socket_close (sock->transport.fileno, NULL);
+    g_object_unref (sock->transport.fileno);
+    sock->transport.fileno = NULL;
   }
   g_slist_free (priv->established_sockets);
   g_slice_free (TcpPassivePriv, sock->priv);
@@ -212,9 +219,19 @@ socket_close (NiceSocket *sock)
 static gint
 socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
 {
-  /* Earlier used for accepting, now for nothing
-    TcpPassivePriv *priv = sock->priv;
-  */
+  TcpPassivePriv *priv = sock->priv;
+
+  /*
+   * Accept new connection, TODO: dos prevention, reconnects etc
+   */
+  NiceSocket* new_socket = nice_tcp_passive_socket_accept (sock);
+  if (!new_socket) {
+    GST_WARNING ("tcp-pass %p: Failed to accept new connection", sock);
+    return -1;
+  }
+
+  priv->established_sockets = g_slist_append (priv->established_sockets, new_socket);
+  return 0;
 }
 
 static gint
@@ -261,24 +278,41 @@ tcp_passive_established_socket_tx_cb (NiceSocket* socket,
   priv->txcb (passive, buf, len, queued, priv->userdata);
 }
 
-void nice_tcp_passive_socket_accept(NiceSocket *server_socket, NiceSocket* client_socket, gint32 result, NiceAddress remote_address)
+NiceSocket *
+nice_tcp_passive_socket_accept (NiceSocket *socket)
 {
   struct sockaddr_storage name;
-  TcpPassivePriv *priv = server_socket->priv;
+  TcpPassivePriv *priv = socket->priv;
   GSocket *gsock = NULL;
   GSocketAddress *gaddr;
+  NiceAddress remote_addr;
 
-  if (result != 0) {
-    GST_WARNING("tcp-pass %p: Accept failed", server_socket);
-    return;
+  gsock = g_socket_accept (socket->transport.fileno, NULL, NULL);
+
+  if (gsock == NULL) {
+    GST_WARNING("tcp-pass %p: Accept failed", socket);
+    return NULL;
   }
 
-  NiceSocket *new_socket = nice_tcp_established_socket_new (client_socket,
+  /* GSocket: All socket file descriptors are set to be close-on-exec. */
+  g_socket_set_blocking (gsock, false);
+
+  gaddr = g_socket_get_remote_address (gsock, NULL);
+  if (gaddr == NULL ||
+      !g_socket_address_to_native (gaddr, &name, sizeof (name), NULL)) {
+    g_socket_close (gsock, NULL);
+    g_object_unref (gsock);
+    return NULL;
+  }
+  g_object_unref (gaddr);
+
+  nice_address_set_from_sockaddr (&remote_addr, (struct sockaddr *)&name);
+
+  return nice_tcp_established_socket_new (gsock,
       G_OBJECT (priv->userdata->agent),
-      &server_socket->addr, &remote_address, priv->context,
+      &socket->addr, &remote_addr, priv->context,
       tcp_passive_established_socket_rx_cb, tcp_passive_established_socket_tx_cb,
       (gpointer)socket, NULL, FALSE, priv->max_tcp_queue_size);
-  priv->established_sockets = g_slist_append (priv->established_sockets, new_socket);
 }
 
 static gint
@@ -307,4 +341,10 @@ socket_set_rx_enabled (NiceSocket *sock, gboolean enabled)
     NiceSocket *socket = i->data;
     nice_socket_set_rx_enabled (socket, enabled);
   }
+}
+
+static int
+socket_get_fd (NiceSocket *sock)
+{
+  return sock->transport.fileno ? g_socket_get_fd(sock->transport.fileno) : -1;
 }

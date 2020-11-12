@@ -46,14 +46,19 @@
 gint
 nice_socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
 {
-  return sock->recv (sock, from, len, buf);
+  return sock->functions->recv (sock, from, len, buf);
 }
 
 gint
 nice_socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf)
 {
-  return sock->send (sock, to, len, buf);
+  return sock->functions->send (sock, to, len, buf);
+}
+int 
+nice_socket_get_fd (NiceSocket *sock)
+{
+  return sock->functions->get_fd(sock);
 }
 
 gint
@@ -61,8 +66,8 @@ nice_socket_get_tx_queue_size (NiceSocket *sock)
 {
   int ret = 0;
 
-  if (sock->get_tx_queue_size != NULL) {
-    ret = sock->get_tx_queue_size (sock);
+  if (sock->functions->get_tx_queue_size != NULL) {
+    ret = sock->functions->get_tx_queue_size (sock);
   }
 
   return ret;
@@ -71,21 +76,21 @@ nice_socket_get_tx_queue_size (NiceSocket *sock)
 void
 nice_socket_set_rx_enabled (NiceSocket *sock, gboolean enabled)
 {
-  if (sock->set_rx_enabled != NULL)
-    sock->set_rx_enabled (sock, enabled);
+  if (sock->functions->set_rx_enabled != NULL)
+    sock->functions->set_rx_enabled (sock, enabled);
 }
 
 gboolean
 nice_socket_is_reliable (NiceSocket *sock)
 {
-  return sock->is_reliable (sock);
+  return sock->functions->is_reliable (sock);
 }
 
 void
 nice_socket_free (NiceSocket *sock)
 {
   if (sock) {
-    sock->close (sock);
+    sock->functions->close (sock);
     g_slice_free (NiceSocket,sock);
   }
 }
@@ -175,7 +180,7 @@ nice_socket_async_accept_callback (
   NiceAddress client_niceaddr;
   nice_address_init(&client_niceaddr); 
   nice_address_set_from_sockaddr (&client_niceaddr, client_addr);
-  socket->accept(server_socket, connection_socket, result, client_niceaddr);
+  socket->functions->accept_callback(server_socket, connection_socket, result, client_niceaddr);
 }
 
 void nice_socket_async_connection_socket_dispose_callback(

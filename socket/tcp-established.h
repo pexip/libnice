@@ -43,9 +43,9 @@
 G_BEGIN_DECLS
 
 
-NiceSocket *nice_tcp_established_socket_new (GAsyncConnectionSocket *sock,
+NiceSocket *nice_tcp_established_socket_new (GSocket *gsock,
     GObject *nice_agent,
-    NiceAddress *local_addr, const NiceAddress *remote_addr, GAsync *async,
+    NiceAddress *local_addr, const NiceAddress *remote_addr, GMainContext *ctx,
     SocketRXCallback rxcb, SocketTXCallback txcb, gpointer userdata,
     GDestroyNotify destroy_notify, gboolean connect_pending, guint max_tcp_queue_size);
 
