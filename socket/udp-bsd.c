@@ -1,4 +1,3 @@
-#if 0
 /*
  * This file is part of the Nice GLib ICE library.
  *
@@ -63,6 +62,16 @@ static gint socket_recv (NiceSocket *sock, NiceAddress *from,
 static gint socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf);
 static gboolean socket_is_reliable (NiceSocket *sock);
+static int socket_get_fd (NiceSocket *sock);
+
+static const NiceSocketFunctionTable socket_functions = {
+    .send = socket_send,
+    .recv = socket_recv,
+    .is_reliable = socket_is_reliable,
+    .close = socket_close,
+    .get_fd = socket_get_fd,
+    .attach = NULL,
+};
 
 struct UdpBsdSocketPrivate
 {
@@ -140,12 +149,8 @@ nice_udp_bsd_socket_new (NiceAddress *addr)
   nice_address_init (&priv->niceaddr);
 
   sock->type = NICE_SOCKET_TYPE_UDP_BSD;
-  sock->fileno = gsock;
-  sock->send = socket_send;
-  sock->recv = socket_recv;
-  sock->is_reliable = socket_is_reliable;
-  sock->close = socket_close;
-  sock->attach = NULL;
+  sock->transport.fileno = gsock;
+  sock->functions = &socket_functions;
 
   return sock;
 }
@@ -159,10 +164,10 @@ socket_close (NiceSocket *sock)
     g_object_unref (priv->gaddr);
   g_slice_free (struct UdpBsdSocketPrivate, sock->priv);
 
-  if (sock->fileno) {
-    g_socket_close (sock->fileno, NULL);
-    g_object_unref (sock->fileno);
-    sock->fileno = NULL;
+  if (sock->transport.fileno) {
+    g_socket_close (sock->transport.fileno, NULL);
+    g_object_unref (sock->transport.fileno);
+    sock->transport.fileno = NULL;
   }
 }
 
@@ -173,7 +178,7 @@ socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
   GError *gerr = NULL;
   gint recvd;
 
-  recvd = g_socket_receive_from (sock->fileno, &gaddr, buf, len, NULL, &gerr);
+  recvd = g_socket_receive_from (sock->transport.fileno, &gaddr, buf, len, NULL, &gerr);
 
   if (recvd < 0) {
     if (g_error_matches(gerr, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK)
@@ -217,7 +222,7 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
     priv->niceaddr = *to;
   }
 
-  return g_socket_send_to (sock->fileno, priv->gaddr, buf, len, NULL, NULL);
+  return g_socket_send_to (sock->transport.fileno, priv->gaddr, buf, len, NULL, NULL);
 }
 
 static gboolean
@@ -226,4 +231,8 @@ socket_is_reliable (NiceSocket *sock)
   return FALSE;
 }
 
-#endif
+static int
+socket_get_fd (NiceSocket *sock)
+{
+  return sock->transport.fileno ? g_socket_get_fd(sock->transport.fileno) : -1;
+}

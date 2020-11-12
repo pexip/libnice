@@ -58,7 +58,7 @@ GST_DEBUG_CATEGORY_EXTERN (niceagent_debug);
 
 typedef struct {
   GSocketAddress     *local_addr;
-  GAsync             *async;
+  GMainContext       *context;
   SocketRXCallback    rxcb;
   SocketTXCallback    txcb;
   TcpUserData        *userdata;
@@ -77,9 +77,21 @@ static gint socket_send (NiceSocket *sock, const NiceAddress *to,
 static gboolean socket_is_reliable (NiceSocket *sock);
 static gint socket_get_tx_queue_size (NiceSocket *sock);
 static void socket_set_rx_enabled (NiceSocket *sock, gboolean enabled);
+static int socket_get_fd (NiceSocket *sock);
+
+static const NiceSocketFunctionTable socket_functions = {
+    .send = socket_send,
+    .recv = socket_recv,
+    .is_reliable = socket_is_reliable,
+    .close = socket_close,
+    .get_fd = socket_get_fd,
+    .attach = socket_attach,
+    .get_tx_queue_size = socket_get_tx_queue_size,
+    .set_rx_enabled = socket_set_rx_enabled,
+};
 
 NiceSocket *
-nice_tcp_active_socket_new (GAsync *async, NiceAddress *addr,
+nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr,
     SocketRXCallback rxcb, SocketTXCallback txcb, gpointer userdata,
     GDestroyNotify destroy_notify, guint max_tcp_queue_size)
 {
@@ -109,7 +121,7 @@ nice_tcp_active_socket_new (GAsync *async, NiceAddress *addr,
 
   sock->priv = priv = g_slice_new0 (TcpActivePriv);
   priv->local_addr = gaddr;
-  priv->async = async ? g_object_ref (async) : NULL;
+  priv->context = ctx ? g_main_context_ref (ctx) : NULL;
   priv->rxcb = rxcb;
   priv->txcb = txcb;
   priv->userdata = userdata;
@@ -118,14 +130,8 @@ nice_tcp_active_socket_new (GAsync *async, NiceAddress *addr,
 
   sock->type = NICE_SOCKET_TYPE_TCP_ACTIVE;
   sock->addr = *addr;
-  sock->fileno = NULL;
-  sock->send = socket_send;
-  sock->recv = socket_recv;
-  sock->is_reliable = socket_is_reliable;
-  sock->close = socket_close;
-  sock->attach = socket_attach;
-  sock->get_tx_queue_size = socket_get_tx_queue_size;
-  sock->set_rx_enabled = socket_set_rx_enabled;
+  sock->transport.connection = NULL;
+  sock->functions = &socket_functions;
 
   return sock;
 }
@@ -133,13 +139,23 @@ nice_tcp_active_socket_new (GAsync *async, NiceAddress *addr,
 static void
 socket_attach (NiceSocket* sock)
 {
+#if 0
   TcpActivePriv *priv = sock->priv;
   GSList *i;
-  /* There should not be any estiablished sockets when attached */
+
+  if (priv->context)
+    g_main_context_unref (priv->context);
+
+  priv->context = ctx;
+  if (priv->context) {
+    g_main_context_ref (priv->context);
+  }
+
   for (i = priv->established_sockets; i; i = i->next) {
     NiceSocket *socket = i->data;
-    nice_socket_attach (socket);
+    nice_socket_attach (socket, ctx);
   }
+#endif
 }
 
 static void
@@ -148,8 +164,8 @@ socket_close (NiceSocket *sock)
   TcpActivePriv *priv = sock->priv;
   GSList *i;
 
-  if (priv->async)
-    g_clear_object (&priv->async);
+  if (priv->context)
+    g_main_context_unref (priv->context);
 
   if (priv->userdata && priv->destroy_notify)
     (priv->destroy_notify)(priv->userdata);
@@ -321,7 +337,7 @@ nice_tcp_active_socket_connect (NiceSocket *socket, const NiceAddress *addr)
 
   return nice_tcp_established_socket_new (gsock,
       G_OBJECT (priv->userdata->agent),
-      &local_addr, addr, priv->async,
+      &local_addr, addr, priv->context,
       tcp_active_established_socket_rx_cb, tcp_active_established_socket_tx_cb,
       (gpointer)socket, NULL, connect_pending, priv->max_tcp_queue_size);
 }
@@ -353,4 +369,10 @@ socket_set_rx_enabled (NiceSocket *sock, gboolean enabled)
     NiceSocket *socket = i->data;
     nice_socket_set_rx_enabled (socket, enabled);
   }
+}
+
+static int
+socket_get_fd (NiceSocket *sock)
+{
+  return sock->transport.fileno ? g_socket_get_fd(sock->transport.fileno) : -1;
 }

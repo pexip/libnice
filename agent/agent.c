@@ -2421,7 +2421,7 @@ _nice_agent_recv (NiceAgent * agent,
     GST_LOG_OBJECT (agent,
         "Packet received on local %s socket %u from [%s]:%u (%u octets).",
         socket_type_to_string (socket->type),
-        socket->fileno ? g_socket_get_fd (socket->fileno) : 0, tmpbuf,
+        nice_socket_get_fd(socket), tmpbuf,
         nice_address_get_port (from), len);
   }
 #endif
@@ -2775,7 +2775,7 @@ nice_agent_socket_rx_cb (NiceSocket * socket, NiceAddress * from,
 
     g_log (G_LOG_DOMAIN, G_LOG_LEVEL_INFO,
         "Agent %p : Received invalid packet on local socket %u from [%s]:%u (%d octets).",
-        agent, socket->fileno ? g_socket_get_fd (socket->fileno) : 0, tmpbuf,
+        agent, nice_socket_get_fd(socket), tmpbuf,
         nice_address_get_port (from), len);
     return;
   }
@@ -2786,7 +2786,7 @@ nice_agent_socket_rx_cb (NiceSocket * socket, NiceAddress * from,
     GST_LOG_OBJECT (agent,
         "Packet received on local %s socket %u from [%s]:%u (%u octets).",
         socket_type_to_string (socket->type),
-        socket->fileno ? g_socket_get_fd (socket->fileno) : 0, tmpbuf,
+        agent, nice_socket_get_fd(socket), tmpbuf,
         nice_address_get_port (from), len);
   }
 #endif
@@ -2995,15 +2995,16 @@ agent_attach_stream_component_socket (NiceAgent * agent,
   GSource *source;
   IOCtx *ctx;
 
-  nice_socket_attach (socket, component->async);
+  //TODO: Figure out what to do with all these attaches
+  //nice_socket_attach (socket);//, component->async);
 
-  if (!component->async)
-    return;
+  //if (!component->async)
+  //  return;
 
-  if (socket->fileno) {
+  if (nice_socket_get_fd (socket) != -1) {
     /* note: without G_IO_ERR the glib mainloop goes into
      *       busyloop if errors are encountered */
-    source = g_socket_create_source (socket->fileno, G_IO_IN | G_IO_ERR, NULL);
+    source = g_socket_create_source (nice_socket_get_fd(socket), G_IO_IN | G_IO_ERR, NULL);
 
     ctx = io_ctx_new (agent, stream, component, socket, source);
     g_source_set_callback (source, (GSourceFunc) nice_agent_g_source_cb,
@@ -3218,14 +3219,14 @@ done:
 void
 _priv_set_socket_tos (NiceAgent * agent, NiceSocket * sock, gint tos)
 {
-  if (sock->fileno &&
-      setsockopt (g_socket_get_fd (sock->fileno), IPPROTO_IP,
+  if (nice_socket_get_fd (sock) != -1 &&
+      setsockopt (nice_socket_get_fd (sock), IPPROTO_IP,
           IP_TOS, (const char *) &tos, sizeof (tos)) < 0) {
     GST_WARNING_OBJECT (agent, "Could not set socket ToS", g_strerror (errno));
   }
 #ifdef IPV6_TCLASS
-  if (sock->fileno &&
-      setsockopt (g_socket_get_fd (sock->fileno), IPPROTO_IPV6,
+  if (nice_socket_get_fd (sock) != -1 &&
+      setsockopt (nice_socket_get_fd (sock), IPPROTO_IPV6,
           IPV6_TCLASS, (const char *) &tos, sizeof (tos)) < 0) {
     GST_DEBUG_OBJECT (agent, "Could not set IPV6 socket ToS",
         g_strerror (errno));

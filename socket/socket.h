@@ -68,31 +68,45 @@ typedef enum {
   NICE_SOCKET_TYPE_TCP_TURN
 } NiceSocketType;
 
+typedef struct _NiceSocketFunctionTable NiceSocketFunctionTable;
+
+struct _NiceSocketFunctionTable
+{
+  /* Asyncronous functions */
+  void (*accept_callback) (NiceSocket *server_socket, NiceSocket* client_socket, gint32 result, NiceAddress client_address);
+  void (*request_recv) (NiceSocket *sock, struct msghdr * msg);
+  void (*recv_callback) (NiceSocket *sock, struct msghdr * msg);
+
+  gboolean (*request_send) (NiceSocket *sock,  struct msghdr * msg);
+  gboolean (*send_callback) (NiceSocket *sock,  struct msghdr * msg);
+  
+  /* Used when a socket is requested to be freed/closed.  */
+  void (*request_close) (NiceSocket *sock);
+  void (*closed_callback) (NiceSocket *sock);
+  
+  /* Sync versions of async functions */
+  void (*close) (NiceSocket *sock);
+  void (*attach) (NiceSocket *sock, GMainContext* ctx);
+  gint (*recv) (NiceSocket *sock, NiceAddress *from, guint len,
+      gchar *buf);
+  gint (*send) (NiceSocket *sock, const NiceAddress *to, guint len,
+      const gchar *buf);
+
+  gboolean (*is_reliable) (NiceSocket *sock);
+  int (*get_tx_queue_size) (NiceSocket *sock);
+  void (*set_rx_enabled) (NiceSocket *sock, gboolean enabled);
+  int (*get_fd) (NiceSocket *sock);
+};
 struct _NiceSocket
 {
   NiceAddress addr;
   NiceSocketType type;
   union{
+    GSocket *fileno;
     GAsyncServerSocket *server;
-    GAsyncServerSocket *conection;
+    GAsyncServerSocket *connection;
   } transport;
-
-  /* Asyncronous functions */
-  gboolean (*recv_callback) (NiceSocket *sock, NiceAddress *from, guint len,
-      gchar *buf);
-  void (*accept_callback) (NiceSocket *server_socket, NiceSocket* client_socket, gint32 result, NiceAddress client_address);
-  
-  /* Used when a socket is requested to be freed/closed.  */
- void (*request_close) (NiceSocket *sock);
- void (*closed_callback) (NiceSocket *sock);
-  /* Async function, but backed by a queue */
-  gboolean (*request_send) (NiceSocket *sock, const NiceAddress *to, guint len,
-      const gchar *buf);
-  
-  gboolean (*is_reliable) (NiceSocket *sock);
-  int (*get_tx_queue_size) (NiceSocket *sock);
-  void (*set_rx_enabled) (NiceSocket *sock, gboolean enabled);
-
+  NiceSocketFunctionTable const * functions;
   void *priv;
 };
 
@@ -121,6 +135,9 @@ nice_socket_set_rx_enabled (NiceSocket *sock, gboolean enabled);
 
 void
 nice_socket_free (NiceSocket *sock);
+
+int 
+nice_socket_get_fd (NiceSocket *sock);
 
 const char *socket_type_to_string (NiceSocketType type);
 
