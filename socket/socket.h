@@ -76,6 +76,7 @@ struct _NiceSocket
     GAsyncServerSocket *server;
     GAsyncServerSocket *conection;
   } transport;
+
   /* Asyncronous functions */
   gboolean (*recv_callback) (NiceSocket *sock, NiceAddress *from, guint len,
       gchar *buf);

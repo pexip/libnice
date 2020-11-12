@@ -57,11 +57,20 @@ GST_DEBUG_CATEGORY_EXTERN (niceagent_debug);
 
 #define MAX_BUFFER_SIZE 65535
 
+typedef enum _TcpEstablishedState TcpEstablishedState;
+enum _TcpEstablishedState
+{
+  TCP_ESTABLISHED_STATE_CONNECT_PENDING,
+  TCP_ESTABLISHED_STATE_CONNECTED,
+  TCP_ESTABLISHED_STATE_DISCONNECT_PENDING,
+};
+
 typedef struct {
   NiceAgent          *nice_agent;
   NiceAddress         remote_addr;
   GQueue              send_queue;
   GAsync             *async;
+
   gboolean            error;
   SocketRXCallback    rxcb;
   SocketTXCallback    txcb;
@@ -69,10 +78,14 @@ typedef struct {
   GDestroyNotify      destroy_notify;
   guint8              recv_buff[MAX_BUFFER_SIZE];
   guint               recv_offset;
-  gboolean            connect_pending;
   guint               max_tcp_queue_size;
   gint                tx_queue_size_bytes;
   gboolean            rx_enabled;
+  TcpEstablishedState connection_state;
+  struct msghdr       recv_header;
+  struct iovec        recv_vec;
+  struct msghdr       send_header;
+  struct iovec        send_vec;
 } TcpEstablishedPriv;
 
 struct to_be_sent {
@@ -127,7 +140,7 @@ nice_tcp_established_socket_new (GAsyncConnectionSocket *conn_sock, GObject *nic
   NiceSocket *sock;
   TcpEstablishedPriv *priv;
 
-  g_return_val_if_fail (G_IS_SOCKET (gsock), NULL);
+  g_return_val_if_fail (GASYNC_IS_CONNECTION_SOCKET (conn_sock), NULL);
   g_return_val_if_fail (rxcb != NULL, NULL);
   g_return_val_if_fail (txcb != NULL, NULL);
 
@@ -142,7 +155,7 @@ nice_tcp_established_socket_new (GAsyncConnectionSocket *conn_sock, GObject *nic
   priv->userdata = userdata;
   priv->destroy_notify = destroy_notify;
   priv->recv_offset = 0;
-  priv->connect_pending = connect_pending;
+  priv->connection_state = connect_pending ? TCP_ESTABLISHED_STATE_CONNECT_PENDING : TCP_ESTABLISHED_STATE_CONNECTED;
   priv->max_tcp_queue_size = max_tcp_queue_size;
   priv->rx_enabled = TRUE;
 
@@ -190,6 +203,7 @@ socket_request_close (NiceSocket *sock)
   NiceAgent *agent = priv->nice_agent;
 
   g_assert (agent->agent_mutex_th != NULL);
+  g_assert (priv->connection_state == TCP_ESTABLISHED_STATE_CONNECTED);
 
   g_queue_foreach (&priv->send_queue, (GFunc) free_to_be_sent, NULL);
   g_queue_clear (&priv->send_queue);
@@ -197,12 +211,20 @@ socket_request_close (NiceSocket *sock)
   if (priv->userdata && priv->destroy_notify)
     (priv->destroy_notify)(priv->userdata);
 
-  if (priv->context)
-    g_main_context_unref (priv->context);
+  priv->connection_state = TCP_ESTABLISHED_STATE_DISCONNECT_PENDING;
 
-  g_slice_free(TcpEstablishedPriv, sock->priv);
+  g_assert(gasync_connection_socket_close(sock->transport.conection));
 
   g_assert (agent->agent_mutex_th != NULL);
+}
+
+static void
+socket_closed_callback (NiceSocket *sock)
+{
+  TcpEstablishedPriv *priv = sock->priv;
+  g_assert (priv->connection_state == TCP_ESTABLISHED_STATE_DISCONNECT_PENDING);
+
+  g_slice_free(TcpEstablishedPriv, sock->priv);
 }
 
 static gint
@@ -265,37 +287,12 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
     buff[1] = (len & 0xFF);
     memcpy (&buff[2], buf, len);
     len += 2;
-
-    /* First try to send the data, don't send it later if it can be sent now
-       this way we avoid allocating memory on every send */
-    if (g_socket_is_connected (sock->fileno) &&
-        g_queue_is_empty (&priv->send_queue)) {
-      ret = g_socket_send (sock->fileno, buff, len, NULL, &gerr);
-      if (ret < 0) {
-        if (g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK)) {
-          add_to_be_sent (sock, buff, len, FALSE);
-          priv->txcb (sock, buff, len, priv->tx_queue_size_bytes, priv->userdata);
-          ret = len;
-        }
-      } else {
-        guint rest = len - ret;
-        if (rest > 0) {
-          add_to_be_sent (sock, &buff[ret], rest, FALSE);
-          ret = len;
-        }
-      }
-
-      if (gerr != NULL)
-        g_error_free (gerr);
-
-      return ret;
-    } else {
-      add_to_be_sent (sock, buff, len, FALSE);
-      if (g_socket_is_connected (sock->fileno)) {
-        priv->txcb (sock, buff, len, priv->tx_queue_size_bytes, priv->userdata);
-      }
-      return len;
+    add_to_be_sent (sock, buff, len, FALSE);
+    if (priv->connection_state == TCP_ESTABLISHED_STATE_CONNECTED)
+    {
+      priv->txcb (sock, buff, len, priv->tx_queue_size_bytes, priv->userdata);
     }
+    return len;
   } else {
     gchar remote_string [NICE_ADDRESS_STRING_LEN];
 
@@ -323,13 +320,12 @@ parse_rfc4571(NiceSocket* sock, NiceAddress* from)
       if (packet_length + 2 <= priv->recv_offset) {
         priv->rxcb (sock, from, (gchar *)&data[2], packet_length, priv->userdata);
 
-        if (g_source_is_destroyed (g_main_current_source ())) {
-          return;
+        if (priv->recv_offset - packet_length - 2 > 0)
+        {
+          /* More data after current packet */
+          memmove (&priv->recv_buff[0], &priv->recv_buff[packet_length + 2],
+                  priv->recv_offset - packet_length - 2);
         }
-
-        /* More data after current packet */
-        memmove (&priv->recv_buff[0], &priv->recv_buff[packet_length + 2],
-                priv->recv_offset - packet_length - 2);
         priv->recv_offset = priv->recv_offset - packet_length - 2;
       } else {
         done = TRUE;
@@ -340,34 +336,20 @@ parse_rfc4571(NiceSocket* sock, NiceAddress* from)
   }
 }
 
-/*
- * Returns FALSE if the source should be destroyed.
- */
 static gboolean
-socket_recv_more (
-  GSocket *gsocket,
-  GIOCondition condition,
-  gpointer data)
+socket_recv_callback (
+  NiceSocket *sock,
+  gint32 result,
+  struct msghdr *msg)
 {
   gint len;
-  TcpEstablishedCallbackData *cbdata = (TcpEstablishedCallbackData *)data;
-  NiceAgent *agent = cbdata->nice_agent;
+  TcpEstablishedPriv *priv = sock->priv;
+  NiceAgent *agent = priv->nice_agent;
   NiceSocket* sock = NULL;
   TcpEstablishedPriv *priv = NULL;
   NiceAddress from;
 
   agent_lock (agent);
-
-  if (g_source_is_destroyed (g_main_current_source ())) {
-    GST_DEBUG ("tcp-est %p: Source was destroyed. "
-        "Avoided race condition in tcp-established.c:socket_recv_more", sock);
-    agent_unlock (agent);
-    return FALSE;
-  } else {
-    // Socket still valid
-    sock = cbdata->sock;
-    priv = sock->priv;
-  }
 
   if (!priv->rx_enabled) {
     /* Socket is suspended so don't read from it */
@@ -375,16 +357,15 @@ socket_recv_more (
     return TRUE;
   }
 
-  len = socket_recv (sock, &from, MAX_BUFFER_SIZE-priv->recv_offset, (gchar *)&priv->recv_buff[priv->recv_offset]);
+  //len = socket_recv (sock, &from, MAX_BUFFER_SIZE-priv->recv_offset, (gchar *)&priv->recv_buff[priv->recv_offset]);
 
   if (len > 0) {
     priv->recv_offset += len;
     parse_rfc4571(sock, &from);
+    socket_recv_request(socket);
   } else if (len < 0) {
     GST_DEBUG ("tcp-est %p: socket_recv_more: error from socket %d", sock, len);
-    g_source_destroy (priv->read_source);
-    g_source_unref (priv->read_source);
-    priv->read_source = NULL;
+    socket_close(sock);
     priv->error = TRUE;
     agent_unlock (agent);
     return FALSE;
@@ -394,6 +375,49 @@ socket_recv_more (
   return TRUE;
 }
 
+static gboolean socket_recv_request(NiceSocket *sock)
+{
+  TcpEstablishedPriv *priv = sock->priv;
+  priv->recv_vec.iov_base = (void *)&priv->recv_buff[priv->recv_offset];
+  priv->recv_vec.iov_len = MAX_BUFFER_SIZE-priv->recv_offset;
+
+  struct msghdr recvmsg = { };
+  recvmsg.msg_iov = &priv->recv_vec,
+  recvmsg.msg_iovlen = 1,
+
+  priv->recv_header = recvmsg;
+
+ g_assert(gasync_connection_socket_recvmsg (sock->transport.conection, &priv->recv_header, 0));
+}
+// This will not be called for server socket based connections, Is this relevant at all,
+// or will all established sockets per definition be connected?
+static void socket_accept_callback (NiceSocket *server_socket, NiceSocket* client_socket,
+ gint32 result, NiceAddress client_address)
+{
+  TcpEstablishedPriv *priv = NULL;
+  g_assert (priv->connection_state == TCP_ESTABLISHED_STATE_CONNECT_PENDING);
+  /*
+    * First event will be the connect result
+    */
+  if (result != 0 ) {
+      GST_DEBUG ("tcp-est %p: connect failed. g_socket_is_connected=%d", sock, g_socket_is_connected (sock->fileno));
+  }
+
+  priv->connection_state = TCP_ESTABLISHED_STATE_CONNECTED;
+}
+
+// Submit data that is in the queue to the socket implementation
+static void socket_send_from_queue(NiceSocket *socket)
+{
+
+}
+
+/* Message was sent */
+static void socket_sendmsg_callback(NiceSocket * socket, gint32 result, struct msghdr *msg)
+{
+  TcpEstablishedPriv *priv = sock->priv;
+
+}
 /*
  * Returns FALSE if the source should be destroyed.
  */
@@ -421,21 +445,6 @@ socket_send_more (
     // Socket still valid
     sock = cbdata->sock;
     priv = sock->priv;
-  }
-
-  if (priv->connect_pending) {
-    /*
-     * First event will be the connect result
-     */
-    if (!g_socket_check_connect_result (gsocket, &gerr)) {
-        GST_DEBUG ("tcp-est %p: connect failed. g_socket_is_connected=%d", sock, g_socket_is_connected (sock->fileno));
-    }
-
-    if (gerr) {
-      g_error_free (gerr);
-      gerr = NULL;
-    }
-    priv->connect_pending = FALSE;
   }
 
   while ((tbs = g_queue_pop_head (&priv->send_queue)) != NULL) {
