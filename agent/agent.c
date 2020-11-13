@@ -111,7 +111,7 @@ enum
   PROP_AGGRESSIVE_MODE,
   PROP_REGULAR_NOMINATION_TIMEOUT,
   PROP_TIE_BREAKER,
-  PROP_ASYNC
+  PROP_ASYNC_CONTEXT
 };
 
 
@@ -465,13 +465,20 @@ nice_agent_class_init (NiceAgentClass * klass)
   /**
    * NiceAgent:main-context:
    *
-   * A GLib main context is needed for all timeouts used by libnice.
+   * A GLib main context is needed for all timeouts and sockets used by libnice.
    * This is a property being set by the nice_agent_new() call.
    */
   g_object_class_install_property (gobject_class, PROP_MAIN_CONTEXT,
       g_param_spec_pointer ("main-context",
           "The GMainContext to use for timeouts",
           "The GMainContext to use for timeouts",
+          G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
+
+  /* For udp sockets gasync objects are used to do asyncronous io */
+  g_object_class_install_property (gobject_class, PROP_ASYNC_CONTEXT,
+      g_param_spec_pointer ("async-transport",
+          "The GAsync io context used for udp transports and timeouts",
+          "The GAsync io context used for udp transports and timeouts",
           G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
 
   /**
@@ -878,9 +885,9 @@ nice_agent_new (GAsync *async_transport,
     NiceCompatibility turn_compat)
 {
   NiceAgent *agent = g_object_new (NICE_TYPE_AGENT,
+      "main-context", context,
       "compatibility", compat,
       "turn-compatibility", turn_compat,
-      "main-context", context,
       "async-transport", async_transport,
       NULL);
 
@@ -982,7 +989,7 @@ nice_agent_get_property (GObject * object,
       g_value_set_uint64 (value, agent->tie_breaker);
       break;
 
-    case PROP_ASYNC:
+    case PROP_ASYNC_CONTEXT:
       g_value_set_pointer (value, agent->async);
       break;
 
@@ -1106,7 +1113,7 @@ nice_agent_set_property (GObject * object,
       agent->tie_breaker = g_value_get_uint64 (value);
       break;
 
-    case PROP_ASYNC:
+    case PROP_ASYNC_CONTEXT:
       agent->async = g_value_get_pointer (value);
       if (agent->async != NULL) {
         g_object_ref (agent->async);
@@ -1439,7 +1446,7 @@ nice_agent_add_stream (NiceAgent * agent, guint n_components)
   guint ret = 0;
 
   agent_lock (agent);
-  stream = stream_new (n_components);
+  stream = stream_new (agent, n_components);
 
   agent->streams = g_slist_append (agent->streams, stream);
   stream->id = agent->next_stream_id++;
@@ -3030,17 +3037,22 @@ agent_attach_stream_component_socket (NiceAgent * agent,
   //  return;
 
   if (nice_socket_get_fd (socket) != -1) {
+#if 1
+    g_assert((socket->type == NICE_SOCKET_TYPE_UDP_BSD) ||
+             (component->context != NULL));
+   //g_assert(false);
     /* note: without G_IO_ERR the glib mainloop goes into
      *       busyloop if errors are encountered */
-    source = g_socket_create_source (nice_socket_get_fd(socket), G_IO_IN | G_IO_ERR, NULL);
+    source = g_socket_create_source (socket->transport.fileno, G_IO_IN | G_IO_ERR, NULL);
 
     ctx = io_ctx_new (agent, stream, component, socket, source);
     g_source_set_callback (source, (GSourceFunc) nice_agent_g_source_cb,
         ctx, (GDestroyNotify) io_ctx_free);
     GST_DEBUG_OBJECT (agent, "%u/%u: Attach source %p ctx %p", stream->id,
-        component->id, source, component->async);
-    g_source_attach (source, component->async);
+        component->id, source, component->context);
+    g_source_attach (source, component->context);
     component->gsources = g_slist_append (component->gsources, source);
+#endif
   } else {
     GST_DEBUG_OBJECT (agent, "%u/%u: Source has no fileno", stream->id,
         component->id);
@@ -3117,16 +3129,16 @@ nice_agent_attach_recv (NiceAgent * agent,
 
   component->g_source_io_cb = NULL;
   component->data = NULL;
-  if (component->async)
-    g_object_unref(component->async);
-  component->async = NULL;
+  if (component->context)
+    g_main_context_unref(component->context);
+  component->context = NULL;
 
   if (func) {
     component->g_source_io_cb = func;
     component->data = data;
-    component->async = agent->async;
-    if (agent->async)
-      g_object_ref (agent->async);
+    component->context = agent->main_context;
+    if (component->context)
+      g_main_context_ref (component->context);
 
     priv_attach_stream_component (agent, stream, component);
   }
