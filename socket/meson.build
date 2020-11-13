@@ -14,7 +14,8 @@ libsocket_sources = [
 
 libsocket_deps = [
   glib_deps,
-  gst_deps
+  gst_deps,
+  gasyncio_deps
 ]
 
 libsocket_includes = [

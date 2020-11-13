@@ -26,6 +26,7 @@ glib_deps = [
   dependency('gobject-2.0', fallback: ['glib', 'libgobject_dep']),
   dependency('gio-2.0', version: glib_req, fallback : ['glib', 'gio_dep']),
 ]
+
 gst_deps = [
   dependency('gstreamer-1.0', version : gst_req, fallback : ['gstreamer', 'gst_dep']),
   dependency('gstreamer-base-1.0', version : gst_req, fallback : ['gstreamer', 'gst_base_dep']),
@@ -36,6 +37,8 @@ if host_system == 'windows'
   winsock2_dep = cc.find_library('ws2_32')
   iphlpapi_dep = cc.find_library('iphlpapi')
 endif
+
+gasyncio_deps = [dependency('libgasyncio', version : '>= 0.1')]
 
 install_dir = get_option('libdir')
 plugins_install_dir = '@0@/gstreamer-1.0'.format(install_dir)
@@ -80,3 +83,13 @@ subdir('gst')
 
 #subdir('tests')
 #subdir('python')
+
+pkg = import('pkgconfig')
+pkg.generate(libraries : [libagent,],
+             requires: [glib_deps,gasyncio_deps],
+             subdirs : ['.', 'nice'],
+             version : '0.1.3',
+             name : 'nice',
+             filebase : 'nice',
+             description : 'Library for establishing connections trough firewalls using ICE')
+
