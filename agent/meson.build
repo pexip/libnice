@@ -22,8 +22,6 @@ libagent_headers = [
 ]
 install_headers(libagent_headers, subdir : 'nice')
 
-gasyncio_deps = [dependency('libgasyncio', version : '0.1')]
-
 libagent_deps = [
   glib_deps,
   libnice_random_dep,
