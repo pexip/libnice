@@ -498,7 +498,7 @@ NiceCandidate *discovery_add_local_host_candidate (
     userdata->agent = agent;
     userdata->stream = stream;
     userdata->component = component;
-    socket = nice_tcp_passive_socket_new (component->async, address,
+    socket = nice_tcp_passive_socket_new (agent->main_context, address,
         nice_agent_socket_rx_cb, nice_agent_socket_tx_cb,
         (gpointer)userdata, g_free, stream->max_tcp_queue_size);
     break;
@@ -508,7 +508,7 @@ NiceCandidate *discovery_add_local_host_candidate (
     userdata->agent = agent;
     userdata->stream = stream;
     userdata->component = component;
-    socket = nice_tcp_active_socket_new (component->async, address,
+    socket = nice_tcp_active_socket_new (agent->main_context, address,
         nice_agent_socket_rx_cb, nice_agent_socket_tx_cb,
         (gpointer)userdata, g_free, stream->max_tcp_queue_size);
     break;

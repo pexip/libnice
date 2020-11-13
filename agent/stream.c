@@ -43,13 +43,14 @@
 
 #include "stream.h"
 #include "conncheck.h"
+#include "agent-priv.h"
 
 /*
  * @file stream.c
  * @brief ICE stream functionality
  */
 Stream *
-stream_new (guint n_components)
+stream_new (NiceAgent * agent, guint n_components)
 {
   Stream *stream;
   guint n;
@@ -57,7 +58,7 @@ stream_new (guint n_components)
 
   stream = g_slice_new0 (Stream);
   for (n = 0; n < n_components; n++) {
-    component = component_new (n + 1);
+    component = component_new (n + 1, agent->main_context, agent->async);
     stream->components = g_slist_append (stream->components, component);
   }
 
