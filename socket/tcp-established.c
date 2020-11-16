@@ -112,7 +112,7 @@ static const NiceSocketFunctionTable socket_functions = {
     .is_reliable = socket_is_reliable,
     .close = socket_close,
     .get_fd = socket_get_fd,
-    .attach = NULL,
+    .attach = socket_attach,
     .get_tx_queue_size = socket_get_tx_queue_size,
     .set_rx_enabled = socket_set_rx_enabled,
 };
@@ -187,6 +187,9 @@ static void
 socket_attach (NiceSocket* sock, GMainContext* ctx)
 {
   TcpEstablishedPriv *priv = sock->priv;
+  g_assert(priv->context == ctx);
+#if 0
+  TcpEstablishedPriv *priv = sock->priv;
   gboolean write_pending = FALSE;
 
   if (priv->context)
@@ -220,6 +223,7 @@ socket_attach (NiceSocket* sock, GMainContext* ctx)
         g_source_attach (priv->write_source, priv->context);
     }
   }
+#endif
 }
 
 static void
@@ -551,6 +555,14 @@ add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len, gboolean add_to_h
 
   agent_lock (agent);
 
+  if (priv->write_source == NULL) {
+    priv->write_source = g_socket_create_source(sock->transport.fileno, G_IO_OUT, NULL);
+    g_source_set_callback (priv->write_source, (GSourceFunc) socket_send_more,
+                           tcp_established_callback_data_new(priv->nice_agent, sock),
+                           (GDestroyNotify)tcp_established_callback_data_free);
+    g_source_attach (priv->write_source, priv->context);
+  }
+
   /*
    * Check for queue overflow, we'll allow upto priv->max_tcp_queue_size+1 elements
    * on the queue
@@ -582,13 +594,7 @@ add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len, gboolean add_to_h
   }
   priv->tx_queue_size_bytes += tbs->length;
 
-  if (priv->write_source == NULL) {
-    priv->write_source = g_socket_create_source(sock->transport.fileno, G_IO_OUT, NULL);
-    g_source_set_callback (priv->write_source, (GSourceFunc) socket_send_more,
-                           tcp_established_callback_data_new(priv->nice_agent, sock),
-                           (GDestroyNotify)tcp_established_callback_data_free);
-    g_source_attach (priv->write_source, priv->context);
-  }
+
   agent_unlock (agent);
 }
 

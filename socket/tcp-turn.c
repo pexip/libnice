@@ -89,8 +89,10 @@ nice_tcp_turn_socket_new (NiceSocket *base_socket,
   priv->base_socket = base_socket;
 
   sock->type = NICE_SOCKET_TYPE_TCP_TURN;
-  sock->transport.connection = NULL;
+  //sock->transport.connection = NULL;
+  sock->transport = base_socket->transport;
   sock->addr = priv->base_socket->addr;
+  sock->functions = &socket_functions;
 
   return sock;
 }

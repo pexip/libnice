@@ -3032,12 +3032,13 @@ agent_attach_stream_component_socket (NiceAgent * agent,
 
   //TODO: Figure out what to do with all these attaches
   //nice_socket_attach (socket);//, component->async);
-
+  g_assert(((socket->type == NICE_SOCKET_TYPE_UDP_BSD) &&
+            (component->context == NULL)) ||
+           (component->context == agent->main_context));
   //if (!component->async)
   //  return;
 
   if (nice_socket_get_fd (socket) != -1) {
-#if 1
     g_assert((socket->type == NICE_SOCKET_TYPE_UDP_BSD) ||
              (component->context != NULL));
    //g_assert(false);
@@ -3052,7 +3053,6 @@ agent_attach_stream_component_socket (NiceAgent * agent,
         component->id, source, component->context);
     g_source_attach (source, component->context);
     component->gsources = g_slist_append (component->gsources, source);
-#endif
   } else {
     GST_DEBUG_OBJECT (agent, "%u/%u: Source has no fileno", stream->id,
         component->id);
