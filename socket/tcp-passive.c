@@ -179,6 +179,7 @@ nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr,
 static void
 socket_attach (NiceSocket* sock)
 {
+  g_assert(false);
 #if 0
   TcpPassivePriv *priv = sock->priv;
   GSList *i;

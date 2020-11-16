@@ -70,7 +70,6 @@ static const NiceSocketFunctionTable socket_functions = {
     .is_reliable = socket_is_reliable,
     .close = socket_close,
     .get_fd = socket_get_fd,
-    .attach = NULL,
 };
 
 struct UdpBsdSocketPrivate
