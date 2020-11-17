@@ -2465,6 +2465,7 @@ _nice_agent_recv (NiceAgent * agent,
   if ((guint) len > buf_len) {
     /* buffer is not big enough to accept this packet */
     /* XXX: test this case */
+    g_assert(false);
     return 0;
   }
 
@@ -2819,7 +2820,7 @@ nice_agent_socket_rx_cb (NiceSocket * socket, NiceAddress * from,
     gchar tmpbuf[INET6_ADDRSTRLEN];
     nice_address_to_string (from, tmpbuf);
     GST_LOG_OBJECT (agent,
-        "Packet received on local %s socket %u from [%s]:%u (%u octets).",
+        "Packet received on local %s socket %u from [%d]:%u (%u octets).",
         socket_type_to_string (socket->type),
         agent, nice_socket_get_fd(socket), tmpbuf,
         nice_address_get_port (from), len);
@@ -2993,6 +2994,7 @@ nice_agent_g_source_cb (GSocket * gsocket,
   len = _nice_agent_recv (agent, stream, component, ctx->socket,
       MAX_BUFFER_SIZE, buf, &from);
 
+
   if (len > 0 && component->g_source_io_cb) {
     gpointer data = component->data;
     gint sid = stream->id;
@@ -3029,19 +3031,20 @@ agent_attach_stream_component_socket (NiceAgent * agent,
 {
   GSource *source;
   IOCtx *ctx;
+  /* TODO: Make sure this is called on accept for active sockets */
 
-  //TODO: Figure out what to do with all these attaches
-  //nice_socket_attach (socket);//, component->async);
+  if (socket->type != NICE_SOCKET_TYPE_UDP_BSD)
+  {
+    return;
+  }
+  /* Make sure the component uses the same main loop as the agent */
   g_assert(((socket->type == NICE_SOCKET_TYPE_UDP_BSD) &&
             (component->context == NULL)) ||
            (component->context == agent->main_context));
-  //if (!component->async)
-  //  return;
 
   if (nice_socket_get_fd (socket) != -1) {
-    g_assert((socket->type == NICE_SOCKET_TYPE_UDP_BSD) ||
-             (component->context != NULL));
-   //g_assert(false);
+    g_assert(socket->transport.fileno != NULL &&
+             socket->functions > 1024);
     /* note: without G_IO_ERR the glib mainloop goes into
      *       busyloop if errors are encountered */
     source = g_socket_create_source (socket->transport.fileno, G_IO_IN | G_IO_ERR, NULL);
@@ -3054,6 +3057,7 @@ agent_attach_stream_component_socket (NiceAgent * agent,
     g_source_attach (source, component->context);
     component->gsources = g_slist_append (component->gsources, source);
   } else {
+    g_assert(socket->type == NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE);
     GST_DEBUG_OBJECT (agent, "%u/%u: Source has no fileno", stream->id,
         component->id);
   }

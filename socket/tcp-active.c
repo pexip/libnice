@@ -68,7 +68,7 @@ typedef struct {
   guint               max_tcp_queue_size;
 } TcpActivePriv;
 
-static void socket_attach (NiceSocket* sock);
+static void socket_attach (NiceSocket* sock, GMainContext *context);
 static void socket_close (NiceSocket *sock);
 static gint socket_recv (NiceSocket *sock, NiceAddress *from,
     guint len, gchar *buf);
@@ -133,11 +133,14 @@ nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr,
   sock->transport.connection = NULL;
   sock->functions = &socket_functions;
 
+  g_assert(priv->userdata->component->context == priv->context);
+  g_assert(priv->context != NULL);
+
   return sock;
 }
 
 static void
-socket_attach (NiceSocket* sock)
+socket_attach (NiceSocket* sock, GMainContext *context)
 {
   g_assert(false);
 #if 0
@@ -185,6 +188,7 @@ socket_close (NiceSocket *sock)
 static gint
 socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
 {
+  g_assert(false);
   /*
    * Should never be called for an active connection, all real data arrives on
    * established connections
@@ -226,6 +230,7 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
   NiceSocket* new_socket = nice_tcp_active_socket_connect (sock, to);
   if (!new_socket) {
     GST_DEBUG ("tcp-act %p: failed to connect the new socket to %s:%u", sock, to_string, nice_address_get_port (to));
+    g_assert(false);
     return -1;
   }
   priv->established_sockets = g_slist_append (priv->established_sockets, new_socket);
@@ -273,6 +278,7 @@ nice_tcp_active_socket_connect (NiceSocket *socket, const NiceAddress *addr)
   gboolean connect_pending = FALSE;
 
   if (addr == NULL) {
+    g_assert(false);
     /* We can't connect a tcp socket with no destination address */
     return NULL;
   }
@@ -336,11 +342,22 @@ nice_tcp_active_socket_connect (NiceSocket *socket, const NiceAddress *addr)
 
   nice_address_set_from_sockaddr (&local_addr, (struct sockaddr *)&name);
 
-  return nice_tcp_established_socket_new (gsock,
+  g_assert(priv->context != NULL);
+  NiceSocket *established_socket =  nice_tcp_established_socket_new (gsock,
       G_OBJECT (priv->userdata->agent),
       &local_addr, addr, priv->context,
       tcp_active_established_socket_rx_cb, tcp_active_established_socket_tx_cb,
       (gpointer)socket, NULL, connect_pending, priv->max_tcp_queue_size);
+  if (priv->userdata->component->context == NULL &&
+      priv->context != NULL)
+  {
+    priv->userdata->component->context = g_main_context_ref(priv->context);
+  }
+  //agent_attach_stream_component_socket(priv->userdata->agent,
+  //    priv->userdata->stream,
+  //    priv->userdata->component,
+  //    established_socket);
+  return established_socket;
 }
 
 
@@ -375,5 +392,5 @@ socket_set_rx_enabled (NiceSocket *sock, gboolean enabled)
 static int
 socket_get_fd (NiceSocket *sock)
 {
-  return sock->transport.fileno ? g_socket_get_fd(sock->transport.fileno) : -1;
+  return -1; //sock->transport.fileno ? g_socket_get_fd(sock->transport.fileno) : -1;
 }

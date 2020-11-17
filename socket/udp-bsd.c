@@ -88,6 +88,8 @@ nice_udp_bsd_socket_new (NiceAddress *addr)
   GSocketAddress *gaddr;
   struct UdpBsdSocketPrivate *priv;
 
+  sock->functions = &socket_functions;
+
   if (addr != NULL) {
     nice_address_copy_to_sockaddr(addr, (struct sockaddr *)&name);
   } else {
@@ -149,7 +151,6 @@ nice_udp_bsd_socket_new (NiceAddress *addr)
 
   sock->type = NICE_SOCKET_TYPE_UDP_BSD;
   sock->transport.fileno = gsock;
-  sock->functions = &socket_functions;
 
   return sock;
 }
