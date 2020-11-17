@@ -70,7 +70,7 @@ typedef struct {
 } TcpPassivePriv;
 
 
-static void socket_attach (NiceSocket* sock);
+static void socket_attach (NiceSocket* sock, GMainContext *context);
 static void socket_close (NiceSocket *sock);
 static gint socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf);
@@ -177,7 +177,7 @@ nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr,
 }
 
 static void
-socket_attach (NiceSocket* sock)
+socket_attach (NiceSocket* sock, GMainContext *context)
 {
   g_assert(false);
 #if 0
@@ -309,11 +309,22 @@ nice_tcp_passive_socket_accept (NiceSocket *socket)
 
   nice_address_set_from_sockaddr (&remote_addr, (struct sockaddr *)&name);
 
-  return nice_tcp_established_socket_new (gsock,
+  NiceSocket *established_socket = nice_tcp_established_socket_new (gsock,
       G_OBJECT (priv->userdata->agent),
       &socket->addr, &remote_addr, priv->context,
       tcp_passive_established_socket_rx_cb, tcp_passive_established_socket_tx_cb,
       (gpointer)socket, NULL, FALSE, priv->max_tcp_queue_size);
+
+  if (priv->userdata->component->context == NULL &&
+      priv->context != NULL)
+  {
+    priv->userdata->component->context = g_main_context_ref(priv->context);
+  }
+  //agent_attach_stream_component_socket(priv->userdata->agent,
+  //    priv->userdata->stream,
+  //    priv->userdata->component,
+  //    established_socket);
+  return established_socket;
 }
 
 static gint

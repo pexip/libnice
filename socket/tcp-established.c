@@ -264,6 +264,13 @@ socket_close (NiceSocket *sock)
 static gint
 socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
 {
+  //g_assert(false);
+  return 0;
+}
+
+static gint
+socket_recv_internal (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
+{
   TcpEstablishedPriv *priv = sock->priv;
   int ret;
   GError *gerr = NULL;
@@ -428,7 +435,7 @@ socket_recv_more (
     return TRUE;
   }
 
-  len = socket_recv (sock, &from, MAX_BUFFER_SIZE-priv->recv_offset, (gchar *)&priv->recv_buff[priv->recv_offset]);
+  len = socket_recv_internal (sock, &from, MAX_BUFFER_SIZE-priv->recv_offset, (gchar *)&priv->recv_buff[priv->recv_offset]);
 
   if (len > 0) {
     priv->recv_offset += len;
