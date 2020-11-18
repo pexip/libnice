@@ -368,7 +368,7 @@ gst_nice_src_read_callback (NiceAgent *agent,
   (void)stream_id;
   (void)component_id;
 
-  GST_LOG_OBJECT (agent, "Got buffer, getting out of the main loop");
+  GST_INFO_OBJECT (agent, "Got buffer, getting out of the main loop %d", len);
 
 #if GST_CHECK_VERSION (1,0,0)
   (void)to;

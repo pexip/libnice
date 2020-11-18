@@ -211,6 +211,7 @@ gst_nice_sink_render (GstBaseSink *basesink, GstBuffer *buffer)
   GstMapInfo info;
 
   gst_buffer_map (buffer, &info, GST_MAP_READ);
+  GST_INFO_OBJECT (nicesink->agent, "Sending buffer with length %d", info.size);
 
   nice_agent_send (nicesink->agent, nicesink->stream_id,
       nicesink->component_id, info.size, (gchar *) info.data);

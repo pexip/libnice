@@ -142,6 +142,8 @@ nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr,
 static void
 socket_attach (NiceSocket* sock, GMainContext *context)
 {
+  TcpActivePriv *priv = sock->priv;
+  g_assert(priv->context == context);
   g_assert(false);
 #if 0
   TcpActivePriv *priv = sock->priv;

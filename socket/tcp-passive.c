@@ -315,11 +315,11 @@ nice_tcp_passive_socket_accept (NiceSocket *socket)
       tcp_passive_established_socket_rx_cb, tcp_passive_established_socket_tx_cb,
       (gpointer)socket, NULL, FALSE, priv->max_tcp_queue_size);
 
-  if (priv->userdata->component->context == NULL &&
-      priv->context != NULL)
-  {
-    priv->userdata->component->context = g_main_context_ref(priv->context);
-  }
+  //if (priv->userdata->component->context == NULL &&
+  //    priv->context != NULL)
+  //{
+  //  priv->userdata->component->context = g_main_context_ref(priv->context);
+  //}
   //agent_attach_stream_component_socket(priv->userdata->agent,
   //    priv->userdata->stream,
   //    priv->userdata->component,
