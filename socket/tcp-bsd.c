@@ -184,7 +184,7 @@ nice_tcp_bsd_socket_new (GMainContext *ctx,
   priv->error = FALSE;
 
   sock->type = NICE_SOCKET_TYPE_TCP_BSD;
-  sock->transport.connection = NULL;
+  sock->transport.fileno = gsock;
   sock->functions = &socket_functions;
   return sock;
 }

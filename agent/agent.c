@@ -3008,10 +3008,17 @@ agent_attach_stream_component_socket (NiceAgent * agent,
   IOCtx *ctx;
   /* TODO: Make sure this is called on accept for active sockets */
 
-  if (socket->type != NICE_SOCKET_TYPE_UDP_BSD)
+  /*if (socket->type != NICE_SOCKET_TYPE_UDP_BSD)
+  {
+    g_assert(false);
+    return;
+  }*/
+
+  if(component->context == NULL)
   {
     return;
   }
+
   /* Make sure the component uses the same main loop as the agent */
   g_assert(((socket->type == NICE_SOCKET_TYPE_UDP_BSD) &&
             (component->context == NULL)) ||
