@@ -377,21 +377,18 @@ parse_rfc4571(NiceSocket* sock, NiceAddress* from)
   TcpEstablishedPriv *priv = sock->priv;
   gboolean done = FALSE;
 
-  while (!done) {
+  while (!done && priv->rx_enabled) {
     if (priv->recv_offset > 2) {
       guint8 *data = priv->recv_buff;
       guint packet_length = data[0] << 8 | data[1];
       if (packet_length + 2 <= priv->recv_offset) {
         priv->rxcb (sock, from, (gchar *)&data[2], packet_length, priv->userdata);
 
-        if (g_source_is_destroyed (g_main_current_source ())) {
-          return;
-        }
-
         /* More data after current packet */
         memmove (&priv->recv_buff[0], &priv->recv_buff[packet_length + 2],
                 priv->recv_offset - packet_length - 2);
         priv->recv_offset = priv->recv_offset - packet_length - 2;
+
       } else {
         done = TRUE;
       }
@@ -400,6 +397,7 @@ parse_rfc4571(NiceSocket* sock, NiceAddress* from)
     }
   }
 }
+
 
 /*
  * Returns FALSE if the source should be destroyed.
