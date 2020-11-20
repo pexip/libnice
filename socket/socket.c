@@ -87,6 +87,14 @@ nice_socket_is_reliable (NiceSocket *sock)
 }
 
 void
+nice_socket_attach (NiceSocket *sock, GMainContext *context)
+{
+  if (sock && sock->functions->attach) {
+    sock->functions->attach (sock, context);
+  }
+}
+
+void
 nice_socket_free (NiceSocket *sock)
 {
   if (sock) {
@@ -172,6 +180,7 @@ nice_socket_async_accept_callback (
     struct sockaddr_in *client_addr,
     socklen_t client_addr_len)
 {
+#if 0
   NiceSocket *socket = *server_userdata_pointer;
   if (connection_userdata_pointer != NULL)
   {
@@ -181,6 +190,7 @@ nice_socket_async_accept_callback (
   nice_address_init(&client_niceaddr);
   nice_address_set_from_sockaddr (&client_niceaddr, (const struct sockaddr *)client_addr);
   socket->functions->accept_callback(socket, connection_socket, result, client_niceaddr);
+#endif
 }
 
 void nice_socket_async_connection_socket_dispose_callback(

@@ -133,19 +133,16 @@ nice_tcp_active_socket_new (GMainContext *ctx, NiceAddress *addr,
   sock->transport.connection = NULL;
   sock->functions = &socket_functions;
 
-  g_assert(priv->userdata->component->context == priv->context);
-  g_assert(priv->context != NULL);
+  //g_assert(priv->userdata->component->context == priv->context);
+  //g_assert(priv->context != NULL);
 
   return sock;
 }
 
+
 static void
-socket_attach (NiceSocket* sock, GMainContext *context)
+socket_attach (NiceSocket* sock, GMainContext* ctx)
 {
-  TcpActivePriv *priv = sock->priv;
-  g_assert(priv->context == context);
-  g_assert(false);
-#if 0
   TcpActivePriv *priv = sock->priv;
   GSList *i;
 
@@ -161,7 +158,6 @@ socket_attach (NiceSocket* sock, GMainContext *context)
     NiceSocket *socket = i->data;
     nice_socket_attach (socket, ctx);
   }
-#endif
 }
 
 static void
@@ -350,15 +346,6 @@ nice_tcp_active_socket_connect (NiceSocket *socket, const NiceAddress *addr)
       &local_addr, addr, priv->context,
       tcp_active_established_socket_rx_cb, tcp_active_established_socket_tx_cb,
       (gpointer)socket, NULL, connect_pending, priv->max_tcp_queue_size);
-  if (priv->userdata->component->context == NULL &&
-      priv->context != NULL)
-  {
-    priv->userdata->component->context = g_main_context_ref(priv->context);
-  }
-  //agent_attach_stream_component_socket(priv->userdata->agent,
-  //    priv->userdata->stream,
-  //    priv->userdata->component,
-  //    established_socket);
   return established_socket;
 }
 

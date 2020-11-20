@@ -2996,9 +2996,11 @@ done:
   return TRUE;
 }
 
+
 /*
  * Attaches one socket handle to the main loop event context
  */
+
 
 void
 agent_attach_stream_component_socket (NiceAgent * agent,
@@ -3006,27 +3008,13 @@ agent_attach_stream_component_socket (NiceAgent * agent,
 {
   GSource *source;
   IOCtx *ctx;
-  /* TODO: Make sure this is called on accept for active sockets */
 
-  /*if (socket->type != NICE_SOCKET_TYPE_UDP_BSD)
-  {
-    g_assert(false);
+  nice_socket_attach (socket, component->context);
+
+  if (!component->context)
     return;
-  }*/
-
-  if(component->context == NULL)
-  {
-    return;
-  }
-
-  /* Make sure the component uses the same main loop as the agent */
-  g_assert(((socket->type == NICE_SOCKET_TYPE_UDP_BSD) &&
-            (component->context == NULL)) ||
-           (component->context == agent->main_context));
 
   if (nice_socket_get_fd (socket) != -1) {
-    g_assert(socket->transport.fileno != NULL &&
-             socket->functions > 1024);
     /* note: without G_IO_ERR the glib mainloop goes into
      *       busyloop if errors are encountered */
     source = g_socket_create_source (socket->transport.fileno, G_IO_IN | G_IO_ERR, NULL);
@@ -3039,12 +3027,10 @@ agent_attach_stream_component_socket (NiceAgent * agent,
     g_source_attach (source, component->context);
     component->gsources = g_slist_append (component->gsources, source);
   } else {
-    g_assert(socket->type == NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE);
     GST_DEBUG_OBJECT (agent, "%u/%u: Source has no fileno", stream->id,
         component->id);
   }
 }
-
 
 /*
  * Attaches socket handles of 'stream' to the main eventloop
@@ -3090,7 +3076,7 @@ NICEAPI_EXPORT gboolean
 nice_agent_attach_recv (NiceAgent * agent,
     guint stream_id,
     guint component_id,
-  NiceAgentRecvFunc func, gpointer data)
+    GMainContext * ctx, NiceAgentRecvFunc func, gpointer data)
 {
   Component *component = NULL;
   Stream *stream = NULL;
@@ -3122,7 +3108,7 @@ nice_agent_attach_recv (NiceAgent * agent,
   if (func) {
     component->g_source_io_cb = func;
     component->data = data;
-    component->context = agent->main_context;
+    component->context = ctx;
     if (component->context)
       g_main_context_ref (component->context);
 
