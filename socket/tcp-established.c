@@ -187,10 +187,6 @@ static void
 socket_attach (NiceSocket* sock, GMainContext* ctx)
 {
   TcpEstablishedPriv *priv = sock->priv;
-  g_assert(priv->context == ctx);
-  g_assert(false);
-#if 0
-  TcpEstablishedPriv *priv = sock->priv;
   gboolean write_pending = FALSE;
 
   if (priv->context)
@@ -224,7 +220,6 @@ socket_attach (NiceSocket* sock, GMainContext* ctx)
         g_source_attach (priv->write_source, priv->context);
     }
   }
-#endif
 }
 
 static void

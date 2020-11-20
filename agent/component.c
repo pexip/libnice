@@ -54,7 +54,7 @@
 #include "agent-priv.h"
 
 Component *
-component_new (guint id, GMainContext *g_context, GAsync *async_context)
+component_new (guint id, GAsync *async_context)
 {
   Component *component;
 
@@ -67,7 +67,6 @@ component_new (guint id, GMainContext *g_context, GAsync *async_context)
   component->enable_tcp_active = FALSE;
   component->writable = TRUE;
   component->peer_gathering_done = FALSE;
-  component->context = g_context != NULL ? g_main_context_ref(g_context) : NULL;
   component->async = async_context != NULL ? g_object_ref(async_context) : NULL;
   return component;
 }

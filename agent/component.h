@@ -135,7 +135,7 @@ struct _Component
 };
 
 Component *
-component_new (guint id, GMainContext *g_context, GAsync *async_context);
+component_new (guint id, GAsync *async_context);
 
 void
 component_free (Component *cmp);

@@ -177,18 +177,23 @@ nice_tcp_passive_socket_new (GMainContext *ctx, NiceAddress *addr,
 }
 
 static void
-socket_attach (NiceSocket* sock, GMainContext *context)
+socket_attach (NiceSocket* sock, GMainContext* ctx)
 {
-  g_assert(false);
-#if 0
   TcpPassivePriv *priv = sock->priv;
   GSList *i;
 
+  if (priv->context)
+    g_main_context_unref (priv->context);
+
+  priv->context = ctx;
+  if (priv->context) {
+    g_main_context_ref (priv->context);
+  }
+
   for (i = priv->established_sockets; i; i = i->next) {
     NiceSocket *socket = i->data;
-    nice_socket_attach (socket);
+    nice_socket_attach (socket, ctx);
   }
-#endif
 }
 
 static void
@@ -314,16 +319,6 @@ nice_tcp_passive_socket_accept (NiceSocket *socket)
       &socket->addr, &remote_addr, priv->context,
       tcp_passive_established_socket_rx_cb, tcp_passive_established_socket_tx_cb,
       (gpointer)socket, NULL, FALSE, priv->max_tcp_queue_size);
-
-  //if (priv->userdata->component->context == NULL &&
-  //    priv->context != NULL)
-  //{
-  //  priv->userdata->component->context = g_main_context_ref(priv->context);
-  //}
-  //agent_attach_stream_component_socket(priv->userdata->agent,
-  //    priv->userdata->stream,
-  //    priv->userdata->component,
-  //    established_socket);
   return established_socket;
 }
 

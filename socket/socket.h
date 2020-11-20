@@ -131,7 +131,7 @@ gboolean
 nice_socket_is_reliable (NiceSocket *sock);
 
 void
-nice_socket_attach (NiceSocket *sock);
+nice_socket_attach (NiceSocket *sock, GMainContext *context);
 
 gint
 nice_socket_get_tx_queue_size (NiceSocket *sock);

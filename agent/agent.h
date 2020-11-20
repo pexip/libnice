@@ -764,6 +764,7 @@ nice_agent_restart_stream (
  * @agent: The #NiceAgent Object
  * @stream_id: The ID of stream
  * @component_id: The ID of the component
+ * @ctx: The Glib Mainloop Context to use for listening on the component
  * @func: The callback function to be called when data is received on
  * the stream's component
  * @data: user data associated with the callback
@@ -778,6 +779,7 @@ nice_agent_attach_recv (
   NiceAgent *agent,
   guint stream_id,
   guint component_id,
+  GMainContext *ctx,
   NiceAgentRecvFunc func,
   gpointer data);
 

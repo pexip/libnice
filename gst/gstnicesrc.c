@@ -368,7 +368,7 @@ gst_nice_src_read_callback (NiceAgent *agent,
   (void)stream_id;
   (void)component_id;
 
-  GST_INFO_OBJECT (agent, "Got buffer, getting out of the main loop %d", len);
+  GST_LOG_OBJECT (agent, "Got buffer, getting out of the main loop");
 
 #if GST_CHECK_VERSION (1,0,0)
   (void)to;
@@ -727,12 +727,12 @@ gst_nice_src_change_state (GstElement * element, GstStateChange transition)
       else
         {
           nice_agent_attach_recv (src->agent, src->stream_id, src->component_id,
-              gst_nice_src_read_callback, (gpointer) src);
+              src->mainctx, gst_nice_src_read_callback, (gpointer) src);
         }
       break;
     case GST_STATE_CHANGE_READY_TO_NULL:
       nice_agent_attach_recv (src->agent, src->stream_id, src->component_id,
-          NULL, NULL);
+          src->mainctx, NULL, NULL);
       break;
     default:
       break;

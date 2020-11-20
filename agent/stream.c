@@ -58,7 +58,7 @@ stream_new (NiceAgent * agent, guint n_components)
 
   stream = g_slice_new0 (Stream);
   for (n = 0; n < n_components; n++) {
-    component = component_new (n + 1, agent->main_context, agent->async);
+    component = component_new (n + 1, agent->async);
     stream->components = g_slist_append (stream->components, component);
   }
 
