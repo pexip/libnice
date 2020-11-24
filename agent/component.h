@@ -123,6 +123,8 @@ struct _Component
                                        this component */
   GMainContext *context;            /**< context for data callbacks for this
                                        component */
+  NiceAgentAsyncRecvFunc *async_io_cb;/**< context for data callbacks for this
+                                       component */
   guint min_port;
   guint max_port;
   guint min_tcp_active_port;

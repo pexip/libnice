@@ -44,6 +44,14 @@
 #include <nice/nice.h>
 
 G_BEGIN_DECLS
+typedef enum
+{
+  GST_NICE_SRC_POLL_EMPTY = 0,
+  GST_NICE_SRC_POLL_PROCESSED,
+  GST_NICE_SRC_POLL_SYSTEM_PROCESSED,
+  GST_NICE_SRC_POLL_PAUSED,
+  GST_NICE_SRC_POLL_EOS,
+} GstNiceSrcPollState;
 
 #define GST_TYPE_NICE_SRC \
   (gst_nice_src_get_type())
@@ -60,30 +68,21 @@ G_BEGIN_DECLS
 
 typedef struct _GstNiceSrc GstNiceSrc;
 
-struct _GstNiceSrc
-{
-  GstPushSrc parent;
-  GstPad *srcpad;
-  NiceAgent *agent;
-  guint stream_id;
-  guint component_id;
-  GMainContext *mainctx;
-  GMainLoop *mainloop;
-  GQueue *outbufs;
-  gboolean unlocked;
-  GSource *idle_source;
-  GstCaps *caps;
-  GHashTable *socket_addresses;
-};
-
 typedef struct _GstNiceSrcClass GstNiceSrcClass;
 
-struct _GstNiceSrcClass
-{
-  GstPushSrcClass parent_class;
-};
-
 GType gst_nice_src_get_type (void);
+
+GstNiceSrcPollState gst_nice_src_poll (GstNiceSrc* src);
+
+/* TODO: Add more parameters */
+void gst_nice_src_handle_receive (GstNiceSrc* src);
+
+G_DECLARE_FINAL_TYPE (GstNiceSrcPad, gst_nice_src_pad,
+    GST, NICE_SRC_PAD, GstPad)
+#define GST_TYPE_NICE_SRC_PAD (gst_nice_src_pad_get_type())
+#define GST_NICE_SRC_PAD_CAST(obj) ((GstNiceSrcPad *)(obj))
+
+typedef struct _GstNiceSrcPad GstNiceSrcPad;
 
 G_END_DECLS
 

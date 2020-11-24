@@ -99,6 +99,14 @@ nice_socket_free (NiceSocket *sock)
 {
   if (sock) {
     sock->functions->close (sock);
+
+    if (sock->async_cb_ctx_free)
+    {
+      sock->async_cb_ctx_free(sock->async_cb_ctx);
+      sock->async_cb_ctx = NULL;
+      sock->async_cb_ctx_free = NULL;
+    }
+
     g_slice_free (NiceSocket,sock);
   }
 }

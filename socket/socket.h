@@ -54,6 +54,10 @@
 G_BEGIN_DECLS
 
 typedef struct _NiceSocket NiceSocket;
+
+typedef void (*SocketRXCallback)(NiceSocket* socket, NiceAddress* from, gchar* buf, gint len, gpointer userdata);
+typedef void (*SocketTXCallback)(NiceSocket* socket, gchar* buf, gint len, gsize queued, gpointer userdata);
+
 typedef enum {
   NICE_SOCKET_TYPE_UDP_BSD,
   NICE_SOCKET_TYPE_TCP_BSD,
@@ -107,17 +111,20 @@ struct _NiceSocketFunctionTable
   void (*set_rx_enabled) (NiceSocket *sock, gboolean enabled);
   int (*get_fd) (NiceSocket *sock);
 };
+
 struct _NiceSocket
 {
   NiceAddress addr;
   NiceSocketType type;
   NiceSocketTransport transport;
   NiceSocketFunctionTable const * functions;
+
+  gpointer *async_cb_ctx;
+  SocketRXCallback async_recv_cb;
+  SocketTXCallback async_send_cb;
+  GDestroyNotify async_cb_ctx_free;
   void *priv;
 };
-
-typedef void (*SocketRXCallback)(NiceSocket* socket, NiceAddress* from, gchar* buf, gint len, gpointer userdata);
-typedef void (*SocketTXCallback)(NiceSocket* socket, gchar* buf, gint len, gsize queued, gpointer userdata);
 
 G_GNUC_WARN_UNUSED_RESULT
 gint
