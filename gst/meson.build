@@ -1,4 +1,5 @@
 gstnice_sources = [
+  'gstnicecoordinator.c',
   'gstnicesrc.c',
   'gstnicesink.c',
   'gstnice.c',
@@ -9,6 +10,8 @@ gstnice_deps = [
   glib_deps,
   gst_deps,
 ]
+
+install_headers('gstnicecoordinator.h', subdir : 'nice/gst')
 
 gstnice = library('gstnice',
   gstnice_sources,

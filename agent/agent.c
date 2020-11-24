@@ -2996,11 +2996,24 @@ done:
   return TRUE;
 }
 
+static
+gboolean agent_is_gsocket_socket(NiceSocket *socket)
+{
+  return TRUE;//socket->type != NICE_SOCKET_TYPE_UDP_BSD;
+}
 
 /*
  * Attaches one socket handle to the main loop event context
  */
 
+void nice_agent_socket_recvmsg_callback(NiceSocket* socket, NiceAddress* from, gchar* buf, gint len, gpointer userdata)
+{
+
+}
+void nice_agent_socket_sendmsg_callback(NiceSocket* socket, gchar* buf, gint len, gsize queued, gpointer userdata)
+{
+
+}
 
 void
 agent_attach_stream_component_socket (NiceAgent * agent,
@@ -3014,7 +3027,7 @@ agent_attach_stream_component_socket (NiceAgent * agent,
   if (!component->context)
     return;
 
-  if (nice_socket_get_fd (socket) != -1) {
+  if ( agent_is_gsocket_socket(socket) && nice_socket_get_fd (socket) != -1) {
     /* note: without G_IO_ERR the glib mainloop goes into
      *       busyloop if errors are encountered */
     source = g_socket_create_source (socket->transport.fileno, G_IO_IN | G_IO_ERR, NULL);
@@ -3026,7 +3039,15 @@ agent_attach_stream_component_socket (NiceAgent * agent,
         component->id, source, component->context);
     g_source_attach (source, component->context);
     component->gsources = g_slist_append (component->gsources, source);
-  } else {
+  } else if ( !agent_is_gsocket_socket(socket) )
+  {
+    ctx = io_ctx_new (agent, stream, component, socket, source);
+    socket->async_cb_ctx = ctx;
+    socket->async_cb_ctx_free = (GDestroyNotify)io_ctx_free;
+    socket->async_recv_cb = nice_agent_socket_recvmsg_callback;
+    socket->async_send_cb = nice_agent_socket_sendmsg_callback;
+  }
+  else {
     GST_DEBUG_OBJECT (agent, "%u/%u: Source has no fileno", stream->id,
         component->id);
   }
@@ -3073,10 +3094,14 @@ priv_detach_stream_component (NiceAgent * agent, Stream * stream,
 }
 
 NICEAPI_EXPORT gboolean
-nice_agent_attach_recv (NiceAgent * agent,
-    guint stream_id,
-    guint component_id,
-    GMainContext * ctx, NiceAgentRecvFunc func, gpointer data)
+nice_agent_attach_recv (
+  NiceAgent *agent,
+  guint stream_id,
+  guint component_id,
+  GMainContext *ctx,
+  NiceAgentRecvFunc recv_func,
+  NiceAgentAsyncRecvFunc recvmsg_func,
+  gpointer data)
 {
   Component *component = NULL;
   Stream *stream = NULL;
@@ -3105,8 +3130,9 @@ nice_agent_attach_recv (NiceAgent * agent,
     g_main_context_unref(component->context);
   component->context = NULL;
 
-  if (func) {
-    component->g_source_io_cb = func;
+  if (recv_func) { // TODO: Releax this if to accept only providing recvmsg_func?
+    component->async_io_cb = recvmsg_func;
+    component->g_source_io_cb = recv_func;
     component->data = data;
     component->context = ctx;
     if (component->context)
@@ -3406,4 +3432,25 @@ nice_agent_set_rx_enabled (NiceAgent * agent,
 
 done:
   agent_unlock (agent);
+}
+
+NICEAPI_EXPORT gboolean nice_agent_component_uses_main_context(NiceAgent *agent, 
+  guint stream_id, guint component_id)
+{
+  Stream *stream;
+  Component *component;
+  gboolean uses_main_context = FALSE;
+
+  agent_lock (agent);
+
+  if (!agent_find_component (agent, stream_id, component_id,
+          &stream, &component)) {
+    goto done;
+  }
+
+  uses_main_context = component->gsources != NULL;
+
+done:
+  agent_unlock (agent);
+  return uses_main_context;
 }

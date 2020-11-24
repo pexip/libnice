@@ -245,7 +245,6 @@ typedef enum
   NICE_PROXY_TYPE_LAST = NICE_PROXY_TYPE_HTTP,
 } NiceProxyType;
 
-
 /**
  * NiceAgentRecvFunc:
  * @agent: The #NiceAgent Object
@@ -262,6 +261,23 @@ typedef enum
 typedef void (*NiceAgentRecvFunc) (
   NiceAgent *agent, guint stream_id, guint component_id, guint len,
   gchar *buf, gpointer user_data, const NiceAddress *from, const NiceAddress *to);
+
+/**
+ * NiceAgentAsyncRecvFunc:
+ * @agent: The #NiceAgent Object
+ * @stream_id: The id of the stream
+ * @component_id: The id of the component of the stream
+ *        which received the data
+ * @len: The length of the data
+ * @buf: The buffer containing the data received
+ * @user_data: The user data set in nice_agent_attach_recv()
+ *
+ * Callback function when data is received on a component
+ *
+ */
+typedef void (*NiceAgentAsyncRecvFunc) (
+  NiceAgent *agent, guint stream_id, guint component_id, guint len,
+  struct msghdr *msg, gpointer user_data, const NiceAddress *from, const NiceAddress *to);
 
 
 /**
@@ -754,7 +770,8 @@ nice_agent_attach_recv (
   guint stream_id,
   guint component_id,
   GMainContext *ctx,
-  NiceAgentRecvFunc func,
+  NiceAgentRecvFunc recv_func,
+  NiceAgentAsyncRecvFunc recvmsg_func,
   gpointer data);
 
 /**
@@ -948,6 +965,9 @@ NICE_EXPORT void nice_agent_async_connection_socket_dispose_callback(
 NICE_EXPORT void nice_agent_async_server_socket_dispose_callback(
     void **userdata_pointer,
     GAsyncServerSocket *socket);
+
+NICE_EXPORT gboolean nice_agent_component_uses_main_context(NiceAgent *agent,
+  guint stream_id, guint component_id);
 
 G_END_DECLS
 
