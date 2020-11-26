@@ -1449,6 +1449,7 @@ nice_agent_add_stream (NiceAgent * agent, guint n_components)
   stream = stream_new (agent, n_components);
 
   agent->streams = g_slist_append (agent->streams, stream);
+  agent->streamscookie++;
   stream->id = agent->next_stream_id++;
   GST_DEBUG_OBJECT (agent, "allocating new stream id %u (%p)", stream->id,
       stream);
@@ -1878,6 +1879,7 @@ nice_agent_remove_stream (NiceAgent * agent, guint stream_id)
   /* remove the stream itself */
   agent->streams = g_slist_remove (agent->streams, stream);
   stream_free (stream);
+  agent->streamscookie++;
 
   if (!agent->streams)
     priv_remove_keepalive_timer (agent);
@@ -3434,7 +3436,7 @@ done:
   agent_unlock (agent);
 }
 
-NICEAPI_EXPORT gboolean nice_agent_component_uses_main_context(NiceAgent *agent, 
+NICEAPI_EXPORT gboolean nice_agent_component_uses_main_context(NiceAgent *agent,
   guint stream_id, guint component_id)
 {
   Stream *stream;
@@ -3455,14 +3457,86 @@ done:
   return uses_main_context;
 }
 
-typedef enum
+NICEAPI_EXPORT void nice_agent_add_component_poll_callback(NiceAgent *agent,
+  guint stream_id, guint component_id, NiceAgentPollFunc * poll_cb,
+  gpointer polldata, GDestroyNotify * poll_data_destroy_notify)
 {
-  NICE_AGENT_POLL_WAIT = 0,
-  NICE_AGENT_POLL_PROCESSED,
-  NICE_AGENT_POLL_EOS,
-} NiceAgentPollState;
+  Stream *stream;
+  Component *component;
 
-NICEAPI_EXPORT nice_agent_poll(NiceAgent *agent, gboolean block)
+  agent_lock (agent);
+
+  if (!agent_find_component (agent, stream_id, component_id,
+          &stream, &component)) {
+    goto done;
+  }
+
+ component_set_poll_callback(component, poll_cb, polldata,
+   poll_data_destroy_notify);
+done:
+  agent_unlock (agent);
+
+}
+
+NICEAPI_EXPORT NiceAgentPollState nice_agent_poll(NiceAgent *agent, gboolean block)
 {
-  
+  NiceAgentPollState poll_retval = NICE_AGENT_POLL_WAIT;
+  unsigned int current_streamscookie;
+  GSList *laststream, *curstream;
+  gboolean seenfirst = FALSE;
+  agent_lock(agent);
+  current_streamscookie = agent->streamscookie;
+  curstream = laststream = agent->laststream;
+  while(TRUE)
+  {
+    curstream = laststream->next;
+    if (curstream == NULL)
+    {
+      if( seenfirst )
+      {
+        // Seen first for second time, abort iterating
+        break;
+      }
+      else
+      {
+        curstream = agent->streams;
+        seenfirst = TRUE;
+      }
+    }
+    Stream * curstream_data = (Stream*) curstream->data;
+    for (GSList *component = curstream_data->components;
+         component;
+         component = component->next) {
+      Component * component_data = component->data;
+      ComponentPollContext *poll_context = component_data->poll_context;
+      if (poll_context && g_mutex_trylock (&poll_context->poll_lock))
+      {
+        guint stream_id = curstream_data->id;
+        guint component_id = component_data->id;
+        g_atomic_ref_count_inc (&poll_context->refcount);
+        agent_unlock(agent);
+
+        NiceAgentPollState poll_result = poll_context->poll_cb(agent, stream_id, component_id, poll_context->polldata);
+
+        agent_lock(agent);
+        g_mutex_unlock(&poll_context->poll_lock);
+        component_poll_context_unref(&poll_context);
+        if (poll_result != NICE_AGENT_POLL_WAIT)
+        {
+          poll_retval = poll_result;
+          goto done;
+        }
+      }
+      if (agent->streamscookie != current_streamscookie)
+      {
+        /* Restart iteration as list has changed, and our pointers may be wrong */
+        current_streamscookie = agent->streamscookie;
+        curstream = laststream = agent->laststream;
+        continue;
+      }
+    }
+  }
+  done:
+  agent_unlock(agent);
+  return NICE_AGENT_POLL_WAIT;
 }

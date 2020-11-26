@@ -130,6 +130,7 @@ struct _NiceAgent
   
   GSList *laststream;                /* last stream object, used when iterating
                                         over streams to poll, access atomically */
+  volatile unsigned int    streamscookie; /* "Lock" for streamlist, should be changed if list is changed */
   /* XXX: add pointer to internal data struct for ABI-safe extensions */
 };
 

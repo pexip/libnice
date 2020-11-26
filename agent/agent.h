@@ -245,6 +245,13 @@ typedef enum
   NICE_PROXY_TYPE_LAST = NICE_PROXY_TYPE_HTTP,
 } NiceProxyType;
 
+typedef enum
+{
+  NICE_AGENT_POLL_WAIT = 0,
+  NICE_AGENT_POLL_PROCESSED,
+  NICE_AGENT_POLL_EOS,
+} NiceAgentPollState;
+
 /**
  * NiceAgentRecvFunc:
  * @agent: The #NiceAgent Object
@@ -279,6 +286,8 @@ typedef void (*NiceAgentAsyncRecvFunc) (
   NiceAgent *agent, guint stream_id, guint component_id, guint len,
   struct msghdr *msg, gpointer user_data, const NiceAddress *from, const NiceAddress *to);
 
+typedef NiceAgentPollState (*NiceAgentPollFunc) (
+  NiceAgent *agent, guint stream_id, guint component_id, gpointer user_data);
 
 /**
  * nice_agent_new:
@@ -968,6 +977,14 @@ NICE_EXPORT void nice_agent_async_server_socket_dispose_callback(
 
 NICE_EXPORT gboolean nice_agent_component_uses_main_context(NiceAgent *agent,
   guint stream_id, guint component_id);
+
+/* Thread safe, and can be called multiple times concurrently
+   to poll multiple streams */
+NICE_EXPORT NiceAgentPollState nice_agent_poll(NiceAgent *agent, gboolean block);
+
+NICE_EXPORT void nice_agent_add_component_poll_callback(NiceAgent *agent,
+  guint stream_id, guint component_id, NiceAgentPollFunc * poll_cb,
+  gpointer polldata, GDestroyNotify * poll_data_destroy_notify);
 
 G_END_DECLS
 
