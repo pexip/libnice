@@ -3454,3 +3454,15 @@ done:
   agent_unlock (agent);
   return uses_main_context;
 }
+
+typedef enum
+{
+  NICE_AGENT_POLL_WAIT = 0,
+  NICE_AGENT_POLL_PROCESSED,
+  NICE_AGENT_POLL_EOS,
+} NiceAgentPollState;
+
+NICEAPI_EXPORT nice_agent_poll(NiceAgent *agent, gboolean block)
+{
+  
+}

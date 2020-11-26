@@ -35,39 +35,29 @@
  * file under either the MPL or the LGPL.
  */
 #ifdef HAVE_CONFIG_H
-# include "config.h"
+#include "config.h"
 #endif
 
 #include <string.h>
 
 #include "gstnicesrc.h"
-#include "gstnicecoordinator.h"
 
-#if GST_CHECK_VERSION (1,0,0)
+#if GST_CHECK_VERSION(1, 0, 0)
 #include <gst/net/gstnetaddressmeta.h>
 #else
 #include <gst/netbuffer/gstnetbuffer.h>
 #endif
 
-GST_DEBUG_CATEGORY_STATIC (nicesrc_debug);
+GST_DEBUG_CATEGORY_STATIC(nicesrc_debug);
 #define GST_CAT_DEFAULT nicesrc_debug
 
 struct _GstNiceSrc
 {
-  GstPushSrc parent;
-  GstNiceSrcPad *srcpad;
+  GstElement parent;
   NiceAgent *agent;
-  guint stream_id;
-  guint component_id;
-  GMainContext *mainctx;
-  GMainLoop *mainloop;
-  GQueue *outbufs;
-  gboolean unlocked;
-  GSource *idle_source;
-  GstCaps *caps;
-  GHashTable *socket_addresses;
 
-  GstNiceCoordinator *coordinator;
+  GSList *src_pads;
+  GHashTable *socket_addresses;
 };
 
 struct _GstNiceSrcClass
@@ -75,258 +65,341 @@ struct _GstNiceSrcClass
   GstPushSrcClass parent_class;
 };
 
-/* Most stuff are stored and managed in the src,
-   which is guaranteed to outlive the pad */
 struct _GstNiceSrcPad
 {
   GstPad pad;
-  GstNiceSrc* src;
+  GstNiceSrc *src;
+
   gboolean stream_started;
   gboolean segment_sent;
+  gboolean attached;
+
+  GMainContext *mainctx;
+  GMainLoop *mainloop;
+
+  guint stream_id;
+  guint component_id;
+  //GQueue *outbufs;
+  gboolean unlocked;
+  GSource *idle_source;
+  GstCaps *caps;
 };
 
 #define BUFFER_SIZE (65536)
 
 static GstFlowReturn
-gst_nice_src_create (
-  GstPushSrc *basesrc,
-  GstBuffer **buffer);
+gst_nice_src_create(
+    GstPushSrc *basesrc,
+    GstBuffer **buffer);
 
 static gboolean
-gst_nice_src_unlock (
+gst_nice_src_unlock(
     GstBaseSrc *basesrc);
 
 static gboolean
-gst_nice_src_unlock_stop (
+gst_nice_src_unlock_stop(
     GstBaseSrc *basesrc);
 
 static gboolean
-gst_nice_src_negotiate (
-    GstBaseSrc * src);
+gst_nice_src_pad_negotiate(GstNiceSrcPad *nicepad);
 
 static void
-gst_nice_src_set_property (
-  GObject *object,
-  guint prop_id,
-  const GValue *value,
-  GParamSpec *pspec);
+gst_nice_src_set_property(
+    GObject *object,
+    guint prop_id,
+    const GValue *value,
+    GParamSpec *pspec);
 
 static void
-gst_nice_src_get_property (
-  GObject *object,
-  guint prop_id,
-  GValue *value,
-  GParamSpec *pspec);
-
+gst_nice_src_get_property(
+    GObject *object,
+    guint prop_id,
+    GValue *value,
+    GParamSpec *pspec);
 
 static void
-gst_nice_src_dispose (GObject *object);
+gst_nice_src_dispose(GObject *object);
 
 static GstStateChangeReturn
-gst_nice_src_change_state (
-    GstElement * element,
+gst_nice_src_change_state(
+    GstElement *element,
     GstStateChange transition);
 
+static void
+gst_nice_src_release_pad (GstElement * element, GstPad * pad);
+
+static GstPad *
+gst_nice_src_request_new_pad(GstElement *element,
+                             GstPadTemplate *templ, const gchar *name, const GstCaps *caps);
+
+
 static GstStaticPadTemplate gst_nice_src_src_template =
-GST_STATIC_PAD_TEMPLATE (
-    "src",
-    GST_PAD_SRC,
-    GST_PAD_ALWAYS,
-    GST_STATIC_CAPS_ANY);
+    GST_STATIC_PAD_TEMPLATE(
+        "nicesrcpad_%u_%u",
+        GST_PAD_SRC,
+        GST_PAD_REQUEST,
+        GST_STATIC_CAPS_ANY);
 
 #define gst_nice_src_parent_class parent_class
 
-G_DEFINE_TYPE (GstNiceSrc, gst_nice_src, GST_TYPE_PUSH_SRC);
+G_DEFINE_TYPE(GstNiceSrc, gst_nice_src, GST_TYPE_ELEMENT);
 
 enum
 {
   PROP_AGENT = 1,
   PROP_STREAM,
   PROP_COMPONENT,
-  PROP_COORDINATOR,
-//  PROP_CAPS
 };
 
-G_DEFINE_TYPE (GstNiceSrcPad, gst_nice_src_pad, GST_TYPE_PUSH_SRC);
+G_DEFINE_TYPE(GstNiceSrcPad, gst_nice_src_pad, GST_TYPE_PAD);
 
 /** Function implementations */
 /* GstNiceSrcPad */
+
 static void
-gst_nice_src_pad_init (GstNiceSrcPad * pad)
+gst_nice_src_pad_set_property(
+    GObject *object,
+    guint prop_id,
+    const GValue *value,
+    GParamSpec *pspec)
 {
-  (void) pad;
+  GstNiceSrcPad *pad = GST_NICE_SRC_PAD(object);
+
+  switch (prop_id)
+  {
+  case PROP_STREAM:
+    pad->stream_id = g_value_get_uint(value);
+    break;
+
+  case PROP_COMPONENT:
+    pad->component_id = g_value_get_uint(value);
+    break;
+
+  default:
+    G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+    break;
+  }
 }
 
 static void
-gst_nice_src_pad_finalize (GObject * object)
+gst_nice_src_pad_get_property(
+    GObject *object,
+    guint prop_id,
+    GValue *value,
+    GParamSpec *pspec)
+{
+  GstNiceSrcPad *pad = GST_NICE_SRC_PAD(object);
+
+  switch (prop_id)
+  {
+  case PROP_STREAM:
+    g_value_set_uint(value, pad->stream_id);
+    break;
+
+  case PROP_COMPONENT:
+    g_value_set_uint(value, pad->component_id);
+    break;
+
+  default:
+    G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+    break;
+  }
+}
+
+static void
+gst_nice_src_pad_init(GstNiceSrcPad *pad)
+{
+  pad->stream_id = 0;
+  pad->component_id = 0;
+  pad->mainctx = g_main_context_new();
+  pad->mainloop = g_main_loop_new(pad->mainctx, FALSE);
+  pad->unlocked = FALSE;
+  pad->idle_source = NULL;
+  pad->caps = gst_caps_new_any();
+}
+
+static void
+gst_nice_src_pad_finalize(GObject *object)
 {
   //GstNiceSrcPad *pad = GST_NICE_SRC_PAD_CAST (object);
 
   /* NB: The src is not referenced by the pad to avoid reference loops. */
 
-  G_OBJECT_CLASS (gst_nice_src_pad_parent_class)->finalize (object);
+  G_OBJECT_CLASS(gst_nice_src_pad_parent_class)->finalize(object);
 }
 
 static void
-gst_nice_src_pad_class_init (GstNiceSrcPadClass * klass)
+gst_nice_src_pad_dispose(GObject *object)
 {
-  GObjectClass *gobject_class = (GObjectClass *) klass;
-  gobject_class->finalize = gst_nice_src_pad_finalize;
+  GstNiceSrcPad *nicepad = GST_NICE_SRC_PAD_CAST(object);
 
-#if 0
-  gobject_class->get_property = pex_ev_io_src_pad_get_property;
-  gobject_class->set_property = pex_ev_io_src_pad_set_property;
+  if (nicepad->idle_source)
+  {
+    g_source_destroy(nicepad->idle_source);
+    g_source_unref(nicepad->idle_source);
+  }
+  nicepad->idle_source = NULL;
+  if (nicepad->mainloop)
+    g_main_loop_unref(nicepad->mainloop);
+  nicepad->mainloop = NULL;
 
-  g_object_class_install_property (gobject_class, PROP_ADD_NET_ADDR_META,
-      g_param_spec_boolean ("add-net-address-meta", "Add Net Address meta",
-          "If we should do add net-address meta", DEFAULT_ADD_NET_ADDR_META,
-          G_PARAM_CONSTRUCT | G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-#endif
+  if (nicepad->mainctx)
+    g_main_context_unref(nicepad->mainctx);
+  nicepad->mainctx = NULL;
+
+  gst_caps_replace(&nicepad->caps, NULL);
+
+  G_OBJECT_CLASS(gst_nice_src_pad_parent_class)->dispose(object);
 }
 
+static void
+gst_nice_src_pad_class_init(GstNiceSrcPadClass *klass)
+{
+  GObjectClass *gobject_class = (GObjectClass *)klass;
+  gobject_class->finalize = gst_nice_src_pad_finalize;
+  gobject_class->dispose = gst_nice_src_pad_dispose;
+
+  gobject_class->get_property = gst_nice_src_pad_get_property;
+  gobject_class->set_property = gst_nice_src_pad_set_property;
+
+  g_object_class_install_property(gobject_class, PROP_STREAM,
+                                  g_param_spec_uint(
+                                      "stream",
+                                      "Stream ID",
+                                      "The ID of the stream to read from",
+                                      0,
+                                      G_MAXUINT,
+                                      0,
+                                      G_PARAM_READWRITE));
+
+  g_object_class_install_property(gobject_class, PROP_COMPONENT,
+                                  g_param_spec_uint(
+                                      "component",
+                                      "Component ID",
+                                      "The ID of the component to read from",
+                                      0,
+                                      G_MAXUINT,
+                                      0,
+                                      G_PARAM_READWRITE));
+}
 
 static gboolean
-gst_nice_src_pad_event (GstPad * pad, GstObject * parent, GstEvent * event)
+gst_nice_src_pad_event(GstPad *pad, GstObject *parent, GstEvent *event)
 {
   GstNiceSrcPad *nice_pad = GST_NICE_SRC_PAD_CAST(pad);
   GstNiceSrc *src = nice_pad->src;
   gboolean ret = TRUE;
 
-  GST_LOG_OBJECT (src, "handling %s event", GST_EVENT_TYPE_NAME (event));
+  GST_LOG_OBJECT(src, "handling %s event", GST_EVENT_TYPE_NAME(event));
 
-  switch (GST_EVENT_TYPE (event)) {
-    case GST_EVENT_CUSTOM_UPSTREAM:
+  switch (GST_EVENT_TYPE(event))
+  {
+  case GST_EVENT_CUSTOM_UPSTREAM:
+  {
+    if (gst_event_has_name(event, "PexQosOverflow"))
     {
-      if (gst_event_has_name (event, "PexQosOverflow")) {
-        GST_DEBUG_OBJECT (src, "Suspend TCP receive, QOS received");
-        nice_agent_set_rx_enabled (src->agent, src->stream_id, src->component_id, FALSE);
-        ret = TRUE;
-      } else if (gst_event_has_name (event, "PexQosUnderflow")) {
-        GST_DEBUG_OBJECT (src, "Resume TCP receive, QOS received");
-        nice_agent_set_rx_enabled (src->agent, src->stream_id, src->component_id, TRUE);
-        ret = TRUE;
+      GST_DEBUG_OBJECT(src, "Suspend TCP receive, QOS received");
+      nice_agent_set_rx_enabled(src->agent, nice_pad->stream_id, nice_pad->component_id, FALSE);
+      ret = TRUE;
+    }
+    else if (gst_event_has_name(event, "PexQosUnderflow"))
+    {
+      GST_DEBUG_OBJECT(src, "Resume TCP receive, QOS received");
+      nice_agent_set_rx_enabled(src->agent, nice_pad->stream_id, nice_pad->component_id, TRUE);
+      ret = TRUE;
       //} else {
       //  ret = GST_BASE_SRC_CLASS (parent_class)->event (basesrc, event);
-      }
-      break;
     }
+    break;
+  }
 
-    default:
-    {
-      GST_LOG_OBJECT (src, "let base class handle event");
-      //ret = GST_BASE_SRC_CLASS (parent_class)->event (basesrc, event);
-      break;
-    }
+  default:
+  {
+    GST_LOG_OBJECT(src, "let base class handle event");
+    //ret = GST_BASE_SRC_CLASS (parent_class)->event (basesrc, event);
+    break;
+  }
   }
 
   return ret;
 }
 
 static GstPadLinkReturn
-gst_nice_src_pad_link (GstPad * pad, GstObject * parent, GstPad * peer)
+gst_nice_src_pad_link(GstPad *pad, GstObject *parent, GstPad *peer)
 {
   GstNiceSrcPad *nice_pad = GST_NICE_SRC_PAD_CAST(pad);
   GstNiceSrc *src = nice_pad->src;
-  (void) peer;
-  (void) src;
+  (void)peer;
+  (void)src;
 
-  GST_LOG_OBJECT (nice_pad, "Queue start Nice IO watcher");
+  GST_LOG_OBJECT(nice_pad, "Queue start Nice IO watcher");
   //loop_ctx_add_pad (ev_pad->loop_ctx, ev_pad, self->playing);
-
 
   return GST_PAD_LINK_OK;
 }
 
 static void
-gst_nice_src_pad_unlink (GstPad * pad, GstObject * parent)
+gst_nice_src_pad_unlink(GstPad *pad, GstObject *parent)
 {
   GstNiceSrcPad *nice_pad = GST_NICE_SRC_PAD_CAST(pad);
   GstNiceSrc *src = nice_pad->src;
-  (void) parent;
-  (void) src;
+  (void)parent;
+  (void)src;
 
-  GST_LOG_OBJECT (nice_pad, "Queue stop Nice IO watcher");
+  GST_LOG_OBJECT(nice_pad, "Queue stop Nice IO watcher");
   //loop_ctx_remove_pad (ev_pad->loop_ctx, ev_pad);
   // TODO: Make sure no sockets are conected here, should we disconnect any connected sockets?
 }
 
 static GstPad *
-gst_nice_src_pad_new (GstPadTemplate * templ, const gchar * name,
-  GstNiceSrc* src)
+gst_nice_src_pad_new(GstPadTemplate *templ, const gchar *name,
+                     GstNiceSrc *src)
 {
   GstNiceSrcPad *pad;
 
-  pad = g_object_new (GST_TYPE_NICE_SRC_PAD,
-      "name", name, "direction", templ->direction, "template", templ, NULL);
+  pad = g_object_new(GST_TYPE_NICE_SRC_PAD,
+                     "name", name, "direction", templ->direction, "template", templ, NULL);
 
   pad->src = src;
   pad->stream_started = FALSE;
 
-  gst_pad_set_event_function (GST_PAD_CAST(pad), gst_nice_src_pad_event);
-  gst_pad_set_link_function (GST_PAD_CAST(pad), GST_DEBUG_FUNCPTR (gst_nice_src_pad_link));
-  gst_pad_set_unlink_function (GST_PAD_CAST(pad),
-      GST_DEBUG_FUNCPTR (gst_nice_src_pad_unlink));
+  gst_pad_set_event_function(GST_PAD_CAST(pad), gst_nice_src_pad_event);
+  gst_pad_set_link_function(GST_PAD_CAST(pad), GST_DEBUG_FUNCPTR(gst_nice_src_pad_link));
+  gst_pad_set_unlink_function(GST_PAD_CAST(pad),
+                              GST_DEBUG_FUNCPTR(gst_nice_src_pad_unlink));
 
-  return GST_PAD_CAST (pad);
+  return GST_PAD_CAST(pad);
 }
 
 /**** GstNiceSrc ****/
 static void
-gst_nice_src_class_init (GstNiceSrcClass *klass)
+gst_nice_src_class_init(GstNiceSrcClass *klass)
 {
-  GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
-  GstElementClass *gstelement_class = GST_ELEMENT_CLASS (klass);
+  GObjectClass *gobject_class = G_OBJECT_CLASS(klass);
+  GstElementClass *gstelement_class = GST_ELEMENT_CLASS(klass);
 
-  gobject_class = (GObjectClass *) klass;
+  gobject_class = (GObjectClass *)klass;
   gobject_class->set_property = gst_nice_src_set_property;
   gobject_class->get_property = gst_nice_src_get_property;
   gobject_class->dispose = gst_nice_src_dispose;
 
-#if GST_CHECK_VERSION (1,0,0)
-  gst_element_class_set_metadata (gstelement_class,
+#if GST_CHECK_VERSION(1, 0, 0)
+  gst_element_class_set_metadata(gstelement_class,
 #else
-  gst_element_class_set_details_simple (gstelement_class,
+  gst_element_class_set_details_simple(gstelement_class,
 #endif
-      "ICE source",
-      "Source",
-      "Interactive UDP connectivity establishment",
-      "Dafydd Harries <dafydd.harries@collabora.co.uk>");
+                                 "ICE source",
+                                 "Source",
+                                 "Interactive UDP connectivity establishment",
+                                 "Dafydd Harries <dafydd.harries@collabora.co.uk>");
 
-  g_object_class_install_property (gobject_class, PROP_AGENT,
-      g_param_spec_object (
-         "agent",
-         "Agent",
-         "The NiceAgent this source is bound to",
-         NICE_TYPE_AGENT,
-         G_PARAM_READWRITE));
-
-  g_object_class_install_property (gobject_class, PROP_STREAM,
-      g_param_spec_uint (
-         "stream",
-         "Stream ID",
-         "The ID of the stream to read from",
-         0,
-         G_MAXUINT,
-         0,
-         G_PARAM_READWRITE));
-
-  g_object_class_install_property (gobject_class, PROP_COMPONENT,
-      g_param_spec_uint (
-         "component",
-         "Component ID",
-         "The ID of the component to read from",
-         0,
-         G_MAXUINT,
-         0,
-         G_PARAM_READWRITE));
-  
-  g_object_class_install_property (gobject_class, PROP_COORDINATOR,
-      g_param_spec_object (
-         "coordinator",
-         "Coordinator",
-         "The this source is bound to",
-         NICE_TYPE_AGENT,
-         G_PARAM_READWRITE));
+  g_object_class_install_property(gobject_class, PROP_AGENT,
+                                  g_param_spec_object(
+                                      "agent",
+                                      "Agent",
+                                      "The NiceAgent this source is bound to",
+                                      NICE_TYPE_AGENT,
+                                      G_PARAM_READWRITE));
 
 #if 0
   g_object_class_install_property (gobject_class, PROP_CAPS,
@@ -338,41 +411,39 @@ gst_nice_src_class_init (GstNiceSrcClass *klass)
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 #endif
 
-
-
   //gstelement_class->request_new_pad =
   //    GST_DEBUG_FUNCPTR (gst_nice_src_src_request_new_pad); //gstelement_class->release_pad = GST_DEBUG_FUNCPTR (gst_nice_src_release_pad);
+
+  //  gstpushsrc_class = (GstPushSrcClass *) klass;
+  //  gstpushsrc_class->create = GST_DEBUG_FUNCPTR (gst_nice_src_create);
+  //
+  //  gstbasesrc_class = (GstBaseSrcClass *) klass;
+  //  gstbasesrc_class->unlock = GST_DEBUG_FUNCPTR (gst_nice_src_unlock);
+  //  gstbasesrc_class->unlock_stop = GST_DEBUG_FUNCPTR (gst_nice_src_unlock_stop);
+  //  gstbasesrc_class->negotiate = GST_DEBUG_FUNCPTR (gst_nice_src_negotiate);
+  //  gstbasesrc_class->event = GST_DEBUG_FUNCPTR (gst_nice_src_handle_event);
+
   gstelement_class->change_state =
-      GST_DEBUG_FUNCPTR (gst_nice_src_change_state);
+      GST_DEBUG_FUNCPTR(gst_nice_src_change_state);
 
-//  gstpushsrc_class = (GstPushSrcClass *) klass;
-//  gstpushsrc_class->create = GST_DEBUG_FUNCPTR (gst_nice_src_create);
-//
-//  gstbasesrc_class = (GstBaseSrcClass *) klass;
-//  gstbasesrc_class->unlock = GST_DEBUG_FUNCPTR (gst_nice_src_unlock);
-//  gstbasesrc_class->unlock_stop = GST_DEBUG_FUNCPTR (gst_nice_src_unlock_stop);
-//  gstbasesrc_class->negotiate = GST_DEBUG_FUNCPTR (gst_nice_src_negotiate);
-//  gstbasesrc_class->event = GST_DEBUG_FUNCPTR (gst_nice_src_handle_event);
+  gstelement_class->request_new_pad =
+      GST_DEBUG_FUNCPTR(gst_nice_src_request_new_pad);
+  gstelement_class->release_pad = GST_DEBUG_FUNCPTR(gst_nice_src_release_pad);
 
-  gstelement_class->change_state = gst_nice_src_change_state;
+  gst_element_class_add_pad_template(gstelement_class,
+                                     gst_static_pad_template_get(&gst_nice_src_src_template));
 
-  gst_element_class_add_pad_template (gstelement_class,
-      gst_static_pad_template_get (&gst_nice_src_src_template));
+  gst_element_class_set_details_simple(gstelement_class, "nIce src",
+                                       "Source/Network",
+                                       "Communicates trough firewalls",
+                                       "Frederik M. J. Vestre <frederik.vestre@pexip.com>");
 
-  gst_element_class_set_details_simple (gstelement_class, "nIce src",
-      "Source/Network",
-      "Communicates trough firewalls",
-      "Frederik M. J. Vestre <frederik.vestre@pexip.com>");
-
-  GST_DEBUG_CATEGORY_INIT (nicesrc_debug, "nicesrc",
-      0, "libnice source");
-
-
-
+  GST_DEBUG_CATEGORY_INIT(nicesrc_debug, "nicesrc",
+                          0, "libnice source");
 }
 
 static guint
-gst_nice_src_data_hash(const char* bytes, size_t length, guint h)
+gst_nice_src_data_hash(const char *bytes, size_t length, guint h)
 {
   /* This was copied from glib byte array, and can probably be optimized
      signifcantly, e.g by hashing words (or SIMD) instead of bytes */
@@ -389,52 +460,56 @@ gst_nice_src_data_hash(const char* bytes, size_t length, guint h)
 }
 
 static guint
-gst_nice_src_address_hash (gconstpointer key)
+gst_nice_src_address_hash(gconstpointer key)
 {
   const NiceAddress *from = (NiceAddress *)key;
 
   guint hash = gst_nice_src_data_hash((gpointer)&from->s.addr.sa_family, sizeof(from->s.addr.sa_family), 0);
 
-  switch (from->s.addr.sa_family) {
-    case AF_INET:
-      hash = gst_nice_src_data_hash((gpointer)&from->s.ip4, sizeof (from->s.ip4), hash);
-      break;
-    case AF_INET6:
-      hash = gst_nice_src_data_hash((gpointer)&from->s.ip6, sizeof (from->s.ip6), hash);
-      break;
-    default:
-      GST_ERROR_OBJECT (from, "Unknown address family");
-      break;
+  switch (from->s.addr.sa_family)
+  {
+  case AF_INET:
+    hash = gst_nice_src_data_hash((gpointer)&from->s.ip4, sizeof(from->s.ip4), hash);
+    break;
+  case AF_INET6:
+    hash = gst_nice_src_data_hash((gpointer)&from->s.ip6, sizeof(from->s.ip6), hash);
+    break;
+  default:
+    GST_ERROR_OBJECT(from, "Unknown address family");
+    break;
   }
 
   return hash;
 }
 
-static GSocketAddress*
-gst_nice_src_gsocket_addr_create_or_retrieve (GstNiceSrc *src,
-                                              const NiceAddress *native_addr)
+static GSocketAddress *
+gst_nice_src_gsocket_addr_create_or_retrieve(GstNiceSrc *src,
+                                             const NiceAddress *native_addr)
 {
   GSocketAddress *result = g_hash_table_lookup(src->socket_addresses,
                                                native_addr);
-  if (G_UNLIKELY(result == NULL)) {
+  if (G_UNLIKELY(result == NULL))
+  {
     /* Convert and insert into hash table if it is not present already */
-    switch (native_addr->s.addr.sa_family) {
-      case AF_INET:
-        result = g_socket_address_new_from_native ((gpointer)&native_addr->s.ip4,
-                                                   sizeof (native_addr->s.ip4));
-        break;
-      case AF_INET6:
-        result = g_socket_address_new_from_native ((gpointer)&native_addr->s.ip6,
-                                                   sizeof (native_addr->s.ip6));
-        break;
-      default:
-        GST_ERROR_OBJECT (src, "Unknown address family");
-        break;
+    switch (native_addr->s.addr.sa_family)
+    {
+    case AF_INET:
+      result = g_socket_address_new_from_native((gpointer)&native_addr->s.ip4,
+                                                sizeof(native_addr->s.ip4));
+      break;
+    case AF_INET6:
+      result = g_socket_address_new_from_native((gpointer)&native_addr->s.ip6,
+                                                sizeof(native_addr->s.ip6));
+      break;
+    default:
+      GST_ERROR_OBJECT(src, "Unknown address family");
+      break;
     }
 
-    if (G_UNLIKELY(result == NULL)) {
-        GST_ERROR_OBJECT (src, "Could not create address gobject");
-        return result;
+    if (G_UNLIKELY(result == NULL))
+    {
+      GST_ERROR_OBJECT(src, "Could not create address gobject");
+      return result;
     }
 
     NiceAddress *key = g_slice_new(NiceAddress);
@@ -442,28 +517,31 @@ gst_nice_src_gsocket_addr_create_or_retrieve (GstNiceSrc *src,
 
     gst_object_ref(result);
     g_hash_table_insert(src->socket_addresses, key, result);
-  } else {
+  }
+  else
+  {
     gst_object_ref(result);
   }
   return result;
 }
 
 static gboolean
-gst_nice_src_nice_address_compare (gconstpointer a, gconstpointer b)
+gst_nice_src_nice_address_compare(gconstpointer a, gconstpointer b)
 {
-    const NiceAddress *a_addr = (const NiceAddress*)a;
-    const NiceAddress *b_addr = (const NiceAddress*)b;
+  const NiceAddress *a_addr = (const NiceAddress *)a;
+  const NiceAddress *b_addr = (const NiceAddress *)b;
 
-    if ((a_addr->s.addr.sa_family == b_addr->s.addr.sa_family))
+  if ((a_addr->s.addr.sa_family == b_addr->s.addr.sa_family))
+  {
+    switch (a_addr->s.addr.sa_family)
     {
-      switch (a_addr->s.addr.sa_family) {
-        case AF_INET:
-          return memcmp(&a_addr->s.ip4, &b_addr->s.ip4, sizeof (a_addr->s.ip4)) == 0;
-        case AF_INET6:
-          return memcmp(&a_addr->s.ip6, &b_addr->s.ip6, sizeof (a_addr->s.ip6)) == 0;
-      }
+    case AF_INET:
+      return memcmp(&a_addr->s.ip4, &b_addr->s.ip4, sizeof(a_addr->s.ip4)) == 0;
+    case AF_INET6:
+      return memcmp(&a_addr->s.ip6, &b_addr->s.ip6, sizeof(a_addr->s.ip6)) == 0;
     }
-    return FALSE;
+  }
+  return FALSE;
 }
 
 static void
@@ -473,115 +551,112 @@ gst_nice_src_destroy_hash_key(void *key)
 }
 
 static void
-gst_nice_src_init (GstNiceSrc *src)
+gst_nice_src_init(GstNiceSrc *src)
 {
   GstPad *pad;
 
-  gst_base_src_set_live (GST_BASE_SRC (src), TRUE);
-  gst_base_src_set_format (GST_BASE_SRC (src), GST_FORMAT_TIME);
-  gst_base_src_set_do_timestamp (GST_BASE_SRC (src), TRUE);
+  //gst_base_src_set_live (GST_BASE_SRC (src), TRUE);
+  //gst_base_src_set_format (GST_BASE_SRC (src), GST_FORMAT_TIME);
+  //gst_base_src_set_do_timestamp (GST_BASE_SRC (src), TRUE);
   src->agent = NULL;
-  src->stream_id = 0;
-  src->component_id = 0;
-  src->mainctx = g_main_context_new ();
-  src->mainloop = g_main_loop_new (src->mainctx, FALSE);
-  src->unlocked = FALSE;
-  src->idle_source = NULL;
-  src->outbufs = g_queue_new ();
-  src->caps = gst_caps_new_any ();
+
+  //src->outbufs = g_queue_new ();
   src->socket_addresses = g_hash_table_new_full(gst_nice_src_address_hash,
                                                 gst_nice_src_nice_address_compare,
                                                 gst_nice_src_destroy_hash_key,
                                                 gst_object_unref);
-
+#if 0
+  // Todo: Add support for dynamically adding pads as done in pexeviosrc
   pad = gst_pad_new_from_template ((GstPadTemplate*)(&gst_nice_src_src_template), "src");
   GST_DEBUG_OBJECT (src, "setting functions on src pad");
 
   gst_pad_set_active (pad, TRUE);
 
   src->srcpad = (GstNiceSrcPad*)pad;
-
+#endif
 }
 
 static gboolean
-gst_nice_src_send_stream_start (GstNiceSrc * nicesrc)
+gst_nice_src_pad_send_stream_start(GstNiceSrcPad *nicepad)
 {
   gboolean ret;
   gchar *stream_id;
   GstEvent *event;
-  const gchar *padname = GST_OBJECT_NAME (nicesrc->srcpad);
+  const gchar *padname = GST_OBJECT_NAME(nicepad);
 
-  GST_DEBUG_OBJECT (nicesrc, "Pushing STREAM_START");
-  stream_id = gst_pad_create_stream_id ((GstPad*)nicesrc->srcpad, GST_ELEMENT_CAST (nicesrc),
-      padname + 4);
-  event = gst_event_new_stream_start (stream_id);
-  gst_event_set_group_id (event, gst_util_group_id_next ());
-  ret = gst_pad_push_event ((GstPad*)nicesrc->srcpad, event);
-  g_free (stream_id);
+  GST_DEBUG_OBJECT(nicepad, "Pushing STREAM_START");
+  stream_id = gst_pad_create_stream_id((GstPad *)nicepad, GST_ELEMENT_CAST(nicepad->src),
+                                       padname + 4);
+  event = gst_event_new_stream_start(stream_id);
+  gst_event_set_group_id(event, gst_util_group_id_next());
+  ret = gst_pad_push_event((GstPad *)nicepad, event);
+  g_free(stream_id);
   return ret;
 }
 
 static gboolean
-gst_nice_src_send_caps (GstNiceSrc * nicesrc)
+gst_nice_src_pad_send_caps(GstNiceSrcPad *nicepad)
 {
   gboolean ret = TRUE;
-  GstCaps *caps = gst_pad_peer_query_caps ((GstPad*)nicesrc->srcpad, NULL);
+  GstCaps *caps = gst_pad_peer_query_caps((GstPad *)nicepad, NULL);
 
-  if (caps && !gst_caps_is_empty (caps) && !gst_caps_is_any (caps)) {
-    caps = gst_caps_fixate (caps);
-    GST_DEBUG_OBJECT (nicesrc, "Pushing CAPS %" GST_PTR_FORMAT, caps);
-    ret = gst_pad_push_event ((GstPad*)nicesrc->srcpad, gst_event_new_caps (caps));
-  } else {
-    GST_WARNING_OBJECT (nicesrc, "NOT Pushing CAPS %" GST_PTR_FORMAT, caps);
+  if (caps && !gst_caps_is_empty(caps) && !gst_caps_is_any(caps))
+  {
+    caps = gst_caps_fixate(caps);
+    GST_DEBUG_OBJECT(nicepad, "Pushing CAPS %" GST_PTR_FORMAT, caps);
+    ret = gst_pad_push_event((GstPad *)nicepad, gst_event_new_caps(caps));
+  }
+  else
+  {
+    GST_WARNING_OBJECT(nicepad, "NOT Pushing CAPS %" GST_PTR_FORMAT, caps);
   }
 
   if (caps != NULL)
-    gst_caps_unref (caps);
+    gst_caps_unref(caps);
 
   return ret;
 }
 
 static gboolean
-gst_nice_src_send_segment (GstNiceSrc * nicesrc)
+gst_nice_src_pad_send_segment(GstNiceSrcPad *nicepad)
 {
   GstEvent *event;
   GstSegment segment;
 
-  GST_DEBUG_OBJECT (nicesrc, "Pushing SEGMENT");
-  gst_segment_init (&segment, GST_FORMAT_TIME);
-  event = gst_event_new_segment (&segment);
-  gst_event_set_seqnum (event, gst_util_seqnum_next ());
+  GST_DEBUG_OBJECT(nicepad, "Pushing SEGMENT");
+  gst_segment_init(&segment, GST_FORMAT_TIME);
+  event = gst_event_new_segment(&segment);
+  gst_event_set_seqnum(event, gst_util_seqnum_next());
 
-  return gst_pad_push_event ((GstPad*)nicesrc->srcpad, event);
+  return gst_pad_push_event((GstPad *)nicepad, event);
 }
 
 /* Called for async sockets */
 static void
-gst_nice_src_recvmsg_callback (NiceAgent *agent,
-    guint stream_id,
-    guint component_id,
-    guint len,
-    struct msghdr *msg,
-    gpointer data,
-    const NiceAddress *from,
-    const NiceAddress *to)
+gst_nice_src_recvmsg_callback(NiceAgent *agent,
+                              guint stream_id,
+                              guint component_id,
+                              guint len,
+                              struct msghdr *msg,
+                              gpointer data,
+                              const NiceAddress *from,
+                              const NiceAddress *to)
 {
-
 }
 
 static void
-gst_nice_src_read_callback (NiceAgent *agent,
-    guint stream_id,
-    guint component_id,
-    guint len,
-    gchar *buf,
-    gpointer data,
-    const NiceAddress *from,
-    const NiceAddress *to)
+gst_nice_src_read_callback(NiceAgent *agent,
+                           guint stream_id,
+                           guint component_id,
+                           guint len,
+                           gchar *buf,
+                           gpointer data,
+                           const NiceAddress *from,
+                           const NiceAddress *to)
 {
-  GstNiceSrc *nicesrc = GST_NICE_SRC (data);
-  //GstNiceSrcPad *nicepad = nicesrc->srcpad;
-#if !GST_CHECK_VERSION (1,0,0)
+  GstNiceSrcPad *nicesrcpad = GST_NICE_SRC_PAD(data);
+  GstNiceSrcPad *nicesrc = nicesrcpad->src;
+#if !GST_CHECK_VERSION(1, 0, 0)
   GstNetBuffer *netbuffer = NULL;
 #endif
   GstBuffer *buffer = NULL;
@@ -589,13 +664,16 @@ gst_nice_src_read_callback (NiceAgent *agent,
   (void)stream_id;
   (void)component_id;
 
-  GST_LOG_OBJECT (agent, "Got buffer, getting out of the main loop");
+  GST_LOG_OBJECT(agent, "Got buffer, getting out of the main loop");
 
-  if (G_UNLIKELY (!nicesrc->srcpad->stream_started)) {
-    gst_nice_src_send_stream_start (nicesrc);
-    nicesrc->srcpad->stream_started = TRUE;
+  GST_OBJECT_LOCK(nicesrcpad->src);
+  if (G_UNLIKELY(!nicesrcpad->stream_started))
+  {
+    gst_nice_src_pad_send_stream_start(nicesrcpad);
+    nicesrcpad->stream_started = TRUE;
   }
-#if GST_CHECK_VERSION (1,0,0)
+  GST_OBJECT_UNLOCK(nicesrcpad->src);
+#if GST_CHECK_VERSION(1, 0, 0)
   (void)to;
   /* Not doing buffer pools at the moment, this requres copying far to much code
   from gstbasesrc
@@ -605,58 +683,65 @@ gst_nice_src_read_callback (NiceAgent *agent,
   {
     //GST_LOG_OBJECT (nicesrc, "Could not allocate buffer using common allocator"
     //                           ", allocate using local allocator instead");
-    buffer = gst_buffer_new_allocate (NULL, len, NULL);
+    buffer = gst_buffer_new_allocate(NULL, len, NULL);
   }
-  gst_buffer_fill (buffer, 0, buf, len);
+  gst_buffer_fill(buffer, 0, buf, len);
 
-  if (from != NULL) {
-    GSocketAddress * saddr = gst_nice_src_gsocket_addr_create_or_retrieve(
-      nicesrc, from);
-    if (saddr != NULL) {
-      gst_buffer_add_net_address_meta (buffer, saddr);
-      g_object_unref (saddr);
-    } else {
-      GST_ERROR_OBJECT (nicesrc, "Could not convert address to GSocketAddress");
+  if (from != NULL)
+  {
+    GSocketAddress *saddr = gst_nice_src_gsocket_addr_create_or_retrieve(
+        nicesrc, from);
+    if (saddr != NULL)
+    {
+      gst_buffer_add_net_address_meta(buffer, saddr);
+      g_object_unref(saddr);
+    }
+    else
+    {
+      GST_ERROR_OBJECT(nicesrc, "Could not convert address to GSocketAddress");
     }
   }
 #else
-  if (from != NULL && to != NULL) {
+  if (from != NULL && to != NULL)
+  {
     netbuffer = gst_netbuffer_new();
 
     GST_BUFFER_DATA(netbuffer) = g_memdup(buf, len);
     GST_BUFFER_MALLOCDATA(netbuffer) = GST_BUFFER_DATA(netbuffer);
     GST_BUFFER_SIZE(netbuffer) = len;
 
-    switch (from->s.addr.sa_family) {
+    switch (from->s.addr.sa_family)
+    {
     case AF_INET:
-      {
-        gst_netaddress_set_ip4_address (&netbuffer->from, from->s.ip4.sin_addr.s_addr, from->s.ip4.sin_port);
-        gst_netaddress_set_ip4_address (&netbuffer->to, to->s.ip4.sin_addr.s_addr, to->s.ip4.sin_port);
-      }
-      break;
+    {
+      gst_netaddress_set_ip4_address(&netbuffer->from, from->s.ip4.sin_addr.s_addr, from->s.ip4.sin_port);
+      gst_netaddress_set_ip4_address(&netbuffer->to, to->s.ip4.sin_addr.s_addr, to->s.ip4.sin_port);
+    }
+    break;
     case AF_INET6:
-      {
-        gst_netaddress_set_ip6_address (&netbuffer->from, (guint8 *)(&from->s.ip6.sin6_addr), from->s.ip6.sin6_port);
-        gst_netaddress_set_ip6_address (&netbuffer->to, (guint8 *)(&to->s.ip6.sin6_addr), to->s.ip6.sin6_port);
-      }
-      break;
+    {
+      gst_netaddress_set_ip6_address(&netbuffer->from, (guint8 *)(&from->s.ip6.sin6_addr), from->s.ip6.sin6_port);
+      gst_netaddress_set_ip6_address(&netbuffer->to, (guint8 *)(&to->s.ip6.sin6_addr), to->s.ip6.sin6_port);
+    }
+    break;
     default:
-      GST_ERROR_OBJECT (nicesrc, "Unknown address family");
+      GST_ERROR_OBJECT(nicesrc, "Unknown address family");
       break;
     }
 
-
     buffer = GST_BUFFER_CAST(netbuffer);
-  } else {
-    buffer = gst_buffer_new_and_alloc (len);
-    memcpy (GST_BUFFER_DATA (buffer), buf, len);
+  }
+  else
+  {
+    buffer = gst_buffer_new_and_alloc(len);
+    memcpy(GST_BUFFER_DATA(buffer), buf, len);
   }
 #endif
-  g_queue_push_tail (nicesrc->outbufs, buffer);
+  //g_queue_push_tail (nicesrc->outbufs, buffer);
 
-  g_main_loop_quit (nicesrc->mainloop);
+  g_main_loop_quit(nicesrcpad->mainloop);
 }
-
+#if 0
 static gboolean
 gst_nice_src_unlock_idler (gpointer data)
 {
@@ -713,67 +798,75 @@ gst_nice_src_unlock_stop (GstBaseSrc *src)
 
   return TRUE;
 }
-
+#endif
 /* Similar to gst_base_src_default_negotiate except that it always queries
  * downstream for allowed caps. This is because the default behavior never
  * sends a caps-event if the template caps is any. */
 static gboolean
-gst_nice_src_negotiate (GstBaseSrc * basesrc)
+gst_nice_src_pad_negotiate(GstNiceSrcPad *nicepad)
 {
   GstCaps *caps, *intersect;
-  GstNiceSrc *src = GST_NICE_SRC_CAST (basesrc);
+  GstNiceSrc *src = nicepad->src;
   gboolean result = FALSE;
 
-  caps = gst_pad_get_allowed_caps (GST_BASE_SRC_PAD (basesrc));
+  caps = gst_pad_get_allowed_caps(nicepad);
   if (!caps)
-    caps = gst_pad_get_pad_template_caps (GST_BASE_SRC_PAD (basesrc));
+    caps = gst_pad_get_pad_template_caps(nicepad);
 
-  GST_OBJECT_LOCK (src);
-  intersect = gst_caps_intersect (src->caps, caps);
-  GST_OBJECT_UNLOCK (src);
+  GST_OBJECT_LOCK(nicepad);
+  intersect = gst_caps_intersect(nicepad->caps, caps);
+  GST_OBJECT_UNLOCK(nicepad);
 
-  gst_caps_take (&caps, intersect);
+  gst_caps_take(&caps, intersect);
 
-  if (!gst_caps_is_empty (caps)) {
-    if (gst_caps_is_any (caps)) {
-      GST_DEBUG_OBJECT (basesrc, "any caps, negotiation not needed");
+  if (!gst_caps_is_empty(caps))
+  {
+    if (gst_caps_is_any(caps))
+    {
+      GST_DEBUG_OBJECT(nicepad, "any caps, negotiation not needed");
       result = TRUE;
-    } else {
-      GstBaseSrcClass *bclass = GST_BASE_SRC_GET_CLASS (basesrc);
-      if (bclass->fixate)
-        caps = bclass->fixate (basesrc, caps);
-      GST_DEBUG_OBJECT (basesrc, "fixated to: %" GST_PTR_FORMAT, caps);
-      if (gst_caps_is_fixed (caps)) {
-        result = gst_base_src_set_caps (basesrc, caps);
-      }
     }
-    gst_caps_unref (caps);
-  } else {
-    GST_DEBUG_OBJECT (basesrc, "no common caps");
+    else
+    {
+#if 0
+      // TODO: Copy/ adapt from coordinator
+      if (gst_caps_is_fixed (caps)) {
+        result = gst_base_src_set_caps (pad, caps);
+      }
+#endif
+    }
+    gst_caps_unref(caps);
+  }
+  else
+  {
+    GST_DEBUG_OBJECT(nicepad, "no common caps");
   }
   return result;
 }
 
 static GstFlowReturn
-gst_nice_src_create (
-  GstPushSrc *basesrc,
-  GstBuffer **buffer)
+gst_nice_src_create(
+    GstPushSrc *basesrc,
+    GstBuffer **buffer)
 {
-  GstNiceSrc *nicesrc = GST_NICE_SRC (basesrc);
+  GstNiceSrc *nicesrc = GST_NICE_SRC(basesrc);
 
-  GST_LOG_OBJECT (nicesrc, "create called");
+  GST_LOG_OBJECT(nicesrc, "create called");
 
+#if 0
   GST_OBJECT_LOCK (basesrc);
   if (nicesrc->unlocked) {
     GST_OBJECT_UNLOCK (basesrc);
-#if GST_CHECK_VERSION (1,0,0)
+#if GST_CHECK_VERSION(1, 0, 0)
     return GST_FLOW_FLUSHING;
 #else
     return GST_FLOW_WRONG_STATE;
 #endif
   }
   GST_OBJECT_UNLOCK (basesrc);
+#endif
 
+#if 0
   if (g_queue_is_empty (nicesrc->outbufs))
     g_main_loop_run (nicesrc->mainloop);
 
@@ -783,85 +876,57 @@ gst_nice_src_create (
     return GST_FLOW_OK;
   } else {
     GST_LOG_OBJECT (nicesrc, "Got interrupting, returning wrong-state");
-#if GST_CHECK_VERSION (1,0,0)
+#if GST_CHECK_VERSION(1, 0, 0)
     return GST_FLOW_FLUSHING;
 #else
     return GST_FLOW_WRONG_STATE;
 #endif
   }
-
+#endif
+  return GST_FLOW_OK;
 }
 
 static void
-gst_nice_src_dispose (GObject *object)
+gst_nice_src_dispose(GObject *object)
 {
-  GstNiceSrc *src = GST_NICE_SRC (object);
-
-  if (src->idle_source) {
-    g_source_destroy (src->idle_source);
-    g_source_unref(src->idle_source);
-  }
-  src->idle_source = NULL;
+  GstNiceSrc *src = GST_NICE_SRC(object);
 
   if (src->agent)
-    g_object_unref (src->agent);
+    g_object_unref(src->agent);
   src->agent = NULL;
 
-  if (src->mainloop)
-    g_main_loop_unref (src->mainloop);
-  src->mainloop = NULL;
-
-  if (src->mainctx)
-    g_main_context_unref (src->mainctx);
-  src->mainctx = NULL;
-
+#if 0
   if (src->outbufs)
     g_queue_free_full (src->outbufs, (GDestroyNotify)gst_buffer_unref);
   src->outbufs = NULL;
+#endif
 
   g_hash_table_remove_all(src->socket_addresses);
   g_hash_table_unref(src->socket_addresses);
   src->socket_addresses = NULL;
 
-  gst_caps_replace (&src->caps, NULL);
-
-  G_OBJECT_CLASS (gst_nice_src_parent_class)->dispose (object);
+  G_OBJECT_CLASS(gst_nice_src_parent_class)->dispose(object);
 }
 
 static void
-gst_nice_src_set_property (
-  GObject *object,
-  guint prop_id,
-  const GValue *value,
-  GParamSpec *pspec)
+gst_nice_src_set_property(
+    GObject *object,
+    guint prop_id,
+    const GValue *value,
+    GParamSpec *pspec)
 {
-  GstNiceSrc *src = GST_NICE_SRC (object);
+  GstNiceSrc *src = GST_NICE_SRC(object);
 
   switch (prop_id)
-    {
-    case PROP_AGENT:
-      if (src->agent)
-        GST_ERROR_OBJECT (object,
-            "Changing the agent on a nice src not allowed");
-      else
-        src->agent = g_value_dup_object (value);
-      break;
+  {
+  case PROP_AGENT:
+    if (src->agent)
+      GST_ERROR_OBJECT(object,
+                       "Changing the agent on a nice src not allowed");
+    else
+      src->agent = g_value_dup_object(value);
+    break;
 
-    case PROP_STREAM:
-      src->stream_id = g_value_get_uint (value);
-      break;
-
-    case PROP_COMPONENT:
-      src->component_id = g_value_get_uint (value);
-      break;
-
-    case PROP_COORDINATOR:
-      if (src->coordinator)
-        GST_ERROR_OBJECT (object,
-            "Changing the coordinator on a nice src not allowed");
-      else
-        src->coordinator = g_value_dup_object (value);
-      break;
 #if 0
     case PROP_CAPS:
     {
@@ -884,34 +949,26 @@ gst_nice_src_set_property (
     }
 #endif
 
-    default:
-      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
-      break;
-    }
+  default:
+    G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+    break;
+  }
 }
 
 static void
-gst_nice_src_get_property (
-  GObject *object,
-  guint prop_id,
-  GValue *value,
-  GParamSpec *pspec)
+gst_nice_src_get_property(
+    GObject *object,
+    guint prop_id,
+    GValue *value,
+    GParamSpec *pspec)
 {
-  GstNiceSrc *src = GST_NICE_SRC (object);
+  GstNiceSrc *src = GST_NICE_SRC(object);
 
   switch (prop_id)
-    {
-    case PROP_AGENT:
-      g_value_set_object (value, src->agent);
-      break;
-
-    case PROP_STREAM:
-      g_value_set_uint (value, src->stream_id);
-      break;
-
-    case PROP_COMPONENT:
-      g_value_set_uint (value, src->component_id);
-      break;
+  {
+  case PROP_AGENT:
+    g_value_set_object(value, src->agent);
+    break;
 
 #if 0
     case PROP_CAPS:
@@ -920,120 +977,248 @@ gst_nice_src_get_property (
       GST_OBJECT_UNLOCK (src);
       break;
 #endif
-    default:
-      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
-      break;
-    }
+  default:
+    G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+    break;
+  }
 }
 
 static void
-gst_nice_src_log_callback (NiceAgent *agent, guint stream_id, guint component_id, GLogLevelFlags level,
-    gchar *msg, gpointer data)
+gst_nice_src_log_callback(NiceAgent *agent, guint stream_id, guint component_id, GLogLevelFlags level,
+                          gchar *msg, gpointer data)
 {
   (void)agent;
-  GstBaseSrc *basesrc = GST_BASE_SRC (data);
-  GstNiceSrc *nicesrc = GST_NICE_SRC (basesrc);
+  GstBaseSrc *basesrc = GST_BASE_SRC(data);
+  GstNiceSrc *nicesrc = GST_NICE_SRC(basesrc);
 
-  switch (level) {
+  switch (level)
+  {
   case G_LOG_LEVEL_WARNING:
-    GST_WARNING_OBJECT (nicesrc, "stream=%u component=%u %s", stream_id, component_id, msg);
+    GST_WARNING_OBJECT(nicesrc, "stream=%u component=%u %s", stream_id, component_id, msg);
     break;
   case G_LOG_LEVEL_INFO:
-    GST_INFO_OBJECT (nicesrc, "stream=%u component=%u %s", stream_id, component_id, msg);
+    GST_INFO_OBJECT(nicesrc, "stream=%u component=%u %s", stream_id, component_id, msg);
     break;
   default:
-    GST_DEBUG_OBJECT (nicesrc, "stream=%u component=%u %s", stream_id, component_id, msg);
+    GST_DEBUG_OBJECT(nicesrc, "stream=%u component=%u %s", stream_id, component_id, msg);
+    break;
+  }
+}
+
+static void
+gst_nice_src_pad_change_state(gpointer *pad_ptr, gpointer transition_wrapped)
+{
+  GstNiceSrcPad *srcpad = GST_NICE_SRC_PAD_CAST(pad_ptr);
+  GstStateChange transition = (GstStateChange)transition_wrapped;
+  switch (transition)
+  {
+  case GST_STATE_CHANGE_READY_TO_READY:
+  case GST_STATE_CHANGE_NULL_TO_READY:
+    if(!srcpad->attached)
+    {
+      nice_agent_attach_recv(srcpad->src->agent, srcpad->stream_id, srcpad->component_id,
+                             srcpad->mainctx, gst_nice_src_read_callback, gst_nice_src_recvmsg_callback,
+                             (gpointer)srcpad);
+      srcpad->attached = TRUE;
+    }
+    break;
+  case GST_STATE_CHANGE_READY_TO_NULL:
+    if (srcpad->attached)
+    {
+      nice_agent_attach_recv(srcpad->src->agent, srcpad->stream_id, srcpad->component_id,
+                             srcpad->mainctx, NULL, NULL, NULL);
+      srcpad->attached = FALSE;
+    }
     break;
   }
 }
 
 static GstStateChangeReturn
-gst_nice_src_change_state (GstElement * element, GstStateChange transition)
+gst_nice_src_change_state(GstElement *element, GstStateChange transition)
 {
   GstNiceSrc *src;
   GstStateChangeReturn ret;
 
-  src = GST_NICE_SRC (element);
+  src = GST_NICE_SRC(element);
 
-  switch (transition) {
-    case GST_STATE_CHANGE_NULL_TO_READY:
-      if (src->agent == NULL || src->stream_id == 0 || src->component_id == 0)
-        {
-          GST_ERROR_OBJECT (element,
-              "Trying to start Nice source without an agent set");
-          return GST_STATE_CHANGE_FAILURE;
-        }
-      else
-        {
-          nice_agent_attach_recv (src->agent, src->stream_id, src->component_id,
-              src->mainctx, gst_nice_src_read_callback, gst_nice_src_recvmsg_callback, (gpointer) src);
-        }
-      break;
-    case GST_STATE_CHANGE_READY_TO_NULL:
-      nice_agent_attach_recv (src->agent, src->stream_id, src->component_id,
-          src->mainctx, NULL, NULL, NULL);
-      break;
-    default:
-      break;
+  switch (transition)
+  {
+  case GST_STATE_CHANGE_READY_TO_READY:
+  case GST_STATE_CHANGE_NULL_TO_READY:
+    if (src->agent == NULL || src->src_pads == NULL)
+    {
+      GST_ERROR_OBJECT(element,
+                       "Trying to start Nice source without an agent set");
+      return GST_STATE_CHANGE_FAILURE;
+    }
+    else
+    {
+      GST_OBJECT_LOCK(src);
+      g_slist_foreach(src->src_pads, gst_nice_src_pad_change_state, (gpointer)transition);
+      GST_OBJECT_UNLOCK(src);
+    }
+    break;
+  case GST_STATE_CHANGE_READY_TO_NULL:
+    GST_OBJECT_LOCK(src);
+    g_slist_foreach(src->src_pads, gst_nice_src_pad_change_state, (gpointer)transition);
+    GST_OBJECT_UNLOCK(src);
+    break;
+  default:
+    break;
   }
 
-  ret = GST_ELEMENT_CLASS (gst_nice_src_parent_class)->change_state (element,
-      transition);
+  ret = GST_ELEMENT_CLASS(gst_nice_src_parent_class)->change_state(element, transition);
 
   return ret;
 }
 
-/* Handle Gstreamer system events */
-static GstNiceSrcPollState gst_nice_src_poll_system ( GstNiceSrc* src)
+static GstNiceSrcPollState gst_nice_src_pad_poll_system(GstNiceSrcPad *srcpad)
 {
-
-  if (G_UNLIKELY (!src->srcpad->stream_started)) {
-    gst_nice_src_send_stream_start (src);
-    src->srcpad->stream_started = TRUE;
-  }
-
-  if (G_UNLIKELY (gst_pad_check_reconfigure (GST_PAD_CAST(src->srcpad))))
+  if (G_UNLIKELY(!srcpad->stream_started))
   {
-    gst_nice_src_send_caps (src);
+    gst_nice_src_pad_send_stream_start(srcpad);
+    srcpad->stream_started = TRUE;
+    return GST_NICE_SRC_POLL_SYSTEM_PROCESSED;
+  }
+  if (G_UNLIKELY(gst_pad_check_reconfigure(GST_PAD_CAST(srcpad))))
+  {
+    gst_nice_src_pad_send_caps(srcpad);
+    return GST_NICE_SRC_POLL_SYSTEM_PROCESSED;
   }
 
-  if (G_UNLIKELY (!src->srcpad->segment_sent)) {
-    gst_nice_src_send_segment (src);
-    src->srcpad->segment_sent = TRUE;
+  if (G_UNLIKELY(!srcpad->segment_sent))
+  {
+    gst_nice_src_pad_send_segment(srcpad);
+    srcpad->segment_sent = TRUE;
+    return GST_NICE_SRC_POLL_SYSTEM_PROCESSED;
+  }
+}
+
+/* Handle Gstreamer system events */
+static GstNiceSrcPollState gst_nice_src_poll_system(GstNiceSrc *src)
+{
+  GST_OBJECT_LOCK(src);
+  for (GSList *elm = src->src_pads; elm = elm->next; elm != NULL)
+  {
+    GstNiceSrcPad *srcpad = GST_NICE_SRC_PAD_CAST(elm->data);
+    GstNiceSrcPollState ret_state;
+    ret_state = gst_nice_src_pad_poll_system(srcpad);
+    if (ret_state != GST_NICE_SRC_POLL_EMPTY)
+    {
+      GST_OBJECT_UNLOCK(src);
+      return ret_state;
+    }
   }
 
+  GST_OBJECT_UNLOCK(src);
   return GST_NICE_SRC_POLL_EMPTY;
 }
 
-GstNiceSrcPollState gst_nice_src_poll (GstNiceSrc* src)
+static GstNiceSrcPollState
+gst_nice_src_pad_poll_ctx(GstNiceSrcPad *pad)
 {
   gboolean context_processed_element = FALSE;
-  GST_OBJECT_LOCK (src);
-
-  //First see if there are any system events that must be managed
-   GstNiceSrcPollState system_poll_state_result = gst_nice_src_poll_system(src);
-  if (system_poll_state_result != GST_NICE_SRC_POLL_EMPTY)
+  if (nice_agent_component_uses_main_context(pad->src->agent, pad->stream_id, pad->component_id))
   {
-    GST_OBJECT_UNLOCK (src);
-    return system_poll_state_result;
-  }
-
-  if (nice_agent_component_uses_main_context(src->agent, src->stream_id, src->component_id)) {
-    if (g_main_context_pending(src->mainctx)) {
-      context_processed_element = g_main_context_iteration (src->mainctx, FALSE);
+    if (g_main_context_pending(pad->mainctx))
+    {
+      context_processed_element = g_main_context_iteration(pad->mainctx, FALSE);
     }
   }
-  GST_OBJECT_UNLOCK (src);
-
-  if(context_processed_element)
+  if (context_processed_element)
   {
     return GST_NICE_SRC_POLL_PROCESSED;
   }
-  return GST_NICE_SRC_POLL_EMPTY;
+  else
+  {
+    return GST_NICE_SRC_POLL_EMPTY;
+  }
+}
+
+GstNiceSrcPollState gst_nice_src_poll(GstNiceSrc *src)
+{
+  GstNiceSrcPollState result = GST_NICE_SRC_POLL_EMPTY;
+  gboolean context_processed_element = FALSE;
+  GST_OBJECT_LOCK(src);
+
+  //First see if there are any system events that must be managed
+  GstNiceSrcPollState system_poll_state_result = gst_nice_src_poll_system(src);
+  if (system_poll_state_result != GST_NICE_SRC_POLL_EMPTY)
+  {
+    GST_OBJECT_UNLOCK(src);
+    return system_poll_state_result;
+  }
+
+  for (GSList *elm = src->src_pads; elm = elm->next; elm != NULL)
+  {
+    GstNiceSrcPad *srcpad = GST_NICE_SRC_PAD_CAST(elm->data);
+
+    GstNiceSrcPollState pad_result = gst_nice_src_pad_poll_ctx(srcpad);
+    if (pad_result != GST_NICE_SRC_POLL_EMPTY)
+    {
+      result = pad_result;
+      break;
+    }
+  }
+  GST_OBJECT_UNLOCK(src);
+
+  return result;
 }
 
 /* TODO: Add more parameters */
-void gst_nice_src_handle_receive (GstNiceSrc* src)
+void gst_nice_src_handle_receive(GstNiceSrc *src)
 {
+}
 
+static GstPad *
+gst_nice_src_request_new_pad(GstElement *element,
+                             GstPadTemplate *templ, const gchar *name, const GstCaps *caps)
+{
+  GstNiceSrc *src = GST_NICE_SRC_CAST(element);
+  GstPad *pad;
+  guint stream_id, component_id;
+
+  (void)caps;
+
+  GST_LOG_OBJECT(element, "Request pad: %s", name);
+
+  if (G_UNLIKELY(name == NULL || templ == NULL))
+    return NULL;
+  else if (sscanf(name, "nicesrcpad_%u_%u", &stream_id, &component_id) != 2)
+    return NULL;
+
+  GST_OBJECT_LOCK(src);
+
+  pad = gst_nice_src_pad_new(templ, name, src);
+
+  gst_pad_set_link_function(pad, GST_DEBUG_FUNCPTR(gst_nice_src_pad_link));
+  gst_pad_set_unlink_function(pad,
+                              GST_DEBUG_FUNCPTR(gst_nice_src_pad_unlink));
+
+  gst_pad_set_active(pad, TRUE);
+  src->src_pads = g_slist_prepend(src->src_pads, pad);
+  GST_OBJECT_UNLOCK(src);
+  gst_element_add_pad(element, pad);
+  GST_DEBUG_OBJECT(pad, "Added pad for stream %u component %u", stream_id, component_id);
+
+
+  return pad;
+}
+
+static void
+gst_nice_src_release_pad (GstElement * element, GstPad * pad)
+{
+  GstNiceSrc *nicesrc = GST_NICE_SRC_CAST (element);
+  GstNiceSrcPad *nicepad = GST_NICE_SRC_PAD_CAST (pad);
+
+  GST_DEBUG_OBJECT (pad, "Release pad");
+
+  g_assert (gst_pad_set_active (pad, FALSE));
+  gst_element_remove_pad (element, pad);
+
+  GST_OBJECT_LOCK(nicesrc);
+  nicesrc->src_pads = g_slist_remove(nicesrc->src_pads, pad);
+  GST_OBJECT_UNLOCK(nicesrc);
+  nicepad->src = NULL;
+  //Free pad?
 }

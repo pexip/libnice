@@ -40,7 +40,6 @@
 
 #include "gstnicesrc.h"
 #include "gstnicesink.h"
-#include "gstnicecoordinator.h"
 
 static gboolean
 plugin_init (GstPlugin *plugin)
@@ -51,10 +50,6 @@ plugin_init (GstPlugin *plugin)
 
   if (!gst_element_register (plugin, "nicesink",
         GST_RANK_NONE, GST_TYPE_NICE_SINK))
-    return FALSE;
-
-  if (!gst_element_register (plugin, "nicecoordinator",
-        GST_RANK_NONE, GST_TYPE_NICE_COORDINATOR))
     return FALSE;
 
   return TRUE;
