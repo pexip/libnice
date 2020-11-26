@@ -127,6 +127,9 @@ struct _NiceAgent
   gchar *software_attribute;       /* SOFTWARE attribute */
   gboolean reliable;               /* property: reliable */
   GAsync* async;                   /* property: used for async io */
+  
+  GSList *laststream;                /* last stream object, used when iterating
+                                        over streams to poll, access atomically */
   /* XXX: add pointer to internal data struct for ABI-safe extensions */
 };
 
