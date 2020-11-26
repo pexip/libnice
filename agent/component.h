@@ -100,6 +100,17 @@ typedef struct {
   Component *component;
 } TcpUserData;
 
+struct _ComponentPollContext
+{
+  gatomicrefcount     refcount;
+  GMutex              poll_lock;
+  NiceAgentPollFunc   poll_cb;
+  gpointer          * polldata;
+  GDestroyNotify      polldata_destroy_notify;
+};
+
+typedef struct _ComponentPollContext ComponentPollContext;
+
 struct _Component
 {
   NiceComponentType type;
@@ -125,6 +136,8 @@ struct _Component
                                        component */
   NiceAgentAsyncRecvFunc *async_io_cb;/**< context for data callbacks for this
                                        component */
+
+  ComponentPollContext * poll_context;
   guint min_port;
   guint max_port;
   guint min_tcp_active_port;
@@ -134,6 +147,7 @@ struct _Component
   gboolean enable_tcp_active;
   gboolean writable;
   gboolean peer_gathering_done;
+
 };
 
 Component *
@@ -159,6 +173,11 @@ component_set_selected_remote_candidate (NiceAgent *agent, Component *component,
     NiceCandidate *candidate);
 
 const char *component_state_to_string(NiceComponentState state);
+
+void component_poll_context_unref(ComponentPollContext * context);
+
+void component_set_poll_callback(Component *component, NiceAgentPollFunc * poll_cb,
+  gpointer polldata, GDestroyNotify * poll_data_destroy_notify);
 
 G_END_DECLS
 

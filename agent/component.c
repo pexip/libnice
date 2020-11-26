@@ -78,6 +78,8 @@ component_free (Component *cmp)
   GSList *i;
   GList *item;
 
+  component_poll_context_unref(cmp->poll_context);
+
   for (i = cmp->local_candidates; i; i = i->next) {
     NiceCandidate *candidate = i->data;
     nice_candidate_free (candidate);
@@ -340,4 +342,40 @@ const char* component_state_to_string(NiceComponentState state)
   case NICE_COMPONENT_STATE_LAST: return "LAST";
   }
   return "(invalid)";
+}
+
+void component_poll_context_unref(ComponentPollContext * context)
+{
+  if (context == NULL)
+  {
+    return;
+  }
+
+  if(g_atomic_ref_count_dec(context->refcount) == 0)
+  {
+    // Free context
+    if (context->polldata_destroy_notify)
+    {
+      context->polldata_destroy_notify(context->polldata);
+    }
+    g_slice_free(ComponentPollContext, context);
+  }
+}
+
+void component_set_poll_callback(Component *component, NiceAgentPollFunc * poll_cb,
+  gpointer polldata, GDestroyNotify * poll_data_destroy_notify)
+{
+  if (component->poll_context)
+  {
+    component_poll_context_unref(component->poll_context);
+    component->poll_context = NULL;
+  }
+  ComponentPollContext *context = g_slice_new0(ComponentPollContext);
+  g_mutex_init(&context->poll_lock);
+  g_atomic_ref_count_init(&context->refcount);
+  context->poll_cb = poll_cb;
+  context->polldata = polldata;
+  context->polldata_destroy_notify = poll_data_destroy_notify;
+
+  component->poll_context = context;
 }
