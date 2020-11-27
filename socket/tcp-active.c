@@ -349,7 +349,6 @@ nice_tcp_active_socket_connect (NiceSocket *socket, const NiceAddress *addr)
   return established_socket;
 }
 
-
 static gint
 socket_get_tx_queue_size (NiceSocket *sock)
 {
