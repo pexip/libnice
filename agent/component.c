@@ -52,6 +52,7 @@
 
 #include "component.h"
 #include "agent-priv.h"
+#include <gst/gst.h>
 
 Component *
 component_new (guint id, GAsync *async_context)
@@ -68,6 +69,7 @@ component_new (guint id, GAsync *async_context)
   component->writable = TRUE;
   component->peer_gathering_done = FALSE;
   component->async = async_context != NULL ? g_object_ref(async_context) : NULL;
+  component->poll_context = NULL;
   return component;
 }
 
@@ -79,6 +81,7 @@ component_free (Component *cmp)
   GList *item;
 
   component_poll_context_unref(cmp->poll_context);
+  cmp->poll_context = NULL;
 
   for (i = cmp->local_candidates; i; i = i->next) {
     NiceCandidate *candidate = i->data;
@@ -351,8 +354,11 @@ void component_poll_context_unref(ComponentPollContext * context)
     return;
   }
 
-  if(g_atomic_ref_count_dec(context->refcount) == 0)
+  if(g_atomic_ref_count_dec(&context->refcount))
   {
+    GST_WARNING (
+        "Freed poll context: %p %d",
+        context, context->refcount);
     // Free context
     if (context->polldata_destroy_notify)
     {
@@ -376,6 +382,10 @@ void component_set_poll_callback(Component *component, NiceAgentPollFunc * poll_
   context->poll_cb = poll_cb;
   context->polldata = polldata;
   context->polldata_destroy_notify = poll_data_destroy_notify;
+
+  GST_WARNING (
+      "Allocated poll context: %p %d",
+      context, context->refcount);
 
   component->poll_context = context;
 }

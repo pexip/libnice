@@ -3485,11 +3485,17 @@ NICEAPI_EXPORT NiceAgentPollState nice_agent_poll(NiceAgent *agent, gboolean blo
   GSList *laststream, *curstream;
   gboolean seenfirst = FALSE;
   agent_lock(agent);
+  restart_iter:
+  if (agent->laststream == NULL)
+  {
+    agent->laststream = agent->streams;
+    seenfirst = TRUE;
+  }
   current_streamscookie = agent->streamscookie;
   curstream = laststream = agent->laststream;
   while(TRUE)
   {
-    curstream = laststream->next;
+    curstream = agent->laststream;
     if (curstream == NULL)
     {
       if( seenfirst )
@@ -3503,14 +3509,24 @@ NICEAPI_EXPORT NiceAgentPollState nice_agent_poll(NiceAgent *agent, gboolean blo
         seenfirst = TRUE;
       }
     }
+    if (curstream == NULL)
+    {
+      /* No streams available */
+      goto done;
+    }
+    agent->laststream = curstream->next;
     Stream * curstream_data = (Stream*) curstream->data;
     for (GSList *component = curstream_data->components;
          component;
          component = component->next) {
       Component * component_data = component->data;
       ComponentPollContext *poll_context = component_data->poll_context;
+        //GST_DEBUG_OBJECT (agent,
+        //    "Trypoll: %u %u ; %p",
+        //    curstream_data->id, component_data->id, poll_context);//poll_result);
       if (poll_context && g_mutex_trylock (&poll_context->poll_lock))
       {
+        /* Make sure another iteration picks up next stream */
         guint stream_id = curstream_data->id;
         guint component_id = component_data->id;
         g_atomic_ref_count_inc (&poll_context->refcount);
@@ -3518,25 +3534,40 @@ NICEAPI_EXPORT NiceAgentPollState nice_agent_poll(NiceAgent *agent, gboolean blo
 
         NiceAgentPollState poll_result = poll_context->poll_cb(agent, stream_id, component_id, poll_context->polldata);
 
+
         agent_lock(agent);
         g_mutex_unlock(&poll_context->poll_lock);
-        component_poll_context_unref(&poll_context);
+        component_poll_context_unref(poll_context);
+        g_assert(poll_context->refcount>0);
         if (poll_result != NICE_AGENT_POLL_WAIT)
         {
           poll_retval = poll_result;
+
           goto done;
         }
       }
       if (agent->streamscookie != current_streamscookie)
       {
         /* Restart iteration as list has changed, and our pointers may be wrong */
-        current_streamscookie = agent->streamscookie;
-        curstream = laststream = agent->laststream;
-        continue;
+        goto restart_iter;
       }
     }
   }
   done:
+  if (poll_retval == NICE_AGENT_POLL_WAIT)
+  {
+    // TODO: Only run if there are timers registered with the context
+    // Poll main context
+    if (g_main_context_pending(agent->main_context))
+    {
+      gboolean context_processed_element = g_main_context_iteration(agent->main_context, FALSE);
+      if (context_processed_element)
+      {
+        poll_retval = NICE_AGENT_POLL_PROCESSED;
+        //GST_DEBUG_OBJECT(agent, "Timer processed");
+      }
+    }
+  }
   agent_unlock(agent);
-  return NICE_AGENT_POLL_WAIT;
+  return poll_retval;
 }
