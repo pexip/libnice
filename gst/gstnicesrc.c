@@ -722,7 +722,7 @@ gst_nice_src_read_callback(NiceAgent *agent,
   //g_queue_push_tail (nicesrc->outbufs, buffer);
   GstFlowReturn flowret;
   if (G_UNLIKELY ((flowret = gst_pad_push (nicesrcpad, buffer)) != GST_FLOW_OK)) {
-    GST_ERROR_OBJECT (nicesrcpad,
+    GST_LOG_OBJECT (nicesrcpad,
         "Failed to push incoming datagram buffer (ret: %d)", flowret);
   }
   g_main_loop_quit(nicesrcpad->mainloop);
@@ -1007,11 +1007,11 @@ NiceAgentPollState gst_nice_src_pad_poll_callback(
   NiceAgent *agent, guint stream_id, guint component_id, gpointer user_data)
 {
   GstNiceSrcPad * pad = GST_NICE_SRC_PAD_CAST(user_data);
-  
+
   g_assert(pad->src == NULL || pad->src->agent == agent);
   g_assert(pad->stream_id == stream_id);
   g_assert(pad->component_id == component_id);
-    
+
 
   return gst_nice_src_pad_poll_ctx(pad);
 }
@@ -1251,13 +1251,18 @@ gst_nice_src_release_pad (GstElement * element, GstPad * pad)
   gst_element_remove_pad (element, pad);
 
   GST_OBJECT_LOCK(nicesrc);
-  if (nicepad->attached)
+  gboolean attached = nicepad->attached;
+  GST_OBJECT_UNLOCK(nicesrc);
+
+  if (attached)
   {
+    /* This function must be called without holding the nicesrclock to awoid deadlock */
     nice_agent_attach_recv(nicepad->src->agent, nicepad->stream_id, nicepad->component_id,
                            nicepad->mainctx, NULL, NULL, NULL);
-    nicepad->attached = FALSE;
   }
 
+  GST_OBJECT_LOCK(nicesrc);
+  nicepad->attached = FALSE;
   nicesrc->src_pads = g_slist_remove(nicesrc->src_pads, pad);
   GST_OBJECT_UNLOCK(nicesrc);
   //Free pad?
