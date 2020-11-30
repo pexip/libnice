@@ -175,6 +175,7 @@ nice_tcp_established_socket_new (GSocket *gsock, GObject *nice_agent,
     setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sendbuff, sizeof (gint));
   }
 
+  g_assert(priv->context != NULL);
   priv->read_source = g_socket_create_source(sock->transport.fileno, G_IO_IN | G_IO_ERR, NULL);
   g_source_set_callback (priv->read_source, (GSourceFunc) socket_recv_more,
                          tcp_established_callback_data_new(priv->nice_agent, sock),
@@ -310,7 +311,8 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
 
   nice_address_to_string (to, to_string);
 
-  if (nice_address_equal (to, &priv->remote_addr)) {
+  gboolean equaladder = nice_address_equal (to, &priv->remote_addr);
+  if (equaladder) {
 
     /* Don't try to access the socket if it had an error, otherwise we risk a
        crash with SIGPIPE (Broken pipe) */
@@ -363,8 +365,8 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
 static gboolean
 socket_is_reliable (NiceSocket *sock)
 {
-  return TRUE;
-}
+  return TRUE;}
+
 
 static void
 parse_rfc4571(NiceSocket* sock, NiceAddress* from)
@@ -376,8 +378,13 @@ parse_rfc4571(NiceSocket* sock, NiceAddress* from)
     if (priv->recv_offset > 2) {
       guint8 *data = priv->recv_buff;
       guint packet_length = data[0] << 8 | data[1];
+      g_assert(packet_length < MAX_BUFFER_SIZE);
       if (packet_length + 2 <= priv->recv_offset) {
         priv->rxcb (sock, from, (gchar *)&data[2], packet_length, priv->userdata);
+
+        if (g_source_is_destroyed (g_main_current_source ())) {
+          return;
+        }
 
         /* More data after current packet */
         memmove (&priv->recv_buff[0], &priv->recv_buff[packet_length + 2],
@@ -430,7 +437,8 @@ socket_recv_more (
   }
 
   len = socket_recv_internal (sock, &from, MAX_BUFFER_SIZE-priv->recv_offset, (gchar *)&priv->recv_buff[priv->recv_offset]);
-
+  GST_INFO("Received %p: D:%d(%d) ", sock, len, priv->recv_offset);
+  g_assert((len <= (gint)(MAX_BUFFER_SIZE-priv->recv_offset)));
   if (len > 0) {
     priv->recv_offset += len;
     parse_rfc4571(sock, &from);
@@ -467,7 +475,7 @@ socket_send_more (
   agent_lock (agent);
 
   if (g_source_is_destroyed (g_main_current_source ())) {
-    GST_DEBUG ("tcp-est %p: Source was destroyed. "
+    GST_WARNING("tcp-est %p: Source was destroyed. "
         "Avoided race condition in tcp-established.c:socket_send_more", sock);
     agent_unlock (agent);
     return FALSE;

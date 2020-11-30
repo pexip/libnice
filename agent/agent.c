@@ -1450,6 +1450,7 @@ nice_agent_add_stream (NiceAgent * agent, guint n_components)
 
   agent->streams = g_slist_append (agent->streams, stream);
   agent->streamscookie++;
+  agent->laststream = NULL;
   stream->id = agent->next_stream_id++;
   GST_DEBUG_OBJECT (agent, "allocating new stream id %u (%p)", stream->id,
       stream);
@@ -1879,7 +1880,9 @@ nice_agent_remove_stream (NiceAgent * agent, guint stream_id)
   /* remove the stream itself */
   agent->streams = g_slist_remove (agent->streams, stream);
   stream_free (stream);
+  /* Make sure polling do not operate on freed data */
   agent->streamscookie++;
+  agent->laststream = NULL;
 
   if (!agent->streams)
     priv_remove_keepalive_timer (agent);
@@ -2482,7 +2485,7 @@ _nice_agent_recv (NiceAgent * agent,
       GSList *i = NULL;
 
 #ifndef NDEBUG
-      GST_LOG_OBJECT (agent, "Packet received from TURN server candidate");
+      GST_DEBUG_OBJECT (agent, "Packet received from TURN server candidate");
 #endif
       for (i = component->local_candidates; i; i = i->next) {
         NiceCandidate *cand = i->data;
@@ -2515,7 +2518,7 @@ _nice_agent_recv (NiceAgent * agent,
     if (nice_address_equal (from, &stun_server)) {
       has_padding = _nice_should_have_padding (agent->turn_compatibility);
 #ifndef NDEBUG
-      GST_LOG_OBJECT (agent, "Packet received from STUN server, has_padding=%d",
+      GST_DEBUG_OBJECT (agent, "Packet received from STUN server, has_padding=%d",
           has_padding);
 #endif
       found_server = TRUE;
@@ -2529,7 +2532,7 @@ _nice_agent_recv (NiceAgent * agent,
       if (nice_address_equal (from, &turn->server)) {
         has_padding = _nice_should_have_padding (agent->turn_compatibility);
 #ifndef NDEBUG
-        GST_LOG_OBJECT (agent,
+        GST_DEBUG_OBJECT (agent,
             "Packet received from TURN server, has_padding=%d", has_padding);
 #endif
       }
@@ -3465,7 +3468,7 @@ NICEAPI_EXPORT gboolean nice_agent_component_uses_main_context(NiceAgent *agent,
   guint stream_id, guint component_id)
 {
   Stream *stream;
-  Component *component;
+  Component *component = NULL;
   gboolean uses_main_context = FALSE;
 
   agent_lock (agent);
@@ -3475,7 +3478,9 @@ NICEAPI_EXPORT gboolean nice_agent_component_uses_main_context(NiceAgent *agent,
     goto done;
   }
 
-  uses_main_context = component->gsources != NULL;
+  uses_main_context = ((component->gsources != NULL) ||
+                       component->enable_tcp_active ||
+                       component->enable_tcp_passive );
 
 done:
   agent_unlock (agent);
@@ -3563,7 +3568,6 @@ NICEAPI_EXPORT NiceAgentPollState nice_agent_poll(NiceAgent *agent, gboolean blo
         agent_lock(agent);
         g_mutex_unlock(&poll_context->poll_lock);
         component_poll_context_unref(poll_context);
-        g_assert(poll_context->refcount>0);
         if (poll_result != NICE_AGENT_POLL_WAIT)
         {
           poll_retval = poll_result;
@@ -3574,7 +3578,8 @@ NICEAPI_EXPORT NiceAgentPollState nice_agent_poll(NiceAgent *agent, gboolean blo
       if (agent->streamscookie != current_streamscookie)
       {
         /* Restart iteration as list has changed, and our pointers may be wrong */
-        goto restart_iter;
+         agent->laststream = NULL;
+         goto restart_iter;
       }
     }
   }
