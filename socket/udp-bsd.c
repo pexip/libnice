@@ -50,12 +50,15 @@
 #include <fcntl.h>
 
 #include "udp-bsd.h"
-
+#include "errno.h"
+#include "agent-priv.h"
 #ifndef G_OS_WIN32
 #include <unistd.h>
 #endif
 
+#include <gst/gst.h>
 
+static void socket_attach (NiceSocket* sock, GMainContext* ctx);
 static void socket_close (NiceSocket *sock);
 static gint socket_recv (NiceSocket *sock, NiceAddress *from,
     guint len, gchar *buf);
@@ -64,22 +67,84 @@ static gint socket_send (NiceSocket *sock, const NiceAddress *to,
 static gboolean socket_is_reliable (NiceSocket *sock);
 static int socket_get_fd (NiceSocket *sock);
 
+static gboolean
+socket_request_recv (NiceSocket *sock, const char * buf, gsize buflen,
+                     NiceDestroyUserdataCallback * destroy_callback,
+                     gpointer * destroy_userdata);
+
+static void
+socket_recvmsg_callback(NiceSocket *sock, struct msghdr * msg, int result);
+
+static gboolean
+socket_request_send (NiceSocket *sock, const NiceAddress *to, const char * buf,
+                     gsize buflen,
+                     NiceDestroyUserdataCallback * destroy_callback,
+                     gpointer * destroy_userdata);
+static void
+socket_sendmsg_callback (NiceSocket *sock,  struct msghdr * msg, int result);
+
 static const NiceSocketFunctionTable socket_functions = {
     .send = socket_send,
     .recv = socket_recv,
+    .request_recv = socket_request_recv,
+    .recv_callback = socket_recvmsg_callback,
+    .request_send = socket_request_send,
+    .send_callback = socket_sendmsg_callback,
     .is_reliable = socket_is_reliable,
     .close = socket_close,
     .get_fd = socket_get_fd,
+    .attach = socket_attach,
 };
 
 struct UdpBsdSocketPrivate
 {
+  NiceAgent *agent;
   NiceAddress niceaddr;
-  GSocketAddress *gaddr;
+  NiceAddress peer_niceaddr;
+  struct sockaddr_storage listen_address;
+  struct sockaddr_storage peer_address;
+  SocketRXCallback    rxcb;
+  SocketTXCallback    txcb;
+  gpointer            userdata;
+  GDestroyNotify      destroy_notify;
+
+  NiceDestroyUserdataCallback recv_buffer_destroy_notify;
+  gpointer recv_buffer_destroy_userdata;
+
+  NiceDestroyUserdataCallback send_buffer_destroy_notify;
+  gpointer send_buffer_destroy_userdata;
+
+  guint stream_id;
+  guint component_id;
+
+  gchar *recv_buffer;
+  gchar *send_buffer;
+  gsize *send_buffer_len;
+
+  struct msghdr sendmsg;
+  struct iovec sendvec;
+  struct msghdr recvmsg;
+  struct iovec recvvec;
+  GMutex lock;
+
 };
 
+void local_send_buffer_destroy(gpointer *buffer, gpointer userdata)
+{
+  NiceSocket *sock = (NiceSocket*) userdata;
+  struct UdpBsdSocketPrivate *priv = sock->priv;
+
+  g_assert(priv->send_buffer);
+  g_free(priv->send_buffer);
+  priv->send_buffer = NULL;
+  priv->send_buffer_destroy_notify = NULL;
+}
+
 NiceSocket *
-nice_udp_bsd_socket_new (NiceAddress *addr)
+nice_udp_bsd_socket_new (NiceAgent * agent, NiceAddress *addr,
+  guint stream_id, guint component_id,
+  SocketRXCallback rxcb, SocketTXCallback txcb, gpointer userdata,
+  GDestroyNotify destroy_notify)
 {
   struct sockaddr_storage name;
   NiceSocket *sock = g_slice_new0 (NiceSocket);
@@ -89,7 +154,6 @@ nice_udp_bsd_socket_new (NiceAddress *addr)
   struct UdpBsdSocketPrivate *priv;
 
   sock->functions = &socket_functions;
-
   if (addr != NULL) {
     nice_address_copy_to_sockaddr(addr, (struct sockaddr *)&name);
   } else {
@@ -97,6 +161,7 @@ nice_udp_bsd_socket_new (NiceAddress *addr)
     name.ss_family = AF_UNSPEC;
   }
 
+#if 0
   if (name.ss_family == AF_UNSPEC || name.ss_family == AF_INET) {
     gsock = g_socket_new (G_SOCKET_FAMILY_IPV4, G_SOCKET_TYPE_DATAGRAM,
         G_SOCKET_PROTOCOL_UDP, NULL);
@@ -144,13 +209,55 @@ nice_udp_bsd_socket_new (NiceAddress *addr)
 
   g_object_unref (gaddr);
 
+#endif
   nice_address_set_from_sockaddr (&sock->addr, (struct sockaddr *)&name);
+
+  GAsyncConnectionSocket * conn_sock =  \
+    gasync_gasync_create_connection_socket (agent->async,
+      NULL, NULL, name.ss_family, SOCK_DGRAM, NULL);
+
+  //nice_agent_set_userdata_wrapper
+  void ** socket_userdata_ptr = gasync_connection_socket_get_userdata_ptr(conn_sock);
+  *socket_userdata_ptr = sock;
+
+  if (agent->async_userdata_wrapper)
+  {
+    agent->async_userdata_wrapper(agent, socket_userdata_ptr);
+  }
+
+  int conn_socket_fd = gasync_connection_socket_get_fd (conn_sock);
+
+  /* Set up a test server for our library to connect to */
+  int errcode = bind (conn_socket_fd, (const struct sockaddr *) &name,
+      sizeof (name));
+  /* TODO: Should we propagate the errors instead of asserting */
+  g_assert (errcode == 0);
+
 
   priv = sock->priv = g_slice_new0 (struct UdpBsdSocketPrivate);
   nice_address_init (&priv->niceaddr);
 
+  unsigned int len = sizeof (struct sockaddr_storage);
+  g_assert (getsockname (conn_socket_fd, (struct sockaddr *) &priv->listen_address,
+          &len) == 0);
+
+  priv->rxcb = rxcb;
+  priv->txcb = txcb;
+  priv->agent = agent;
+  priv->userdata = userdata;
+  priv->destroy_notify = destroy_notify;
+  priv->stream_id = stream_id;
+  priv->component_id = component_id;
+
+  priv->send_buffer = NULL;
+  priv->send_buffer_destroy_notify = NULL;
+  priv->recv_buffer = NULL;
+  priv->recv_buffer_destroy_notify = NULL;
+  g_mutex_init(&priv->lock);
+
   sock->type = NICE_SOCKET_TYPE_UDP_BSD;
-  sock->transport.fileno = gsock;
+  sock->transport.connection = conn_sock;
+
 
   return sock;
 }
@@ -159,9 +266,40 @@ static void
 socket_close (NiceSocket *sock)
 {
   struct UdpBsdSocketPrivate *priv = sock->priv;
+  g_mutex_lock(&priv->lock);
+  if (priv->recv_buffer)
+  {
+    g_assert(priv->recv_buffer_destroy_notify);
+    priv->recv_buffer_destroy_notify(priv->recv_buffer,
+      priv->agent->request_rx_buffer_callback_userdata);
+    priv->recv_buffer = NULL;
+    priv->recv_buffer_destroy_userdata = NULL;
+    priv->recv_buffer_destroy_notify = NULL;
+  } else if (priv->recv_buffer_destroy_userdata)
+  {
+    /* Make sure the caller has an opportunity to free userdata */
+    priv->recv_buffer_destroy_notify(NULL, priv->recv_buffer_destroy_userdata);
+    priv->recv_buffer_destroy_userdata = NULL;
+    priv->recv_buffer_destroy_notify = NULL;
+  }
 
-  if (priv->gaddr)
-    g_object_unref (priv->gaddr);
+  if (priv->send_buffer)
+  {
+    g_assert(priv->send_buffer_destroy_notify);
+    priv->send_buffer_destroy_notify(priv->send_buffer,
+      priv->send_buffer_destroy_userdata);
+    priv->send_buffer = NULL;
+    priv->send_buffer_destroy_userdata = NULL;
+  } else if (priv->send_buffer_destroy_userdata)
+  {
+    g_assert(priv->send_buffer_destroy_notify);
+    /* Make sure the caller has an opportunity to free userdata */
+    priv->send_buffer_destroy_notify(NULL, priv->send_buffer_destroy_userdata);
+    priv->send_buffer_destroy_userdata = NULL;
+    priv->send_buffer_destroy_notify = NULL;
+  }
+
+  /* TODO: Clean up any outstanding receive async request */
   g_slice_free (struct UdpBsdSocketPrivate, sock->priv);
 
   if (sock->transport.fileno) {
@@ -169,11 +307,237 @@ socket_close (NiceSocket *sock)
     g_object_unref (sock->transport.fileno);
     sock->transport.fileno = NULL;
   }
+  g_mutex_unlock(&priv->lock);
+}
+#define MAX_BUFFER_SIZE 65536
+
+
+/* Start trying to receive data */
+static void socket_attach (NiceSocket* sock, GMainContext* ctx)
+{
+  gchar *recv_buffer = NULL;
+  NiceDestroyUserdataCallback buffer_destroy_notify;
+  gpointer buffer_destroy_userdata;
+  struct UdpBsdSocketPrivate *priv = sock->priv;
+  (void)ctx;
+  (void)priv;
+  g_mutex_lock(&priv->lock);
+  if (priv->recv_buffer != NULL)
+  {
+    g_mutex_unlock(&priv->lock);
+    return; /* TODO: Do we need to release this buffer
+               and allocate a new one? */
+  }
+  priv->agent->request_rx_buffer_callback(priv->agent,
+    priv->stream_id, priv->component_id, MAX_BUFFER_SIZE, &recv_buffer,
+    &buffer_destroy_notify,
+    &buffer_destroy_userdata,
+    priv->agent->request_rx_buffer_callback_userdata
+    );
+  if (recv_buffer != NULL)
+  {
+    g_assert(buffer_destroy_notify != NULL);
+    priv->recv_buffer = recv_buffer;
+    /* Do first recv to start receiving from socket */
+    g_mutex_unlock(&priv->lock);
+    socket_request_recv(sock, priv->recv_buffer, MAX_BUFFER_SIZE, buffer_destroy_notify,
+    buffer_destroy_userdata);
+  }
+  else
+  {
+    g_mutex_unlock(&priv->lock);
+  }
+
+}
+static gsize get_namelen(struct sockaddr_storage const * const addr)
+{
+  if(addr->ss_family == AF_INET)
+  {
+    return sizeof(struct sockaddr_in);
+  }
+  else if(addr->ss_family == AF_INET6)
+  {
+    return sizeof(struct sockaddr_in6);
+  }
+  else
+  {
+    g_assert(FALSE);
+    return 0;
+  }
+}
+/* Currently we only use one iovec entry, we may want to refactor this in the
+   future when uring using buffer pools to account for the fact that most
+   packets are not full 64k size */
+static gboolean
+socket_request_recv (NiceSocket *sock, const char * buf, gsize buflen,
+                     NiceDestroyUserdataCallback * destroy_callback,
+                     gpointer * destroy_userdata)
+{
+  (void) destroy_callback;
+  struct UdpBsdSocketPrivate *priv = sock->priv;
+  g_mutex_lock(&priv->lock);
+  /* Use iovlen to determine if msg, and thus operation is busy */
+  if (priv->recvmsg.msg_iovlen != 0)
+  {
+    g_mutex_unlock(&priv->lock);
+    return FALSE;
+  }
+  priv->recv_buffer_destroy_notify = destroy_callback;
+  priv->recv_buffer_destroy_userdata = destroy_userdata;
+  memset (&priv->recvmsg, 0, sizeof (struct msghdr));
+  memset (buf, 0, buflen); // Satisfy valgrind
+  priv->recvmsg.msg_name = &priv->peer_address;
+  priv->recvmsg.msg_namelen = get_namelen(&sock->addr);
+  priv->recvmsg.msg_iov = &priv->recvvec;
+  priv->recvmsg.msg_iovlen = 1;
+  priv->recvvec.iov_base = (guint8 *) buf;
+  priv->recvvec.iov_len = buflen;
+  priv->recvmsg.msg_iovlen = 1;
+  GST_INFO("Udp socket recv request: %p: %d", sock, buflen);
+  g_mutex_unlock(&priv->lock);
+  return gasync_connection_socket_recvmsg(sock->transport.connection, &priv->recvmsg,
+    0);
+}
+
+static void
+socket_recvmsg_callback(NiceSocket *sock, struct msghdr * msg, int result)
+{
+  NiceDestroyUserdataCallback buffer_destroy_notify;
+  gpointer buffer_destroy_userdata;
+  gboolean transfered_ownership;
+  NiceAddress *from;
+  struct UdpBsdSocketPrivate *priv = sock->priv;
+  if (result < 0) {
+    g_assert(result == 0); //TODO: Update list of acceptable errors during testing
+  }
+  g_mutex_lock(&priv->lock);
+  GST_INFO("Udp socket recv callback: %p (%d): %d", sock, msg->msg_iov->iov_len, result);
+
+  if (result > 0 && msg->msg_name != NULL) {
+    struct sockaddr_storage sa;
+    g_assert (msg->msg_namelen >= sizeof (struct sockaddr_in));
+    nice_address_set_from_sockaddr (&priv->peer_niceaddr, (struct sockaddr *)msg->msg_name);
+  }
+
+  g_assert(msg->msg_iovlen == 1); // Currently we use only one io buffer
+  priv->recvmsg.msg_iovlen = 0;
+
+  /* recv buffer is given to rxcb, and is not owned by the socket anymore */
+  priv->recv_buffer = NULL;
+  buffer_destroy_notify = priv->recv_buffer_destroy_notify;
+  buffer_destroy_userdata =  priv->recv_buffer_destroy_userdata;
+  priv->recv_buffer_destroy_notify = NULL;
+  priv->recv_buffer_destroy_userdata = NULL;
+
+  g_mutex_unlock(&priv->lock);
+  // How to handle freeing gstreamer buffers used internally for setting up the ice connection?
+  transfered_ownership = priv->rxcb(sock, &priv->peer_niceaddr, msg->msg_iov->iov_base,
+    result, priv->userdata);
+
+  if (buffer_destroy_userdata)
+  {
+    /* Make sure the caller has an opportunity to free userdata */
+    gpointer recv_buffer;
+    if (transfered_ownership)
+    {
+      recv_buffer = NULL;
+    }
+    else
+    {
+      recv_buffer = msg->msg_iov->iov_base;
+    }
+
+    buffer_destroy_notify( recv_buffer, buffer_destroy_userdata);
+  }
+  socket_attach(sock, NULL); /* Request to receive another packet */
+}
+
+static gboolean
+socket_request_send (NiceSocket *sock, const NiceAddress *to, const char * buf,
+                     gsize buflen,
+                     NiceDestroyUserdataCallback * destroy_callback,
+                     gpointer * destroy_userdata)
+{
+  struct UdpBsdSocketPrivate *priv = sock->priv;
+  g_mutex_lock(&priv->lock);
+  /* Use iovlen to determine if msg, and thus operation is busy */
+  if (priv->sendmsg.msg_iovlen != 0)
+  {
+    g_mutex_unlock(&priv->lock);
+    return FALSE;
+  }
+
+  if (priv->send_buffer && priv->send_buffer != buf)
+  {
+    priv->send_buffer_destroy_notify(priv->send_buffer,
+      priv->send_buffer_destroy_userdata);
+    priv->send_buffer = NULL;
+    priv->send_buffer_destroy_userdata = NULL;
+  }
+
+  priv->send_buffer = buf;
+  priv->send_buffer_destroy_notify = destroy_callback;
+  priv->send_buffer_destroy_userdata = destroy_userdata;
+
+  if (to != NULL)
+  {
+    memset(&priv->peer_address, 0, sizeof(struct sockaddr_in));
+    nice_address_copy_to_sockaddr (to, (struct sockaddr_in *)&priv->peer_address);
+  }
+
+  memset (&priv->sendmsg, 0, sizeof (struct msghdr));
+  priv->sendmsg.msg_name = &priv->peer_address;
+  priv->sendmsg.msg_namelen = get_namelen(&priv->peer_address);
+  priv->sendmsg.msg_iov = &priv->sendvec;
+  priv->sendmsg.msg_iovlen = 1;
+  priv->sendvec.iov_base = (guint8 *) buf;
+  priv->sendvec.iov_len = buflen;
+  g_mutex_unlock(&priv->lock);
+  return gasync_connection_socket_sendmsg(sock->transport.connection, &priv->sendmsg,
+    0);
+}
+
+static void
+socket_sendmsg_callback (NiceSocket *sock,  struct msghdr * msg, int result)
+{
+  gboolean ownership_transferred;
+  struct UdpBsdSocketPrivate *priv = sock->priv;
+  if (result < 0) {
+    g_assert(result == 0); //TODO: Update list of acceptable errors during testing
+  }
+
+  g_mutex_lock(&priv->lock);
+  GST_INFO("Udp socket send callback: %p (%d): %d", sock, msg->msg_iov->iov_len, result);
+
+  g_assert(msg->msg_iovlen == 1); // Currently we use only one io buffer
+  priv->sendmsg.msg_iovlen = 0;
+  if (priv->txcb)
+  {
+    g_mutex_unlock(&priv->lock);
+    ownership_transferred = priv->txcb(sock, msg->msg_iov->iov_base,
+      msg->msg_iov->iov_len, 0, priv->userdata);
+    g_mutex_lock(&priv->lock);
+    if (ownership_transferred)
+    {
+      priv->send_buffer_destroy_notify(NULL,
+        priv->send_buffer_destroy_userdata);
+
+      priv->send_buffer = NULL;
+      priv->send_buffer_destroy_userdata = NULL;
+    }
+    g_mutex_unlock(&priv->lock);
+  } else {
+    // Keep the buffer around to avoid having to do too many malloc requests
+    //priv->send_buffer_destroy_notify(priv->send_buffer,
+    //  priv->send_buffer_destroy_userdata);
+    g_mutex_unlock(&priv->lock);
+  }
 }
 
 static gint
 socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
 {
+#if 0
   GSocketAddress *gaddr = NULL;
   GError *gerr = NULL;
   gint recvd;
@@ -191,7 +555,7 @@ socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
   if (recvd > 0 && from != NULL && gaddr != NULL) {
     struct sockaddr_storage sa;
 
-    g_socket_address_to_native (gaddr, &sa, sizeof (sa), NULL);
+    //g_socket_address_to_native (gaddr, &sa, sizeof (sa), NULL);
     nice_address_set_from_sockaddr (from, (struct sockaddr *)&sa);
   }
 
@@ -199,6 +563,10 @@ socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
     g_object_unref (gaddr);
 
   return recvd;
+#else
+  return 0;
+#endif
+
 }
 
 static gint
@@ -206,23 +574,28 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf)
 {
   struct UdpBsdSocketPrivate *priv = sock->priv;
-
-  if (!nice_address_is_valid (&priv->niceaddr) ||
-      !nice_address_equal (&priv->niceaddr, to)) {
-    struct sockaddr_storage sa;
-    GSocketAddress *gaddr;
-
-    if (priv->gaddr)
-      g_object_unref (priv->gaddr);
-    nice_address_copy_to_sockaddr (to, (struct sockaddr *)&sa);
-    gaddr = g_socket_address_new_from_native (&sa, sizeof(sa));
-    if (gaddr == NULL)
-      return -1;
-    priv->gaddr = gaddr;
-    priv->niceaddr = *to;
+  g_mutex_lock(&priv->lock);
+  if (priv->send_buffer_len <= len)
+  {
+    priv->send_buffer_len = len;
+    priv->send_buffer = g_realloc (priv->send_buffer,
+           priv->send_buffer_len);
   }
-
-  return g_socket_send_to (sock->transport.fileno, priv->gaddr, buf, len, NULL, NULL);
+  memcpy(priv->send_buffer, buf, len);
+  g_mutex_unlock(&priv->lock);
+  if(socket_request_send(sock, to, priv->send_buffer, len, local_send_buffer_destroy, sock)) // TODO: Use callback
+  {
+    GST_INFO("Udp socket send queued: %p (%d)", sock, len);
+    /* Wherever this is used must be updated to ignore it, or wait for
+    the async response */
+    return -1;
+  }
+  else
+  {
+    //g_assert(false);
+    GST_INFO("Udp socket send failed: %p (%d)", sock, len);
+    return -2;
+  }
 }
 
 static gboolean
@@ -234,5 +607,5 @@ socket_is_reliable (NiceSocket *sock)
 static int
 socket_get_fd (NiceSocket *sock)
 {
-  return sock->transport.fileno ? g_socket_get_fd(sock->transport.fileno) : -1;
+  return sock->transport.connection ? gasync_connection_socket_get_fd (sock->transport.connection) : -1;
 }

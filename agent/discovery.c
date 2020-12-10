@@ -296,6 +296,7 @@ static gboolean priv_add_local_candidate_pruned (NiceAgent *agent, guint stream_
     }
   }
 
+  g_assert(candidate->addr.s.addr.sa_family != 0);
   component->local_candidates = g_slist_append (component->local_candidates,
       candidate);
   if (pair_with_remotes) {
@@ -486,28 +487,26 @@ NiceCandidate *discovery_add_local_host_candidate (
   candidate->transport = transport;
   priv_assign_foundation (agent, candidate);
 
-  /* note: candidate username and password are left NULL as stream
+  userdata = g_new (TcpUserData, 1);
+  userdata->agent = agent;
+  userdata->stream = stream;
+  userdata->component = component;
+ /* note: candidate username and password are left NULL as stream
      level ufrag/password are used */
   switch (transport) {
   case NICE_CANDIDATE_TRANSPORT_UDP:
-    socket = nice_udp_bsd_socket_new (address);
+    socket = nice_udp_bsd_socket_new (agent, address, stream_id, component_id,
+      nice_agent_socket_rx_cb, nice_agent_socket_tx_cb, (gpointer)userdata,
+      g_free);
     break;
 
   case NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE:
-    userdata = g_new (TcpUserData, 1);
-    userdata->agent = agent;
-    userdata->stream = stream;
-    userdata->component = component;
     socket = nice_tcp_passive_socket_new (component->context, address,
         nice_agent_socket_rx_cb, nice_agent_socket_tx_cb,
         (gpointer)userdata, g_free, stream->max_tcp_queue_size);
     break;
 
   case NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE:
-    userdata = g_new (TcpUserData, 1);
-    userdata->agent = agent;
-    userdata->stream = stream;
-    userdata->component = component;
     socket = nice_tcp_active_socket_new (component->context, address,
         nice_agent_socket_rx_cb, nice_agent_socket_tx_cb,
         (gpointer)userdata, g_free, stream->max_tcp_queue_size);

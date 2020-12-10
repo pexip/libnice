@@ -55,8 +55,9 @@ G_BEGIN_DECLS
 
 typedef struct _NiceSocket NiceSocket;
 
-typedef void (*SocketRXCallback)(NiceSocket* socket, NiceAddress* from, gchar* buf, gint len, gpointer userdata);
-typedef void (*SocketTXCallback)(NiceSocket* socket, gchar* buf, gint len, gsize queued, gpointer userdata);
+typedef gboolean (*SocketRXCallback)(NiceSocket* socket, NiceAddress* from, gchar* buf, gint len, gpointer userdata);
+typedef gboolean (*SocketTXCallback)(NiceSocket* socket, gchar* buf, gint len, gsize queued, gpointer userdata);
+typedef void (*NiceDestroyUserdataCallback) (gpointer destroy_data, gpointer userdata);
 
 typedef enum {
   NICE_SOCKET_TYPE_UDP_BSD,
@@ -77,7 +78,7 @@ typedef struct _NiceSocketFunctionTable NiceSocketFunctionTable;
 union _NiceSocketTransport{
     GSocket *fileno;
     GAsyncServerSocket *server;
-    GAsyncServerSocket *connection;
+    GAsyncConnectionSocket *connection;
 };
 
 typedef union _NiceSocketTransport NiceSocketTransport;
@@ -88,11 +89,14 @@ struct _NiceSocketFunctionTable
   /* Accept callback is only called for async sockets,  */
   void (*accept_callback) (NiceSocket *server_socket, NiceSocketTransport* client_socket, gint32 result, NiceAddress client_address);
 
-  void (*request_recv) (NiceSocket *sock, struct msghdr * msg);
-  void (*recv_callback) (NiceSocket *sock, struct msghdr * msg);
+  gboolean (*request_recv) (NiceSocket *sock, struct msghdr * msg,
+    NiceDestroyUserdataCallback * destroy_callback, gpointer * destroy_userdata);
+  void (*recv_callback) (NiceSocket *sock, struct msghdr * msg, int result);
 
-  gboolean (*request_send) (NiceSocket *sock,  struct msghdr * msg);
-  gboolean (*send_callback) (NiceSocket *sock,  struct msghdr * msg);
+  gboolean (*request_send) (NiceSocket *sock, const NiceAddress *to,
+   const char * buf, gsize buflen, NiceDestroyUserdataCallback * destroy_callback,
+   gpointer * destroy_userdata);
+  void (*send_callback) (NiceSocket *sock,  struct msghdr * msg, int result);
 
   /* Used when a socket is requested to be freed/closed.  */
   void (*request_close) (NiceSocket *sock);
@@ -149,7 +153,7 @@ nice_socket_set_rx_enabled (NiceSocket *sock, gboolean enabled);
 void
 nice_socket_free (NiceSocket *sock);
 
-int 
+int
 nice_socket_get_fd (NiceSocket *sock);
 
 const char *socket_type_to_string (NiceSocketType type);

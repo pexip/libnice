@@ -127,7 +127,13 @@ struct _NiceAgent
   gchar *software_attribute;       /* SOFTWARE attribute */
   gboolean reliable;               /* property: reliable */
   GAsync* async;                   /* property: used for async io */
-  
+  NiceUserdataWrapperFunc async_userdata_wrapper; /* related to forwarding of async callbacks */
+  GDestroyNotify async_userdata_destroy; /* related to forwarding of async callbacks */
+
+  NiceAgentRequestRxBufferCallbackFunc request_rx_buffer_callback; /* related to forwarding of async callbacks */
+  void *request_rx_buffer_callback_userdata; /* related to forwarding of async callbacks */
+  GDestroyNotify request_rx_buffer_callback_userdata_destroy; /* related to forwarding of async callbacks */
+
   GSList *laststream;                /* last stream object, used when iterating
                                         over streams to poll, access atomically */
   volatile unsigned int    streamscookie; /* "Lock" for streamlist, should be changed if list is changed */
@@ -193,8 +199,8 @@ StunUsageTurnCompatibility agent_to_turn_compatibility (NiceAgent *agent);
 NiceTurnSocketCompatibility agent_to_turn_socket_compatibility (NiceAgent *agent);
 
 void _priv_set_socket_tos (NiceAgent *agent, NiceSocket *sock, gint tos);
-void nice_agent_socket_rx_cb (NiceSocket* socket, NiceAddress* from, gchar* buf, gint len, gpointer userdata);
-void nice_agent_socket_tx_cb (NiceSocket* socket, gchar* buf, gint len, gsize queued, gpointer userdata);
+gboolean nice_agent_socket_rx_cb (NiceSocket* socket, NiceAddress* from, gchar* buf, gint len, gpointer userdata);
+gboolean nice_agent_socket_tx_cb (NiceSocket* socket, gchar* buf, gint len, gsize queued, gpointer userdata);
 
 guint32 agent_candidate_ice_priority (NiceAgent* agent, const NiceCandidate *candidate, NiceCandidateType type);
 

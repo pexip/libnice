@@ -40,11 +40,15 @@
 #define _UDP_BSD_H
 
 #include "socket.h"
+#include "agent.h"
 
 G_BEGIN_DECLS
 
 NiceSocket *
-nice_udp_bsd_socket_new (NiceAddress *addr);
+nice_udp_bsd_socket_new (NiceAgent * agent, NiceAddress *addr,
+  guint stream_id, guint component_id,
+  SocketRXCallback rxcb, SocketTXCallback txcb, gpointer userdata,
+  GDestroyNotify destroy_notify);
 
 G_END_DECLS
 

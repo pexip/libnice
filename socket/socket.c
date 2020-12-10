@@ -135,9 +135,12 @@ nice_socket_async_recvmsg_callback (
     void **userdata_pointer,
     struct msghdr *msg,
     gint32 result,
-    GAsyncConnectionSocket * socket)
+    GAsyncConnectionSocket * async_socket)
 {
-
+  NiceSocket *socket = (NiceSocket*) *userdata_pointer;
+  // TODO: Verify that the pointer here actually points to a Nice UDP socket
+  socket->functions->recv_callback(socket, msg, result);
+  (void) async_socket;
 }
 
 void
@@ -145,28 +148,29 @@ nice_socket_async_sendmsg_callback (
     void **userdata_pointer,
     struct msghdr *msg,
     gint32 result,
-    GAsyncConnectionSocket * socket)
+    GAsyncConnectionSocket * async_socket)
 {
-
+  NiceSocket *socket = (NiceSocket*) *userdata_pointer;
+  socket->functions->send_callback(socket, msg, result);
+  (void) async_socket;
 }
 
 void
 nice_socket_async_connect_callback (
     void **userdata_pointer,
     gint32 result,
-    GAsyncConnectionSocket * socket)
+    GAsyncConnectionSocket * async_socket)
 {
-
-
+  g_assert(FALSE);
 }
 
 void
 nice_socket_async_close_callback (
     void **userdata_pointer,
     gint32 result,
-    GAsyncConnectionSocket * socket)
+    GAsyncConnectionSocket * async_socket)
 {
-
+  g_assert(FALSE);
 }
 
 void
@@ -175,7 +179,7 @@ nice_socket_async_close_server_callback (
     gint32 result,
     GAsyncServerSocket * socket)
 {
-
+  g_assert(FALSE);
 }
 
 void
@@ -188,6 +192,7 @@ nice_socket_async_accept_callback (
     struct sockaddr_in *client_addr,
     socklen_t client_addr_len)
 {
+  g_assert(FALSE);
 #if 0
   NiceSocket *socket = *server_userdata_pointer;
   if (connection_userdata_pointer != NULL)
@@ -205,7 +210,8 @@ void nice_socket_async_connection_socket_dispose_callback(
     void **userdata_pointer,
    GAsyncConnectionSocket *socket)
 {
-
+  //TODO: Do we own the socket at this point?
+  g_object_unref(socket);
 }
 
 void nice_socket_async_server_socket_dispose_callback(
@@ -216,6 +222,6 @@ void nice_socket_async_server_socket_dispose_callback(
 }
 
 void nice_socket_async_timeout_callback (gpointer userdata, gint32 result,
-      GAsyncConnectionSocket * socket)
+      GAsyncConnectionSocket * async_socket)
 {
 }
