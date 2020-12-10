@@ -86,7 +86,7 @@ void stun_debug (const char *fmt, ...)
   va_list ap;
   if (debug_enabled) {
     va_start (ap, fmt);
-    g_logv (G_LOG_DOMAIN, G_LOG_LEVEL_DEBUG, fmt, ap);
+    g_logv (G_LOG_DOMAIN, G_LOG_LEVEL_INFO, fmt, ap);
     va_end (ap);
   }
 }

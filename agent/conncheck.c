@@ -601,7 +601,7 @@ void conn_check_unfreeze_related (NiceAgent *agent, Stream *stream, CandidateChe
 static void priv_tick_in_progress_check (NiceAgent* agent, Stream* stream, CandidateCheckPair* p, GTimeVal *now)
 {
   if (p->stun_message.buffer == NULL) {
-    GST_DEBUG_OBJECT (agent, "%u/%u: STUN connectivity check was cancelled for pair %p(%s), marking as done.",
+    GST_INFO_OBJECT (agent, "%u/%u: STUN connectivity check was cancelled for pair %p(%s), marking as done.",
         p->stream_id, p->component_id,
         p, p->foundation);
     priv_set_pair_state (agent, p, NICE_CHECK_FAILED);
@@ -611,7 +611,7 @@ static void priv_tick_in_progress_check (NiceAgent* agent, Stream* stream, Candi
       {
         /* case: error, abort processing */
         StunTransactionId id;
-        GST_DEBUG_OBJECT (agent, "%u/%u: Retransmissions failed, giving up on connectivity check %p(%s)",
+        GST_INFO_OBJECT (agent, "%u/%u: Retransmissions failed, giving up on connectivity check %p(%s)",
             p->stream_id, p->component_id,
             p, p->foundation);
         priv_set_pair_state (agent, p, NICE_CHECK_FAILED);
@@ -627,7 +627,7 @@ static void priv_tick_in_progress_check (NiceAgent* agent, Stream* stream, Candi
       {
         /* case: not ready, so schedule a new timeout */
         unsigned int timeout = stun_timer_remainder (&p->timer);
-        GST_DEBUG_OBJECT (agent, "%u/%u:STUN transaction retransmitted (timeout %dms) for pair %p(%s)",
+        GST_INFO_OBJECT (agent, "%u/%u:STUN transaction retransmitted (timeout %dms) for pair %p(%s)",
             p->stream_id, p->component_id,
             timeout,
             p, p->foundation);

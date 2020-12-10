@@ -59,11 +59,20 @@ struct _GstNiceSrc
 
   GSList *src_pads;
   GHashTable *socket_addresses;
+  GRecMutex rec_lock;
 };
 
 struct _GstNiceSrcClass
 {
   GstPushSrcClass parent_class;
+};
+
+typedef struct _NicePadBufferRef NicePadBufferRef;
+struct _NicePadBufferRef
+{
+  GstBuffer *recvbuf;
+  GstMemory *recvmem;
+  GstMapInfo recvmeminfo;
 };
 
 struct _GstNiceSrcPad
@@ -84,6 +93,13 @@ struct _GstNiceSrcPad
   gboolean unlocked;
   GSource *idle_source;
   GstCaps *caps;
+
+  /* This is not very efficient (leads to lots of mallocs),
+     but is a simple quick hack until we add support for shared
+     buffer pools in uring
+  */
+  GSList *buffers;
+
 };
 
 #define BUFFER_SIZE (65536)
@@ -220,6 +236,7 @@ gst_nice_src_pad_init(GstNiceSrcPad *pad)
   pad->unlocked = FALSE;
   pad->idle_source = NULL;
   pad->caps = gst_caps_new_any();
+  pad->buffers = NULL;
 }
 
 static void
@@ -245,12 +262,39 @@ gst_nice_src_pad_dispose(GObject *object)
   }
   nicepad->idle_source = NULL;
   if (nicepad->mainloop)
+  {
     g_main_loop_unref(nicepad->mainloop);
+  }
   nicepad->mainloop = NULL;
 
   if (nicepad->mainctx)
+  {
     g_main_context_unref(nicepad->mainctx);
+  }
   nicepad->mainctx = NULL;
+
+  for (GSList *elm = nicepad->buffers; elm != NULL; elm = elm->next)
+  {
+    NicePadBufferRef * bufref = elm->data;
+    if(bufref->recvmeminfo.memory != NULL)
+    {
+      g_assert(bufref->recvmem != NULL);
+      gst_memory_unmap(bufref->recvmem, &bufref->recvmeminfo);
+    }
+    if(bufref->recvmem != NULL)
+    {
+      gst_memory_unref(bufref->recvmem);
+    }
+    if(bufref->recvbuf != NULL)
+    {
+      gst_buffer_unref(bufref->recvbuf);
+    }
+    g_free(bufref);
+    elm->data = NULL;
+  }
+
+  g_slist_free (nicepad->buffers);
+  nicepad->buffers = NULL;
 
   gst_caps_replace(&nicepad->caps, NULL);
   GST_OBJECT_UNLOCK(nicepad);
@@ -571,6 +615,7 @@ gst_nice_src_init(GstNiceSrc *src)
                                                 gst_nice_src_nice_address_compare,
                                                 gst_nice_src_destroy_hash_key,
                                                 gst_object_unref);
+  g_rec_mutex_init(&src->rec_lock);
 #if 0
   // Todo: Add support for dynamically adding pads as done in pexeviosrc
   pad = gst_pad_new_from_template ((GstPadTemplate*)(&gst_nice_src_src_template), "src");
@@ -637,6 +682,38 @@ gst_nice_src_pad_send_segment(GstNiceSrcPad *nicepad)
   return gst_pad_push_event((GstPad *)nicepad, event);
 }
 
+static void
+gst_nice_src_free_read_buffer ( GstNiceSrcPad *pad, gpointer addr )
+{
+  for (GSList *elm = pad->buffers; elm != NULL; elm = elm->next)
+  {
+    NicePadBufferRef * bufref = elm->data;
+    if (bufref->recvmeminfo.data == addr)
+    {
+      if(bufref->recvmeminfo.memory != NULL)
+      {
+        g_assert(bufref->recvmem != NULL);
+        gst_memory_unmap(bufref->recvmem, &bufref->recvmeminfo);
+        GstMapInfo meminfo = GST_MAP_INFO_INIT;
+        bufref->recvmeminfo = meminfo;
+      }
+      if(bufref->recvmem != NULL)
+      {
+        gst_memory_unref(bufref->recvmem);
+        bufref->recvmem = NULL;
+      }
+      if(bufref->recvbuf != NULL)
+      {
+        gst_buffer_unref(bufref->recvbuf);
+        bufref->recvbuf = NULL;
+      }
+      g_free(bufref);
+      elm->data = NULL;
+      break;
+    }
+  }
+  pad->buffers = g_slist_remove_all(pad->buffers, NULL);
+}
 /* Called for async sockets */
 static void
 gst_nice_src_recvmsg_callback(NiceAgent *agent,
@@ -648,6 +725,11 @@ gst_nice_src_recvmsg_callback(NiceAgent *agent,
                               const NiceAddress *from,
                               const NiceAddress *to)
 {
+  GstNiceSrcPad *pad = GST_NICE_SRC_PAD_CAST(data);
+  // TODO: Currently the buffer is freed by gst_nice_free_rx_buffer after this
+  // function returns. If we want this buffer to be used further we must avoid,
+  // e.g. by refcounting this buffer that
+  //gst_nice_src_free_read_buffer (pad);
 }
 
 static void
@@ -661,7 +743,7 @@ gst_nice_src_read_callback(NiceAgent *agent,
                            const NiceAddress *to)
 {
   GstNiceSrcPad *nicesrcpad = GST_NICE_SRC_PAD(data);
-  GstNiceSrcPad *nicesrc = nicesrcpad->src;
+  GstNiceSrc *nicesrc = nicesrcpad->src;
 #if !GST_CHECK_VERSION(1, 0, 0)
   GstNetBuffer *netbuffer = NULL;
 #endif
@@ -673,6 +755,7 @@ gst_nice_src_read_callback(NiceAgent *agent,
   GST_LOG_OBJECT(agent, "Got buffer, getting out of the main loop");
 
   GST_OBJECT_LOCK(nicesrcpad->src);
+  g_rec_mutex_lock(&nicesrc->rec_lock);
   if (G_UNLIKELY(!nicesrcpad->stream_started))
   {
     GST_OBJECT_UNLOCK(nicesrcpad->src);
@@ -719,6 +802,8 @@ gst_nice_src_read_callback(NiceAgent *agent,
 #else
   #error "Not supported anymore"
 #endif
+
+  g_rec_mutex_unlock(&nicesrc->rec_lock);
   //g_queue_push_tail (nicesrc->outbufs, buffer);
   GstFlowReturn flowret;
   if (G_UNLIKELY ((flowret = gst_pad_push (nicesrcpad, buffer)) != GST_FLOW_OK)) {
@@ -877,7 +962,7 @@ gst_nice_src_dispose(GObject *object)
 {
   GstNiceSrc *src = GST_NICE_SRC(object);
   //g_assert(gst_element_get_state  src)
-
+  g_rec_mutex_lock(&src->rec_lock);
   if (src->agent)
     g_object_unref(src->agent);
   src->agent = NULL;
@@ -902,9 +987,91 @@ gst_nice_src_dispose(GObject *object)
   g_hash_table_remove_all(src->socket_addresses);
   g_hash_table_unref(src->socket_addresses);
   src->socket_addresses = NULL;
+  g_rec_mutex_unlock(&src->rec_lock);
 
   G_OBJECT_CLASS(gst_nice_src_parent_class)->dispose(object);
 }
+
+static GstNiceSrcPad *
+gst_nice_src_find_pad(GstNiceSrc *nicesrc, guint stream_id, guint component_id)
+{
+  GstNiceSrcPad *pad = NULL;
+
+  for (GSList *elm = nicesrc->src_pads; elm != NULL; elm = elm->next)
+  {
+    GstNiceSrcPad *cpad = GST_NICE_SRC_PAD_CAST(elm->data);
+    if (cpad->stream_id == stream_id && cpad->component_id == component_id)
+    {
+      pad = cpad;
+      break;
+    }
+  }
+  return pad;
+}
+
+/* Only called if a read or write is canceled so the read/write was canceled */
+static void gst_nice_free_rx_buffer (gpointer destroy_data, gpointer userdata)
+{
+  GstNiceSrcPad *pad = GST_NICE_SRC_PAD_CAST(userdata);
+  GstNiceSrc *src = pad->src;
+  /* TODO: This is a bit hackish, consider trying to remove this, or replace it
+     with some other lock */
+  if(src != NULL)
+  {
+    g_rec_mutex_lock(&src->rec_lock);
+  }
+  if (destroy_data != NULL)
+  {
+    gst_nice_src_free_read_buffer (pad, destroy_data);
+  }
+  gst_object_unref(pad);
+  if(src != NULL)
+  {
+    g_rec_mutex_unlock(&src->rec_lock);
+  }
+}
+
+static void gst_nice_request_rx_buffer(
+  NiceAgent *agent, guint stream_id, guint component_id, guint len,
+  gchar **buf,
+  NiceDestroyUserdataCallback* destroy_buf_notify,
+  gpointer *destroy_callback_userdata,
+  gpointer user_data){
+
+  //GstNiceSrcPad *pad = GST_NICE_SRC_PAD_CAST(userdata);
+  GstNiceSrc *nicesrc = GST_NICE_SRC_CAST(user_data);
+  /* For now we operate on one memory object per pad.
+     TODO: Change this once we implement shared memory pools with gasync. */
+  /* TODO: Eventually we want to use bufpools here */
+  g_rec_mutex_lock(&nicesrc->rec_lock);
+
+  GstNiceSrcPad *pad = gst_nice_src_find_pad(nicesrc, stream_id, component_id);
+
+  if (pad == NULL)
+  {
+    /* Cannot attach before pad exists, ignore and wait for next attach */
+    g_rec_mutex_unlock(&nicesrc->rec_lock);
+    return;
+  }
+  g_assert(pad != NULL);
+
+  *destroy_buf_notify = gst_nice_free_rx_buffer;
+  *destroy_callback_userdata = gst_object_ref(pad);
+
+  NicePadBufferRef *bufref = g_new0(NicePadBufferRef, 1);
+
+  bufref->recvbuf = gst_buffer_new_allocate(NULL, len, NULL);
+  g_assert(bufref->recvbuf != NULL);
+  bufref->recvmem = gst_buffer_get_all_memory (bufref->recvbuf);
+  g_assert(bufref->recvmem != NULL);
+  gst_memory_map(bufref->recvmem, &bufref->recvmeminfo, GST_MAP_WRITE);
+  g_assert(bufref->recvmeminfo.memory != NULL);
+  g_assert(bufref->recvmeminfo.size >= len);
+  *buf = bufref->recvmeminfo.data;
+  pad->buffers = g_slist_prepend(pad->buffers, bufref);
+  g_rec_mutex_unlock(&nicesrc->rec_lock);
+}
+
 
 static void
 gst_nice_src_set_property(
@@ -922,7 +1089,11 @@ gst_nice_src_set_property(
       GST_ERROR_OBJECT(object,
                        "Changing the agent on a nice src not allowed");
     else
+    {
       src->agent = g_value_dup_object(value);
+      nice_agent_add_request_rx_buffer_callback(src->agent,
+        gst_nice_request_rx_buffer, g_object_ref(src), g_object_unref);
+    }
     break;
 
 #if 0
@@ -1034,6 +1205,7 @@ gst_nice_src_pad_change_state(gpointer *pad_ptr, gpointer transition_wrapped)
        srcpad->stream_id, srcpad->component_id, gst_nice_src_pad_poll_callback,
        gst_object_ref(srcpad), gst_object_unref);
 
+      //TODO: If this is an udp socket we should give it a buffer here
       srcpad->attached = TRUE;
     }
     break;
@@ -1055,7 +1227,7 @@ gst_nice_src_change_state(GstElement *element, GstStateChange transition)
   GstStateChangeReturn ret;
 
   src = GST_NICE_SRC(element);
-
+  g_rec_mutex_lock(&src->rec_lock);
   GstState next = GST_STATE_TRANSITION_NEXT(transition);
   switch (next)
   {
@@ -1084,6 +1256,7 @@ gst_nice_src_change_state(GstElement *element, GstStateChange transition)
   }
 
   ret = GST_ELEMENT_CLASS(gst_nice_src_parent_class)->change_state(element, transition);
+  g_rec_mutex_unlock(&src->rec_lock);
 
   return ret;
 }
@@ -1114,7 +1287,7 @@ static GstNiceSrcPollState gst_nice_src_pad_poll_system(GstNiceSrcPad *srcpad)
 static GstNiceSrcPollState gst_nice_src_poll_system(GstNiceSrc *src)
 {
   GST_OBJECT_LOCK(src);
-  for (GSList *elm = src->src_pads; elm = elm->next; elm != NULL)
+  for (GSList *elm = src->src_pads; elm != NULL; elm = elm->next)
   {
     GstNiceSrcPad *srcpad = GST_NICE_SRC_PAD_CAST(elm->data);
     GstNiceSrcPollState ret_state;
@@ -1183,7 +1356,7 @@ GstNiceSrcPollState gst_nice_src_poll(GstNiceSrc *src)
     return system_poll_state_result;
   }
 
-  for (GSList *elm = src->src_pads; elm = elm->next; elm != NULL)
+  for (GSList *elm = src->src_pads; elm != NULL; elm = elm->next)
   {
     GstNiceSrcPad *srcpad = GST_NICE_SRC_PAD_CAST(elm->data);
 
@@ -1222,6 +1395,7 @@ gst_nice_src_request_new_pad(GstElement *element,
     return NULL;
 
   GST_OBJECT_LOCK(src);
+  g_rec_mutex_lock(&src->rec_lock);
 
   pad = gst_nice_src_pad_new(templ, name, src);
 
@@ -1232,6 +1406,7 @@ gst_nice_src_request_new_pad(GstElement *element,
   gst_pad_set_active(pad, TRUE);
   src->src_pads = g_slist_prepend(src->src_pads, pad);
   GST_OBJECT_UNLOCK(src);
+  g_rec_mutex_unlock(&src->rec_lock);
   gst_element_add_pad(element, pad);
   GST_DEBUG_OBJECT(pad, "Added pad for stream %u component %u", stream_id, component_id);
 
@@ -1246,6 +1421,8 @@ gst_nice_src_release_pad (GstElement * element, GstPad * pad)
   GstNiceSrcPad *nicepad = GST_NICE_SRC_PAD_CAST (pad);
 
   GST_DEBUG_OBJECT (pad, "Release pad");
+
+  g_rec_mutex_lock(&nicesrc->rec_lock);
 
   g_assert (gst_pad_set_active (pad, FALSE));
   gst_element_remove_pad (element, pad);
@@ -1265,5 +1442,6 @@ gst_nice_src_release_pad (GstElement * element, GstPad * pad)
   nicepad->attached = FALSE;
   nicesrc->src_pads = g_slist_remove(nicesrc->src_pads, pad);
   GST_OBJECT_UNLOCK(nicesrc);
+  g_rec_mutex_unlock(&nicesrc->rec_lock);
   //Free pad?
 }

@@ -289,6 +289,21 @@ typedef void (*NiceAgentAsyncRecvFunc) (
 typedef NiceAgentPollState (*NiceAgentPollFunc) (
   NiceAgent *agent, guint stream_id, guint component_id, gpointer user_data);
 
+typedef void (*NiceUserdataWrapperFunc) (NiceAgent *agent, void ** userdata_pointer);
+
+typedef void (*NiceDestroyUserdataCallback) (gpointer destroy_data, gpointer userdata);
+
+//typedef void (*NiceAgentFreeBufferCallbackFunc) (
+//  NiceAgent *agent, guint stream_id, guint component_id, gchar **buf,
+//  gpointer user_data);
+
+typedef void (*NiceAgentRequestRxBufferCallbackFunc) (
+  NiceAgent *agent, guint stream_id, guint component_id, guint len,
+  gchar **buf,
+  NiceDestroyUserdataCallback* destroy_buf_notify,
+  gpointer *destroy_callback_userdata,
+  gpointer user_data);
+
 /**
  * nice_agent_new:
  * @async: Async context used for timers and io for udp.
@@ -925,6 +940,14 @@ nice_agent_set_rx_enabled (
   guint component_id,
   gboolean enabled);
 
+
+NICE_EXPORT void
+nice_agent_set_userdata_wrapper(
+  NiceAgent *agent,
+  NiceUserdataWrapperFunc wrapper,
+  GDestroyNotify destroy
+  );
+
 NICE_EXPORT void
 nice_agent_async_recvmsg_callback (
     void **userdata_pointer,
@@ -975,6 +998,16 @@ NICE_EXPORT void nice_agent_async_server_socket_dispose_callback(
     void **userdata_pointer,
     GAsyncServerSocket *socket);
 
+NICE_EXPORT void nice_agent_async_timeout_timer_callback (void ** userdata_pointer, gint32 result,
+      GAsyncTimer * timer);
+
+NICE_EXPORT void
+nice_agent_async_cancel_timer_callback (void ** userdata_pointer, gint32 result,
+      GAsyncTimer * timer);
+
+NICE_EXPORT void nice_agent_async_timeout_teardown_callback (void ** userdata_pointer,
+      GAsyncTimer * timer);
+
 NICE_EXPORT gboolean nice_agent_component_uses_main_context(NiceAgent *agent,
   guint stream_id, guint component_id);
 
@@ -986,6 +1019,9 @@ NICE_EXPORT void nice_agent_add_component_poll_callback(NiceAgent *agent,
   guint stream_id, guint component_id, NiceAgentPollFunc * poll_cb,
   gpointer polldata, GDestroyNotify * poll_data_destroy_notify);
 
+NICE_EXPORT void nice_agent_add_request_rx_buffer_callback(NiceAgent *agent,
+  NiceAgentRequestRxBufferCallbackFunc* callback_func,
+  gpointer callback_data, GDestroyNotify * callback_data_destroy_notify);
 G_END_DECLS
 
 #endif /* _AGENT_H */

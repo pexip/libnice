@@ -367,7 +367,6 @@ agent_find_component (NiceAgent * agent,
   return TRUE;
 }
 
-
 void
 nice_agent_async_recvmsg_callback (
     void **userdata_pointer,
@@ -448,6 +447,33 @@ void nice_agent_async_server_socket_dispose_callback(
 {
   nice_agent_async_server_socket_dispose_callback(userdata_pointer, socket);
 }
+
+NICEAPI_EXPORT void
+nice_agent_async_timeout_timer_callback (void ** userdata_pointer, gint32 result,
+      GAsyncTimer * timer)
+{
+  (void) userdata_pointer;
+  (void) result;
+  (void) timer;
+}
+
+NICEAPI_EXPORT void
+nice_agent_async_cancel_timer_callback (void ** userdata_pointer, gint32 result,
+      GAsyncTimer * timer)
+{
+  (void) userdata_pointer;
+  (void) result;
+  (void) timer;
+}
+
+NICEAPI_EXPORT void
+nice_agent_async_timeout_teardown_callback (void ** userdata_pointer,
+      GAsyncTimer * timer)
+{
+  (void) userdata_pointer;
+  (void) timer;
+}
+
 
 
 
@@ -1759,7 +1785,16 @@ nice_agent_gather_candidates (NiceAgent * agent, guint stream_id)
                * UDP not enabled for this stream, create a local UDP socket
                * for talking to the STUN server
                */
-              sockptr = nice_udp_bsd_socket_new (addr);
+
+              TcpUserData* userdata = NULL;
+              userdata = g_new (TcpUserData, 1);
+              userdata->agent = agent;
+              userdata->stream = stream;
+              userdata->component = component;
+              sockptr = nice_udp_bsd_socket_new (agent, addr,
+                stream, component,
+                nice_agent_socket_rx_cb, nice_agent_socket_tx_cb,
+                 (gpointer)userdata, g_free);
               agent_attach_stream_component_socket (agent, stream, component,
                   sockptr);
 
@@ -2722,6 +2757,13 @@ nice_agent_dispose (GObject * object)
     g_main_context_unref (agent->main_context);
   agent->main_context = NULL;
 
+  if (agent->request_rx_buffer_callback_userdata)
+  {
+    agent->request_rx_buffer_callback_userdata_destroy(agent->request_rx_buffer_callback_userdata);
+  }
+  agent->request_rx_buffer_callback_userdata = NULL;
+  agent->request_rx_buffer_callback_userdata_destroy = NULL;
+
   agent_unlock (agent);
   g_assert (agent->agent_mutex_th == NULL);
   g_rec_mutex_clear (&agent->agent_mutex);
@@ -2769,7 +2811,7 @@ io_ctx_free (IOCtx * ctx)
 /*
  * Callback from non gsocket based NiceSockets when data received.
  */
-void
+gboolean
 nice_agent_socket_rx_cb (NiceSocket * socket, NiceAddress * from,
     gchar * buf, gint len, gpointer userdata)
 {
@@ -2871,6 +2913,7 @@ nice_agent_socket_rx_cb (NiceSocket * socket, NiceAddress * from,
   } else {
     agent_unlock (agent);
   }
+  return FALSE;
 }
 
 static gboolean
@@ -2930,7 +2973,7 @@ nice_agent_queue_reliable_transport_event (NiceAgent * agent, guint stream_id,
   }
 }
 
-void
+gboolean
 nice_agent_socket_tx_cb (NiceSocket * socket, gchar * buf, gint len,
     gsize queued, gpointer userdata)
 {
@@ -2950,6 +2993,7 @@ nice_agent_socket_tx_cb (NiceSocket * socket, gchar * buf, gint len,
         component->writable);
   }
   agent_unlock (agent);
+  return FALSE;
 }
 
 static gboolean
@@ -3004,7 +3048,7 @@ done:
 static
 gboolean agent_is_gsocket_socket(NiceSocket *socket)
 {
-  return TRUE;//socket->type != NICE_SOCKET_TYPE_UDP_BSD;
+  return socket->type != NICE_SOCKET_TYPE_UDP_BSD;
 }
 
 /*
@@ -3029,7 +3073,7 @@ agent_attach_stream_component_socket (NiceAgent * agent,
 
   nice_socket_attach (socket, component->context);
 
-  if (!component->context)
+  if (!component->context && !agent_is_gsocket_socket(socket))
     return;
 
   if ( agent_is_gsocket_socket(socket) && nice_socket_get_fd (socket) != -1) {
@@ -3044,8 +3088,7 @@ agent_attach_stream_component_socket (NiceAgent * agent,
         component->id, source, component->context);
     g_source_attach (source, component->context);
     component->gsources = g_slist_append (component->gsources, source);
-  } else if ( !agent_is_gsocket_socket(socket) )
-  {
+  } else if ( !agent_is_gsocket_socket(socket) ) {
     ctx = io_ctx_new (agent, stream, component, socket, source);
     socket->async_cb_ctx = ctx;
     socket->async_cb_ctx_free = (GDestroyNotify)io_ctx_free;
@@ -3575,4 +3618,29 @@ NICEAPI_EXPORT NiceAgentPollState nice_agent_poll(NiceAgent *agent, gboolean blo
   }
   agent_unlock(agent);
   return poll_retval;
+}
+
+NICEAPI_EXPORT void
+nice_agent_set_userdata_wrapper(
+  NiceAgent *agent,
+  NiceUserdataWrapperFunc wrapper,
+  GDestroyNotify destroy
+  )
+{
+  agent->async_userdata_wrapper = wrapper;
+  agent->async_userdata_destroy = destroy;
+}
+
+
+NICE_EXPORT void nice_agent_add_request_rx_buffer_callback(NiceAgent *agent,
+  NiceAgentRequestRxBufferCallbackFunc* callback_func,
+  gpointer callback_data, GDestroyNotify * callback_data_destroy_notify)
+{
+  if (agent->request_rx_buffer_callback_userdata)
+  {
+    agent->request_rx_buffer_callback_userdata_destroy(agent->request_rx_buffer_callback_userdata);
+  }
+  agent->request_rx_buffer_callback_userdata = callback_data;
+  agent->request_rx_buffer_callback = callback_func;
+
 }
