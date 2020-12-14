@@ -293,8 +293,9 @@ gst_nice_src_pad_dispose(GObject *object)
     elm->data = NULL;
   }
 
-  g_slist_free (nicepad->buffers);
+  GSList *buffers = nicepad->buffers;
   nicepad->buffers = NULL;
+  g_slist_free (buffers);
 
   gst_caps_replace(&nicepad->caps, NULL);
   GST_OBJECT_UNLOCK(nicepad);
@@ -685,10 +686,11 @@ gst_nice_src_pad_send_segment(GstNiceSrcPad *nicepad)
 static void
 gst_nice_src_free_read_buffer ( GstNiceSrcPad *pad, gpointer addr )
 {
+  //GST_INFO_OBJECT(pad, "FreeRxBuf");
   for (GSList *elm = pad->buffers; elm != NULL; elm = elm->next)
   {
     NicePadBufferRef * bufref = elm->data;
-    if (bufref->recvmeminfo.data == addr)
+    if (bufref && bufref->recvmeminfo.data == addr)
     {
       if(bufref->recvmeminfo.memory != NULL)
       {
@@ -707,29 +709,17 @@ gst_nice_src_free_read_buffer ( GstNiceSrcPad *pad, gpointer addr )
         gst_buffer_unref(bufref->recvbuf);
         bufref->recvbuf = NULL;
       }
+      if (elm->next)
+      {
+        GSList *remove_elm = elm->next;
+        elm->data = elm->next->data;
+        elm->next = elm->next->next;
+        g_slice_free(GSList, remove_elm);
+      }
       g_free(bufref);
-      elm->data = NULL;
       break;
     }
   }
-  pad->buffers = g_slist_remove_all(pad->buffers, NULL);
-}
-/* Called for async sockets */
-static void
-gst_nice_src_recvmsg_callback(NiceAgent *agent,
-                              guint stream_id,
-                              guint component_id,
-                              guint len,
-                              struct msghdr *msg,
-                              gpointer data,
-                              const NiceAddress *from,
-                              const NiceAddress *to)
-{
-  GstNiceSrcPad *pad = GST_NICE_SRC_PAD_CAST(data);
-  // TODO: Currently the buffer is freed by gst_nice_free_rx_buffer after this
-  // function returns. If we want this buffer to be used further we must avoid,
-  // e.g. by refcounting this buffer that
-  //gst_nice_src_free_read_buffer (pad);
 }
 
 static void
@@ -812,6 +802,120 @@ gst_nice_src_read_callback(NiceAgent *agent,
   }
   g_main_loop_quit(nicesrcpad->mainloop);
 }
+
+/* Called for async sockets */
+static void
+gst_nice_src_recvmsg_callback(NiceAgent *agent,
+                              guint stream_id,
+                              guint component_id,
+                              guint len,
+                              struct msghdr *msg,
+                              gpointer user_data,
+                              const NiceAddress *from,
+                              const NiceAddress *to)
+{
+#if !GST_CHECK_VERSION(1, 0, 0)
+  #error "Pre 1.0 versions of gstreamer are not supported anymore"
+#endif
+  //GstNiceSrcPad *pad = GST_NICE_SRC_PAD_CAST(user_data);
+  // TODO: Currently the buffer is freed by gst_nice_free_rx_buffer after this
+  // function returns. If we want this buffer to be used further we must avoid,
+  // e.g. by refcounting this buffer that
+  //gst_nice_src_free_read_buffer (pad);
+
+  //gst_nice_src_read_callback(agent, stream_id, component_id,
+  //  msg->msg_iov->iov_len, msg->msg_iov->iov_base, user_data, from, to);
+
+   GstNiceSrcPad *nicesrcpad = GST_NICE_SRC_PAD(user_data);
+  GstNiceSrc *nicesrc = nicesrcpad->src;
+#if !GST_CHECK_VERSION(1, 0, 0)
+  GstNetBuffer *netbuffer = NULL;
+#endif
+  GstBuffer *buffer = NULL;
+
+  (void)stream_id;
+  (void)component_id;
+
+  GST_INFO_OBJECT(nicesrcpad, "Recvmsg buffer, getting out of the main loop (Agent: %p) %d %d %d",
+    agent, nicesrcpad->stream_started, nicesrcpad->segment_sent, len);
+
+  GST_OBJECT_LOCK(nicesrcpad->src);
+  g_rec_mutex_lock(&nicesrc->rec_lock);
+  if (G_UNLIKELY(!nicesrcpad->stream_started))
+  {
+    //GST_INFO_OBJECT(nicesrc, "Forcestart");
+    GST_OBJECT_UNLOCK(nicesrcpad->src);
+    gst_nice_src_pad_send_stream_start(nicesrcpad);
+    GST_OBJECT_LOCK(nicesrcpad->src);
+    nicesrcpad->stream_started = TRUE;
+  }
+  if (G_UNLIKELY(!nicesrcpad->segment_sent))
+  {
+    //GST_INFO_OBJECT(nicesrc, "Forcesegment");
+    GST_OBJECT_UNLOCK(nicesrcpad->src);
+    gst_nice_src_pad_send_segment(nicesrcpad);
+    nicesrcpad->segment_sent = TRUE;
+    GST_OBJECT_LOCK(nicesrcpad->src);
+  }
+  GST_OBJECT_UNLOCK(nicesrcpad->src);
+  (void)to;
+
+  NicePadBufferRef * bufref = NULL;
+  for (GSList *elm = nicesrcpad->buffers; elm != NULL; elm = elm->next)
+  {
+    NicePadBufferRef * curbufref = elm->data;
+    if (curbufref && curbufref->recvmeminfo.data == msg->msg_iov->iov_base)
+    {
+      bufref = curbufref;
+      break;
+    }
+  }
+  g_assert(bufref != NULL);
+
+  if(bufref->recvmeminfo.memory != NULL)
+  {
+    g_assert(bufref->recvmem != NULL);
+    gst_memory_unmap(bufref->recvmem, &bufref->recvmeminfo);
+    GstMapInfo meminfo = GST_MAP_INFO_INIT;
+    bufref->recvmeminfo = meminfo;
+  }
+  if(bufref->recvmem != NULL)
+  {
+    gst_memory_unref(bufref->recvmem);
+    bufref->recvmem = NULL;
+  }
+  gst_buffer_set_size(bufref->recvbuf, len);
+  buffer = gst_buffer_ref(bufref->recvbuf);
+  if (from != NULL)
+  {
+    GSocketAddress *saddr = gst_nice_src_gsocket_addr_create_or_retrieve(
+        nicesrc, from);
+    if (saddr != NULL)
+    {
+      gst_buffer_add_net_address_meta(buffer, saddr);
+      g_object_unref(saddr);
+    }
+    else
+    {
+      GST_ERROR_OBJECT(nicesrc, "Could not convert address to GSocketAddress");
+    }
+  }
+
+  g_rec_mutex_unlock(&nicesrc->rec_lock);
+  //g_queue_push_tail (nicesrc->outbufs, buffer);
+  GstFlowReturn flowret;
+  if (G_UNLIKELY ((flowret = gst_pad_push (nicesrcpad, buffer)) != GST_FLOW_OK)) {
+    GST_LOG_OBJECT (nicesrcpad,
+        "Failed to push incoming datagram buffer (ret: %d)", flowret);
+  }
+  else
+  {
+    GST_INFO_OBJECT (nicesrcpad,
+     "Pushed incoming datagram buffer (ret: %d) (size: %d)", flowret, len);
+  }
+
+}
+
 #if 0
 static gboolean
 gst_nice_src_unlock_idler (gpointer data)
@@ -1022,7 +1126,9 @@ static void gst_nice_free_rx_buffer (gpointer destroy_data, gpointer userdata)
   }
   if (destroy_data != NULL)
   {
+    GST_OBJECT_LOCK(pad);
     gst_nice_src_free_read_buffer (pad, destroy_data);
+    GST_OBJECT_UNLOCK(pad);
   }
   gst_object_unref(pad);
   if(src != NULL)
@@ -1068,7 +1174,9 @@ static void gst_nice_request_rx_buffer(
   g_assert(bufref->recvmeminfo.memory != NULL);
   g_assert(bufref->recvmeminfo.size >= len);
   *buf = bufref->recvmeminfo.data;
+  GST_OBJECT_LOCK(pad);
   pad->buffers = g_slist_prepend(pad->buffers, bufref);
+  GST_OBJECT_UNLOCK(pad);
   g_rec_mutex_unlock(&nicesrc->rec_lock);
 }
 
@@ -1225,6 +1333,7 @@ gst_nice_src_change_state(GstElement *element, GstStateChange transition)
 {
   GstNiceSrc *src;
   GstStateChangeReturn ret;
+  GST_INFO_OBJECT(element, "Change state: %d (%d -> %d)", transition, GST_STATE_TRANSITION_CURRENT(transition), GST_STATE_TRANSITION_NEXT(transition));
 
   src = GST_NICE_SRC(element);
   g_rec_mutex_lock(&src->rec_lock);
@@ -1246,13 +1355,13 @@ gst_nice_src_change_state(GstElement *element, GstStateChange transition)
       GST_OBJECT_UNLOCK(src);
     }
     break;
-  case GST_STATE_NULL:
+  default:
+  //case GST_STATE_NULL:
     GST_OBJECT_LOCK(src);
     g_slist_foreach(src->src_pads, gst_nice_src_pad_change_state, (gpointer)transition);
     GST_OBJECT_UNLOCK(src);
-    break;
-  default:
-    break;
+    //zbreak;
+    //zbreak;
   }
 
   ret = GST_ELEMENT_CLASS(gst_nice_src_parent_class)->change_state(element, transition);
@@ -1441,6 +1550,10 @@ gst_nice_src_release_pad (GstElement * element, GstPad * pad)
   GST_OBJECT_LOCK(nicesrc);
   nicepad->attached = FALSE;
   nicesrc->src_pads = g_slist_remove(nicesrc->src_pads, pad);
+  if (nicesrc->src_pads == NULL)
+  {
+    gst_element_set_state (element, GST_STATE_READY);
+  }
   GST_OBJECT_UNLOCK(nicesrc);
   g_rec_mutex_unlock(&nicesrc->rec_lock);
   //Free pad?
