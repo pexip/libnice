@@ -250,7 +250,7 @@ tcp_active_established_socket_rx_cb (NiceSocket* socket, NiceAddress* from,
   NiceSocket* active = (NiceSocket *)userdata;
   TcpActivePriv *priv = active->priv;
 
-  priv->rxcb (active, from, buf, len, priv->userdata);
+  priv->rxcb (active, from, NULL, buf, len, priv->userdata);
 }
 
 static void

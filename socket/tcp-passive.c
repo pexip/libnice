@@ -271,7 +271,7 @@ tcp_passive_established_socket_rx_cb (NiceSocket* socket, NiceAddress* from,
   NiceSocket* passive = (NiceSocket *)userdata;
   TcpPassivePriv *priv = passive->priv;
 
-  priv->rxcb (passive, from, buf, len, priv->userdata);
+  priv->rxcb (passive, from, NULL, buf, len, priv->userdata);
 }
 
 static void

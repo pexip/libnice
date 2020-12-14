@@ -380,7 +380,7 @@ parse_rfc4571(NiceSocket* sock, NiceAddress* from)
       guint packet_length = data[0] << 8 | data[1];
       g_assert(packet_length < MAX_BUFFER_SIZE);
       if (packet_length + 2 <= priv->recv_offset) {
-        priv->rxcb (sock, from, (gchar *)&data[2], packet_length, priv->userdata);
+        priv->rxcb (sock, from, NULL, (gchar *)&data[2], packet_length, priv->userdata);
 
         if (g_source_is_destroyed (g_main_current_source ())) {
           return;

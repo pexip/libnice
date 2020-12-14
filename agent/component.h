@@ -134,7 +134,7 @@ struct _Component
                                        this component */
   GMainContext *context;            /**< context for data callbacks for this
                                        component */
-  NiceAgentAsyncRecvFunc *async_io_cb;/**< context for data callbacks for this
+  NiceAgentAsyncRecvFunc async_io_cb;/**< context for data callbacks for this
                                        component */
 
   ComponentPollContext * poll_context;

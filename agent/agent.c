@@ -900,6 +900,9 @@ nice_agent_init (NiceAgent * agent)
   priv_generate_tie_breaker (agent);
   agent->override_tie_breaker = FALSE;
 
+  GSFList gsl_empty = {};
+  agent->async_write_overflow = gsl_empty;
+
   g_rec_mutex_init (&agent->agent_mutex);
 }
 
@@ -2764,6 +2767,9 @@ nice_agent_dispose (GObject * object)
   agent->request_rx_buffer_callback_userdata = NULL;
   agent->request_rx_buffer_callback_userdata_destroy = NULL;
 
+  g_assert(agent->async_write_overflow.head == NULL);
+  gsflist_clear_free(&agent->async_write_overflow, g_free);
+
   agent_unlock (agent);
   g_assert (agent->agent_mutex_th == NULL);
   g_rec_mutex_clear (&agent->agent_mutex);
@@ -2813,6 +2819,7 @@ io_ctx_free (IOCtx * ctx)
  */
 gboolean
 nice_agent_socket_rx_cb (NiceSocket * socket, NiceAddress * from,
+    struct msghdr * msg,
     gchar * buf, gint len, gpointer userdata)
 {
   TcpUserData *ctx = (TcpUserData *) userdata;
@@ -2906,7 +2913,13 @@ nice_agent_socket_rx_cb (NiceSocket * socket, NiceAddress * from,
       gint cid = component->id;
       NiceAgentRecvFunc callback = component->g_source_io_cb;
       agent_unlock (agent);
-      callback (agent, sid, cid, len, buf, cdata, from, &socket->addr);
+      if (msg != NULL &&  component->async_io_cb)
+      {
+        component->async_io_cb(agent, sid, cid, len, msg, cdata, from, &socket->addr);
+       } else {
+        callback (agent, sid, cid, len, buf, cdata, from, &socket->addr);
+      }
+
     } else {
       agent_unlock (agent);
     }
