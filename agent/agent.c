@@ -394,8 +394,8 @@ nice_agent_async_connect_callback (
     gint32 result,
     GAsyncConnectionSocket * socket)
 {
-  nice_agent_async_connect_callback(userdata_pointer, result, socket);
-
+  g_assert(FALSE);
+  //nice_agent_async_connect_callback(userdata_pointer, result, socket);
 }
 
 
@@ -405,7 +405,7 @@ nice_agent_async_close_callback (
     gint32 result,
     GAsyncConnectionSocket * socket)
 {
-  nice_agent_async_close_callback(userdata_pointer, result, socket);
+  nice_socket_async_close_callback(userdata_pointer, result, socket);
 
 }
 
@@ -415,7 +415,9 @@ nice_agent_async_close_server_callback (
     gint32 result,
     GAsyncServerSocket * socket)
 {
-  nice_agent_async_close_server_callback(userdata_pointer, result, socket);
+  g_assert(FALSE);
+
+//  nice_agent_async_close_server_callback(userdata_pointer, result, socket);
 
 }
 
@@ -429,23 +431,33 @@ nice_agent_async_accept_callback (
     struct sockaddr_in *client_addr,
     socklen_t client_addr_len)
 {
-  nice_agent_async_accept_callback(server_userdata_pointer,
+  g_assert(FALSE);
+  /*nice_agent_async_accept_callback(server_userdata_pointer,
     connection_userdata_pointer, result, server_socket, connection_socket,
-     client_addr, client_addr_len);
+     client_addr, client_addr_len); */
 }
 
 void nice_agent_async_connection_socket_dispose_callback(
     void **userdata_pointer,
    GAsyncConnectionSocket *socket)
 {
-  nice_agent_async_connection_socket_dispose_callback(userdata_pointer, socket);
+  nice_socket_async_connection_socket_dispose_callback(userdata_pointer, socket);
+}
+
+void nice_agent_async_connection_socket_teardown_callback(
+    void **userdata_pointer,
+    int remaining,
+   GAsyncConnectionSocket *socket)
+{
+  nice_socket_async_connection_socket_teardown_callback(userdata_pointer, remaining, socket);
 }
 
 void nice_agent_async_server_socket_dispose_callback(
    void **userdata_pointer,
    GAsyncServerSocket *socket)
 {
-  nice_agent_async_server_socket_dispose_callback(userdata_pointer, socket);
+  g_assert(FALSE);
+  //nice_agent_async_server_socket_dispose_callback(userdata_pointer, socket);
 }
 
 NICEAPI_EXPORT void
@@ -2844,8 +2856,8 @@ io_ctx_free (IOCtx * ctx)
  */
 gboolean
 nice_agent_socket_rx_cb (NiceSocket * socket, NiceAddress * from,
-    struct msghdr * msg,
-    gchar * buf, gint len, gpointer userdata)
+    struct msghdr * msg, gchar * buf, gint len,
+    gpointer msg_userdata, gpointer userdata)
 {
   TcpUserData *ctx = (TcpUserData *) userdata;
   NiceAgent *agent = ctx->agent;
@@ -2940,7 +2952,7 @@ nice_agent_socket_rx_cb (NiceSocket * socket, NiceAddress * from,
       agent_unlock (agent);
       if (msg != NULL &&  component->async_io_cb)
       {
-        component->async_io_cb(agent, sid, cid, len, msg, cdata, from, &socket->addr);
+        component->async_io_cb(agent, sid, cid, len, msg, msg_userdata, cdata, from, &socket->addr);
        } else {
         callback (agent, sid, cid, len, buf, cdata, from, &socket->addr);
       }

@@ -57,9 +57,11 @@
 #endif
 
 #include <gst/gst.h>
+#define MAX_BUFFER_SIZE 65536
 
 static void socket_attach (NiceSocket* sock, GMainContext* ctx);
-static void socket_close (NiceSocket *sock);
+static gboolean socket_close (NiceSocket *sock);
+static void socket_closed (NiceSocket *sock, int result);
 static gint socket_recv (NiceSocket *sock, NiceAddress *from,
     guint len, gchar *buf);
 static gint socket_send (NiceSocket *sock, const NiceAddress *to,
@@ -84,10 +86,17 @@ socket_request_send (NiceSocket *sock, const NiceAddress *to, const char * buf,
 static void
 socket_sendmsg_callback (NiceSocket *sock,  struct msghdr * msg, int result);
 
+static void
+socket_dispose_callback (NiceSocket *sock, GAsyncConnectionSocket *async_socket);
+
+static void
+socket_teardown_callback (NiceSocket *sock);
+
 typedef struct _NiceAsyncPendingWriteOperation NiceAsyncPendingWriteOperation;
 /* If destroy callback is local_send_buffer_destroy the embedded buffer is used */
 struct _NiceAsyncPendingWriteOperation
 {
+  GSFListElement element;
   NiceSocket *socket;
   gsize buflen;
   gsize alloc_buflen;
@@ -107,6 +116,9 @@ static const NiceSocketFunctionTable socket_functions = {
     .recv_callback = socket_recvmsg_callback,
     .request_send = socket_request_send,
     .send_callback = socket_sendmsg_callback,
+    .closed_callback = socket_closed,
+    .dispose_callback = socket_dispose_callback,
+    .teardown_callback = socket_teardown_callback,
     .is_reliable = socket_is_reliable,
     .close = socket_close,
     .get_fd = socket_get_fd,
@@ -305,7 +317,14 @@ nice_udp_bsd_socket_find_queued_write_operations_visitor(
   return sock == current_operation->socket;
 }
 
-static void
+static gboolean
+nice_udp_bsd_socket_equals_visitor(
+  GSFListElement *current_element, gpointer userdata)
+{
+  return current_element == userdata;
+}
+
+static gboolean
 socket_close (NiceSocket *sock)
 {
   struct UdpBsdSocketPrivate *priv = sock->priv;
@@ -314,7 +333,7 @@ socket_close (NiceSocket *sock)
   {
     g_assert(priv->recv_buffer_destroy_notify);
     priv->recv_buffer_destroy_notify(priv->recv_buffer,
-      priv->agent->request_rx_buffer_callback_userdata);
+      priv->recv_buffer_destroy_userdata);
     priv->recv_buffer = NULL;
     priv->recv_buffer_destroy_userdata = NULL;
     priv->recv_buffer_destroy_notify = NULL;
@@ -346,11 +365,38 @@ socket_close (NiceSocket *sock)
     gasync_connection_socket_close( sock->transport.connection ); // NB / TODO: Should wait for close to complete
     gasync_connection_socket_tear_down( sock->transport.connection );
     //g_object_unref (sock->transport.fileno);
-    sock->transport.fileno = NULL;
+    //sock->transport.fileno = NULL;
   }
   g_mutex_unlock(&priv->lock);
+
+  return TRUE;
 }
-#define MAX_BUFFER_SIZE 65536
+
+static void
+socket_closed (NiceSocket *sock, int result)
+{
+  (void)sock;
+  (void)result;
+}
+
+static void
+socket_dispose_callback (NiceSocket *sock, GAsyncConnectionSocket *async_socket)
+{
+  //struct UdpBsdSocketPrivate *priv = sock->priv;
+  //g_object_unref(async_socket);
+  //g_slice_free (NiceSocket, sock);
+}
+
+static void
+socket_teardown_callback (NiceSocket *sock)
+{
+  if (sock->transport.fileno) {
+    //g_object_unref (sock->transport.fileno);
+    sock->transport.fileno = NULL;
+  }
+}
+
+
 
 
 /* Start trying to receive data */
@@ -379,10 +425,12 @@ static void socket_attach (NiceSocket* sock, GMainContext* ctx)
   {
     g_assert(buffer_destroy_notify != NULL);
     priv->recv_buffer = recv_buffer;
+    priv->recv_buffer_destroy_notify = buffer_destroy_notify;
+    priv->recv_buffer_destroy_userdata = buffer_destroy_userdata;
     /* Do first recv to start receiving from socket */
     g_mutex_unlock(&priv->lock);
-    socket_request_recv(sock, priv->recv_buffer, MAX_BUFFER_SIZE, buffer_destroy_notify,
-    buffer_destroy_userdata);
+    socket_request_recv(sock, priv->recv_buffer, MAX_BUFFER_SIZE, NULL,
+    NULL);
   }
   else
   {
@@ -423,8 +471,18 @@ socket_request_recv (NiceSocket *sock, const char * buf, gsize buflen,
     g_mutex_unlock(&priv->lock);
     return FALSE;
   }
-  priv->recv_buffer_destroy_notify = destroy_callback;
-  priv->recv_buffer_destroy_userdata = destroy_userdata;
+  if (priv->recv_buffer && priv->recv_buffer != buf)
+  {
+    priv->recv_buffer_destroy_notify ( priv->recv_buffer, priv->recv_buffer_destroy_userdata);
+    priv->recv_buffer_destroy_notify = NULL;
+    priv->recv_buffer_destroy_userdata = NULL;
+    priv->recv_buffer = NULL;
+  }
+  if (destroy_callback != NULL)
+  {
+    priv->recv_buffer_destroy_notify = destroy_callback;
+    priv->recv_buffer_destroy_userdata = destroy_userdata;
+  }
   memset (&priv->recvmsg, 0, sizeof (struct msghdr));
   memset (buf, 0, buflen); // Satisfy valgrind
   priv->recvmsg.msg_name = &priv->peer_address;
@@ -449,7 +507,22 @@ socket_recvmsg_callback(NiceSocket *sock, struct msghdr * msg, int result)
   NiceAddress *from;
   struct UdpBsdSocketPrivate *priv = sock->priv;
   if (result < 0) {
-    g_assert(result == 0); //TODO: Update list of acceptable errors during testing
+    if ( result == -ECANCELED )
+    {
+      /* Clean up receive buffer */
+      g_mutex_lock(&priv->lock);
+      if (priv->recv_buffer_destroy_notify)
+      {
+        buffer_destroy_notify( priv->recv_buffer_destroy_notify, priv->recv_buffer_destroy_userdata);
+        priv->recv_buffer = NULL;
+      }
+      g_mutex_unlock(&priv->lock);
+      return;
+    }
+    else
+    {
+      g_assert(result == 0); //TODO: Update list of acceptable errors during testing
+    }
   }
   g_mutex_lock(&priv->lock);
   GST_DEBUG("Udp socket recv callback: %p (%d): %d", sock, msg->msg_iov->iov_len, result);
@@ -473,7 +546,7 @@ socket_recvmsg_callback(NiceSocket *sock, struct msghdr * msg, int result)
   g_mutex_unlock(&priv->lock);
   // How to handle freeing gstreamer buffers used internally for setting up the ice connection?
   transfered_ownership = priv->rxcb(sock, &priv->peer_niceaddr, msg, msg->msg_iov->iov_base,
-    result, priv->userdata);
+    result, buffer_destroy_userdata, priv->userdata);
 
   if (buffer_destroy_userdata)
   {
@@ -519,6 +592,7 @@ socket_request_send_internal (NiceSocket *sock, const NiceAddress *to, const cha
   NiceAsyncPendingWriteOperation *write_operation;
   if (enqueue)
   {
+    agent_lock (priv->agent);
     priv->pendingwrites = TRUE;
 
     /* Add sendmsg data to overflow list,
@@ -546,6 +620,7 @@ socket_request_send_internal (NiceSocket *sock, const NiceAddress *to, const cha
                sizeof(NiceAsyncPendingWriteOperation) + alloc_bufextra);
       }
     }
+    agent_unlock (priv->agent);
   } else {
     if (priv->socket_write_operation == NULL)
     {
@@ -562,6 +637,7 @@ socket_request_send_internal (NiceSocket *sock, const NiceAddress *to, const cha
         priv->socket_write_operation = write_operation = g_realloc (
           write_operation,
           sizeof(NiceAsyncPendingWriteOperation) + alloc_bufextra);
+        memset(write_operation, 0, sizeof(NiceAsyncPendingWriteOperation) + alloc_bufextra);
       }
     }
   }
@@ -574,10 +650,10 @@ socket_request_send_internal (NiceSocket *sock, const NiceAddress *to, const cha
   else
   {
     /* TODO: What is it that makes sense to do here */
+    memcpy(&write_operation->to, &priv->peer_address, sizeof(struct sockaddr_in));
     g_assert(FALSE);
   }
 
-  write_operation->socket = sock;
   write_operation->buflen = buflen;
 
   if (copy_buffer)
@@ -609,12 +685,16 @@ socket_request_send_internal (NiceSocket *sock, const NiceAddress *to, const cha
 #endif
 
   memset (sendmsg, 0, sizeof (struct msghdr));
-  sendmsg->msg_name = &priv->peer_address;
-  sendmsg->msg_namelen = get_namelen(&priv->peer_address);
+  sendmsg->msg_name = &write_operation->to;
+  sendmsg->msg_namelen = get_namelen(&write_operation->to);
   sendmsg->msg_iov = io;
   sendmsg->msg_iovlen = 1;
   io->iov_base = (guint8 *) buf;
   io->iov_len = buflen;
+
+  /* Makes it possible to match with the socket during iterations of the list */
+  write_operation->socket = sock;
+
   g_mutex_unlock(&priv->lock);
   if (enqueue)
   {
@@ -622,6 +702,7 @@ socket_request_send_internal (NiceSocket *sock, const NiceAddress *to, const cha
   }
   else
   {
+    priv->current_write_operation = write_operation;
     return gasync_connection_socket_sendmsg(sock->transport.connection, sendmsg,
       0);
   }
@@ -639,7 +720,6 @@ socket_request_send (NiceSocket *sock, const NiceAddress *to, const char * buf,
 static void
 socket_sendmsg_callback (NiceSocket *sock,  struct msghdr * msg, int result)
 {
-  g_assert(FALSE); /* Adapt this to the queuing above */
   NiceDestroyUserdataCallback destroy_callback;
   gpointer destroy_userdata ;
   gboolean ownership_transferred;
@@ -653,7 +733,7 @@ socket_sendmsg_callback (NiceSocket *sock,  struct msghdr * msg, int result)
 
   g_assert(msg->msg_iovlen == 1); // Currently we use only one io buffer
 
-  gboolean was_enqueued = priv->current_write_operation == priv->socket_write_operation;
+  gboolean was_enqueued = priv->current_write_operation != priv->socket_write_operation;
    //msg != priv->csendmsg;
 
   //priv->sendmsg.msg_iovlen = 0;
@@ -675,27 +755,44 @@ socket_sendmsg_callback (NiceSocket *sock,  struct msghdr * msg, int result)
 
     priv->current_write_operation->buffer = NULL;
   }
+  if(was_enqueued)
+  {
+    agent_lock (priv->agent);
+    GSFList * overflow_list = &priv->agent->async_write_overflow;
+    gsflist_visit_all_and_free(overflow_list, nice_udp_bsd_socket_equals_visitor, priv->current_write_operation, FALSE);
+    priv->current_write_operation = NULL;
+    agent_unlock (priv->agent);
+  }
+
   if(!priv->pendingwrites){
     priv->current_write_operation = NULL;
     g_mutex_unlock(&priv->lock);
     return;
   }
-  g_mutex_unlock(&priv->lock);
 
   /* Enqueue queued send operations */
-  g_mutex_lock(&priv->lock);
+  agent_lock (priv->agent);
   GSFList * overflow_list = &priv->agent->async_write_overflow;
-  GSFListElement *enqueued_element = gsflist_visit_all_and_free(overflow_list->head, nice_udp_bsd_socket_find_queued_write_operations_visitor, sock, FALSE);
+  /* Should not be put in the free list until the sendmsg callback is completed */
+  GSFListElement *enqueued_element = gsflist_visit_exit(overflow_list, nice_udp_bsd_socket_find_queued_write_operations_visitor, sock);
+
+  //gsflist_visit_all_and_free(overflow_list, nice_udp_bsd_socket_find_queued_write_operations_visitor, sock, FALSE);
   if (enqueued_element == NULL)
   {
     /* No pending writes after all */
+    priv->pendingwrites = FALSE;
     priv->current_write_operation = NULL;
+    agent_unlock (priv->agent);
     g_mutex_unlock(&priv->lock);
     return;
   }
 
   NiceAsyncPendingWriteOperation* enqueued_operation = (NiceAsyncPendingWriteOperation*) enqueued_element;
   priv->current_write_operation = enqueued_operation;
+  g_assert(gasync_connection_socket_sendmsg(sock->transport.connection, &enqueued_operation->msg,
+      0));
+
+  agent_unlock (priv->agent);
   g_mutex_unlock(&priv->lock);
 }
 

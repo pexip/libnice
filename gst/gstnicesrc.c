@@ -683,43 +683,43 @@ gst_nice_src_pad_send_segment(GstNiceSrcPad *nicepad)
   return gst_pad_push_event((GstPad *)nicepad, event);
 }
 
-static void
-gst_nice_src_free_read_buffer ( GstNiceSrcPad *pad, gpointer addr )
-{
-  //GST_INFO_OBJECT(pad, "FreeRxBuf");
+#if 0
   for (GSList *elm = pad->buffers; elm != NULL; elm = elm->next)
   {
     NicePadBufferRef * bufref = elm->data;
     if (bufref && bufref->recvmeminfo.data == addr)
-    {
-      if(bufref->recvmeminfo.memory != NULL)
-      {
-        g_assert(bufref->recvmem != NULL);
-        gst_memory_unmap(bufref->recvmem, &bufref->recvmeminfo);
-        GstMapInfo meminfo = GST_MAP_INFO_INIT;
-        bufref->recvmeminfo = meminfo;
-      }
-      if(bufref->recvmem != NULL)
-      {
-        gst_memory_unref(bufref->recvmem);
-        bufref->recvmem = NULL;
-      }
-      if(bufref->recvbuf != NULL)
-      {
-        gst_buffer_unref(bufref->recvbuf);
-        bufref->recvbuf = NULL;
-      }
-      if (elm->next)
-      {
-        GSList *remove_elm = elm->next;
-        elm->data = elm->next->data;
-        elm->next = elm->next->next;
-        g_slice_free(GSList, remove_elm);
-      }
-      g_free(bufref);
-      break;
-    }
+...
+  if (elm->next)
+  {
+    GSList *remove_elm = elm->next;
+    elm->data = elm->next->data;
+    elm->next = elm->next->next;
+    g_slice_free(GSList, remove_elm);
   }
+#endif
+
+static void
+gst_nice_src_free_read_buffer ( NicePadBufferRef *bufref, gpointer addr )
+{
+  g_assert(bufref->recvmeminfo.data == NULL || bufref->recvmeminfo.data == addr);
+  if(bufref->recvmeminfo.memory != NULL)
+  {
+    g_assert(bufref->recvmem != NULL);
+    gst_memory_unmap(bufref->recvmem, &bufref->recvmeminfo);
+    GstMapInfo meminfo = GST_MAP_INFO_INIT;
+    bufref->recvmeminfo = meminfo;
+  }
+  if(bufref->recvmem != NULL)
+  {
+    gst_memory_unref(bufref->recvmem);
+    bufref->recvmem = NULL;
+  }
+  if(bufref->recvbuf != NULL)
+  {
+    gst_buffer_unref(bufref->recvbuf);
+    bufref->recvbuf = NULL;
+  }
+  g_free(bufref);
 }
 
 static void
@@ -810,6 +810,7 @@ gst_nice_src_recvmsg_callback(NiceAgent *agent,
                               guint component_id,
                               guint len,
                               struct msghdr *msg,
+                              gpointer buf_user_data,
                               gpointer user_data,
                               const NiceAddress *from,
                               const NiceAddress *to)
@@ -860,6 +861,7 @@ gst_nice_src_recvmsg_callback(NiceAgent *agent,
   GST_OBJECT_UNLOCK(nicesrcpad->src);
   (void)to;
 
+#if 0
   NicePadBufferRef * bufref = NULL;
   for (GSList *elm = nicesrcpad->buffers; elm != NULL; elm = elm->next)
   {
@@ -870,8 +872,10 @@ gst_nice_src_recvmsg_callback(NiceAgent *agent,
       break;
     }
   }
+#else
+  NicePadBufferRef * bufref = buf_user_data;
+#endif
   g_assert(bufref != NULL);
-
   if(bufref->recvmeminfo.memory != NULL)
   {
     g_assert(bufref->recvmem != NULL);
@@ -1116,24 +1120,17 @@ gst_nice_src_find_pad(GstNiceSrc *nicesrc, guint stream_id, guint component_id)
 /* Only called if a read or write is canceled so the read/write was canceled */
 static void gst_nice_free_rx_buffer (gpointer destroy_data, gpointer userdata)
 {
-  GstNiceSrcPad *pad = GST_NICE_SRC_PAD_CAST(userdata);
-  GstNiceSrc *src = pad->src;
+  NicePadBufferRef *bufref = GST_NICE_SRC_PAD_CAST(userdata);
+  //GstNiceSrc *src = pad->src;
   /* TODO: This is a bit hackish, consider trying to remove this, or replace it
      with some other lock */
-  if(src != NULL)
+  /*if(src != NULL)
   {
     g_rec_mutex_lock(&src->rec_lock);
-  }
+  }*/
   if (destroy_data != NULL)
   {
-    GST_OBJECT_LOCK(pad);
-    gst_nice_src_free_read_buffer (pad, destroy_data);
-    GST_OBJECT_UNLOCK(pad);
-  }
-  gst_object_unref(pad);
-  if(src != NULL)
-  {
-    g_rec_mutex_unlock(&src->rec_lock);
+    gst_nice_src_free_read_buffer (bufref, destroy_data);
   }
 }
 
@@ -1161,22 +1158,22 @@ static void gst_nice_request_rx_buffer(
   }
   g_assert(pad != NULL);
 
-  *destroy_buf_notify = gst_nice_free_rx_buffer;
-  *destroy_callback_userdata = gst_object_ref(pad);
 
   NicePadBufferRef *bufref = g_new0(NicePadBufferRef, 1);
-
   bufref->recvbuf = gst_buffer_new_allocate(NULL, len, NULL);
   g_assert(bufref->recvbuf != NULL);
   bufref->recvmem = gst_buffer_get_all_memory (bufref->recvbuf);
-  g_assert(bufref->recvmem != NULL);
   gst_memory_map(bufref->recvmem, &bufref->recvmeminfo, GST_MAP_WRITE);
   g_assert(bufref->recvmeminfo.memory != NULL);
   g_assert(bufref->recvmeminfo.size >= len);
+  g_assert(bufref->recvmem != NULL && bufref->recvmem > 0xFF);
   *buf = bufref->recvmeminfo.data;
-  GST_OBJECT_LOCK(pad);
-  pad->buffers = g_slist_prepend(pad->buffers, bufref);
-  GST_OBJECT_UNLOCK(pad);
+  //GST_OBJECT_LOCK(pad);
+  //pad->buffers = g_slist_prepend(pad->buffers, bufref);
+  //GST_OBJECT_UNLOCK(pad);
+
+  *destroy_buf_notify = gst_nice_free_rx_buffer;
+  *destroy_callback_userdata = bufref;
   g_rec_mutex_unlock(&nicesrc->rec_lock);
 }
 
@@ -1346,6 +1343,7 @@ gst_nice_src_change_state(GstElement *element, GstStateChange transition)
       GST_WARNING_OBJECT(element,
                        "Trying to start Nice source without an agent set");
       g_assert(FALSE);
+      g_rec_mutex_unlock(&src->rec_lock);
       return GST_STATE_CHANGE_FAILURE;
     }
     else
@@ -1550,11 +1548,13 @@ gst_nice_src_release_pad (GstElement * element, GstPad * pad)
   GST_OBJECT_LOCK(nicesrc);
   nicepad->attached = FALSE;
   nicesrc->src_pads = g_slist_remove(nicesrc->src_pads, pad);
-  if (nicesrc->src_pads == NULL)
-  {
-    gst_element_set_state (element, GST_STATE_READY);
-  }
+  gboolean nopads = nicesrc->src_pads == NULL;
   GST_OBJECT_UNLOCK(nicesrc);
+  //if (nopads)
+  //{
+  //  gst_element_set_state (element, GST_STATE_NULL);
+  //  //gst_element_set_state (element, GST_STATE_READY);
+  //}
   g_rec_mutex_unlock(&nicesrc->rec_lock);
   //Free pad?
 }

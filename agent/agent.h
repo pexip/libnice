@@ -284,7 +284,7 @@ typedef void (*NiceAgentRecvFunc) (
  */
 typedef void (*NiceAgentAsyncRecvFunc) (
   NiceAgent *agent, guint stream_id, guint component_id, guint len,
-  struct msghdr *msg, gpointer user_data, const NiceAddress *from, const NiceAddress *to);
+  struct msghdr *msg, gpointer msg_user_data, gpointer user_data, const NiceAddress *from, const NiceAddress *to);
 
 typedef NiceAgentPollState (*NiceAgentPollFunc) (
   NiceAgent *agent, guint stream_id, guint component_id, gpointer user_data);
@@ -1019,6 +1019,12 @@ nice_agent_async_accept_callback (
 NICE_EXPORT void nice_agent_async_connection_socket_dispose_callback(
     void **userdata_pointer,
     GAsyncConnectionSocket *socket);
+
+NICE_EXPORT void nice_agent_async_connection_socket_teardown_callback(
+    void **userdata_pointer,
+    int remaining,
+    GAsyncConnectionSocket *socket);
+
 
 NICE_EXPORT void nice_agent_async_server_socket_dispose_callback(
     void **userdata_pointer,

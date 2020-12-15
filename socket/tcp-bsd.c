@@ -75,7 +75,7 @@ struct to_be_sent {
 
 #define MAX_QUEUE_LENGTH 20
 
-static void socket_close (NiceSocket *sock);
+static gboolean socket_close (NiceSocket *sock);
 static gint socket_recv (NiceSocket *sock, NiceAddress *from,
     guint len, gchar *buf);
 static gint socket_send (NiceSocket *sock, const NiceAddress *to,
@@ -190,7 +190,7 @@ nice_tcp_bsd_socket_new (GMainContext *ctx,
 }
 
 
-static void
+static gboolean
 socket_close (NiceSocket *sock)
 {
   TcpPriv *priv = sock->priv;
@@ -211,6 +211,8 @@ socket_close (NiceSocket *sock)
     g_main_context_unref (priv->context);
 
   g_slice_free(TcpPriv, sock->priv);
+
+  return FALSE;
 }
 
 static gint

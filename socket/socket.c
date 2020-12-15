@@ -98,16 +98,20 @@ void
 nice_socket_free (NiceSocket *sock)
 {
   if (sock) {
-    sock->functions->close (sock);
+    gboolean wait_free = sock->functions->close (sock);
 
-    if (sock->async_cb_ctx_free)
+    if (!wait_free)
     {
-      sock->async_cb_ctx_free(sock->async_cb_ctx);
-      sock->async_cb_ctx = NULL;
-      sock->async_cb_ctx_free = NULL;
-    }
 
-    g_slice_free (NiceSocket,sock);
+      if (sock->async_cb_ctx_free)
+      {
+        sock->async_cb_ctx_free(sock->async_cb_ctx);
+        sock->async_cb_ctx = NULL;
+        sock->async_cb_ctx_free = NULL;
+      }
+
+      g_slice_free (NiceSocket,sock);
+    }
   }
 }
 
@@ -170,7 +174,9 @@ nice_socket_async_close_callback (
     gint32 result,
     GAsyncConnectionSocket * async_socket)
 {
-  g_assert(FALSE);
+  NiceSocket *socket = (NiceSocket*) *userdata_pointer;
+  socket->functions->closed_callback(socket, result);
+  (void) async_socket;
 }
 
 void
@@ -182,6 +188,26 @@ nice_socket_async_close_server_callback (
   g_assert(FALSE);
 }
 
+void
+nice_socket_async_connection_socket_dispose_callback (
+    void **userdata_pointer,
+    GAsyncConnectionSocket * async_socket)
+{
+  NiceSocket *socket = (NiceSocket*) *userdata_pointer;
+  socket->functions->dispose_callback(socket, async_socket);
+  (void) async_socket;
+}
+
+void
+nice_socket_async_connection_socket_teardown_callback (
+    void **userdata_pointer,
+    int remaining,
+    GAsyncConnectionSocket * async_socket)
+{
+  NiceSocket *socket = (NiceSocket*) *userdata_pointer;
+  socket->functions->teardown_callback(socket, remaining);
+  (void) async_socket;
+}
 void
 nice_socket_async_accept_callback (
     void **server_userdata_pointer,
@@ -204,14 +230,6 @@ nice_socket_async_accept_callback (
   nice_address_set_from_sockaddr (&client_niceaddr, (const struct sockaddr *)client_addr);
   socket->functions->accept_callback(socket, connection_socket, result, client_niceaddr);
 #endif
-}
-
-void nice_socket_async_connection_socket_dispose_callback(
-    void **userdata_pointer,
-   GAsyncConnectionSocket *socket)
-{
-  //TODO: Do we own the socket at this point?
-  g_object_unref(socket);
 }
 
 void nice_socket_async_server_socket_dispose_callback(

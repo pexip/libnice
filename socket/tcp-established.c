@@ -88,7 +88,7 @@ typedef struct {
 } TcpEstablishedCallbackData;
 
 static void socket_attach (NiceSocket* sock, GMainContext* ctx);
-static void socket_close (NiceSocket *sock);
+static gboolean socket_close (NiceSocket *sock);
 static gint socket_recv (NiceSocket *sock, NiceAddress *from,
     guint len, gchar *buf);
 static gint socket_send (NiceSocket *sock, const NiceAddress *to,
@@ -223,7 +223,7 @@ socket_attach (NiceSocket* sock, GMainContext* ctx)
   }
 }
 
-static void
+static gboolean
 socket_close (NiceSocket *sock)
 {
   TcpEstablishedPriv *priv = sock->priv;
@@ -256,6 +256,8 @@ socket_close (NiceSocket *sock)
   g_slice_free(TcpEstablishedPriv, sock->priv);
 
   g_assert (agent->agent_mutex_th != NULL);
+
+  return FALSE;
 }
 
 static gint
@@ -380,7 +382,7 @@ parse_rfc4571(NiceSocket* sock, NiceAddress* from)
       guint packet_length = data[0] << 8 | data[1];
       g_assert(packet_length < MAX_BUFFER_SIZE);
       if (packet_length + 2 <= priv->recv_offset) {
-        priv->rxcb (sock, from, NULL, (gchar *)&data[2], packet_length, priv->userdata);
+        priv->rxcb (sock, from, NULL, (gchar *)&data[2], packet_length, NULL, priv->userdata);
 
         if (g_source_is_destroyed (g_main_current_source ())) {
           return;
