@@ -71,7 +71,7 @@ typedef struct {
 
 
 static void socket_attach (NiceSocket* sock, GMainContext *context);
-static void socket_close (NiceSocket *sock);
+static gboolean socket_close (NiceSocket *sock);
 static gint socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf);
 static gint socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf);
@@ -196,7 +196,7 @@ socket_attach (NiceSocket* sock, GMainContext* ctx)
   }
 }
 
-static void
+static gboolean
 socket_close (NiceSocket *sock)
 {
   TcpPassivePriv *priv = sock->priv;
@@ -220,6 +220,8 @@ socket_close (NiceSocket *sock)
   }
   g_slist_free (priv->established_sockets);
   g_slice_free (TcpPassivePriv, sock->priv);
+
+  return FALSE;
 }
 
 static gint
@@ -271,7 +273,7 @@ tcp_passive_established_socket_rx_cb (NiceSocket* socket, NiceAddress* from,
   NiceSocket* passive = (NiceSocket *)userdata;
   TcpPassivePriv *priv = passive->priv;
 
-  priv->rxcb (passive, from, NULL, buf, len, priv->userdata);
+  priv->rxcb (passive, from, NULL, buf, len, NULL, priv->userdata);
 }
 
 static void

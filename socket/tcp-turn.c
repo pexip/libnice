@@ -62,7 +62,7 @@ typedef struct {
 
 #define MAX_UDP_MESSAGE_SIZE 65535
 
-static void socket_close (NiceSocket *sock);
+static  gboolean socket_close (NiceSocket *sock);
 static gint socket_recv (NiceSocket *sock, NiceAddress *from,
     guint len, gchar *buf);
 static gint socket_send (NiceSocket *sock, const NiceAddress *to,
@@ -98,7 +98,7 @@ nice_tcp_turn_socket_new (NiceSocket *base_socket,
 }
 
 
-static void
+static gboolean
 socket_close (NiceSocket *sock)
 {
   TurnTcpPriv *priv = sock->priv;
@@ -107,6 +107,8 @@ socket_close (NiceSocket *sock)
     nice_socket_free (priv->base_socket);
 
   g_slice_free(TurnTcpPriv, sock->priv);
+
+  return FALSE;
 }
 
 

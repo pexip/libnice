@@ -80,7 +80,7 @@ struct to_be_sent {
 };
 
 
-static void socket_close (NiceSocket *sock);
+static gboolean socket_close (NiceSocket *sock);
 static gint socket_recv (NiceSocket *sock, NiceAddress *from,
     guint len, gchar *buf);
 static gint socket_send (NiceSocket *sock, const NiceAddress *to,
@@ -149,7 +149,7 @@ nice_socks5_socket_new (NiceSocket *base_socket,
 }
 
 
-static void
+static gboolean
 socket_close (NiceSocket *sock)
 {
   Socks5Priv *priv = sock->priv;
@@ -167,6 +167,8 @@ socket_close (NiceSocket *sock)
   g_queue_clear (&priv->send_queue);
 
   g_slice_free(Socks5Priv, sock->priv);
+
+  return FALSE;
 }
 
 

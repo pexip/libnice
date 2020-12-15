@@ -55,7 +55,7 @@ G_BEGIN_DECLS
 
 typedef struct _NiceSocket NiceSocket;
 
-typedef gboolean (*SocketRXCallback)(NiceSocket* socket, NiceAddress* from, struct msghdr * msg, gchar* buf, gint len, gpointer userdata);
+typedef gboolean (*SocketRXCallback)(NiceSocket* socket, NiceAddress* from, struct msghdr * msg, gchar* buf, gint len, gpointer buf_userdata, gpointer userdata);
 typedef gboolean (*SocketTXCallback)(NiceSocket* socket, gchar* buf, gint len, gsize queued, gpointer userdata);
 typedef void (*NiceDestroyUserdataCallback) (gpointer destroy_data, gpointer userdata);
 
@@ -99,11 +99,13 @@ struct _NiceSocketFunctionTable
   void (*send_callback) (NiceSocket *sock,  struct msghdr * msg, int result);
 
   /* Used when a socket is requested to be freed/closed.  */
-  void (*request_close) (NiceSocket *sock);
-  void (*closed_callback) (NiceSocket *sock);
+  //void (*request_close) (NiceSocket *sock);
+  void (*closed_callback) (NiceSocket *sock, int result);
+  void (*dispose_callback) (NiceSocket *sock, GAsyncConnectionSocket *async_socket);
+  void (*teardown_callback) (NiceSocket *sock, int remaining);
 
   /* Sync versions of async functions */
-  void (*close) (NiceSocket *sock);
+  gboolean (*close) (NiceSocket *sock);
   void (*attach) (NiceSocket *sock, GMainContext* ctx);
   gint (*recv) (NiceSocket *sock, NiceAddress *from, guint len,
       gchar *buf);

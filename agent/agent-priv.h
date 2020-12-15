@@ -201,7 +201,7 @@ StunUsageTurnCompatibility agent_to_turn_compatibility (NiceAgent *agent);
 NiceTurnSocketCompatibility agent_to_turn_socket_compatibility (NiceAgent *agent);
 
 void _priv_set_socket_tos (NiceAgent *agent, NiceSocket *sock, gint tos);
-gboolean nice_agent_socket_rx_cb (NiceSocket * socket, NiceAddress * from, struct msghdr * msg, gchar * buf, gint len, gpointer userdata);
+gboolean nice_agent_socket_rx_cb (NiceSocket * socket, NiceAddress * from, struct msghdr * msg, gchar * buf, gint len, gpointer msg_userdata, gpointer userdata);
 gboolean nice_agent_socket_tx_cb (NiceSocket* socket, gchar* buf, gint len, gsize queued, gpointer userdata);
 
 guint32 agent_candidate_ice_priority (NiceAgent* agent, const NiceCandidate *candidate, NiceCandidateType type);

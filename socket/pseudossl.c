@@ -88,7 +88,7 @@ static const gchar SSL_CLIENT_HANDSHAKE[] = {
   0x46, 0x55, 0x2e, 0xb1, 0x83, 0x39, 0xf1, 0xea};
 
 
-static void socket_close (NiceSocket *sock);
+static gboolean socket_close (NiceSocket *sock);
 static gint socket_recv (NiceSocket *sock, NiceAddress *from,
     guint len, gchar *buf);
 static gint socket_send (NiceSocket *sock, const NiceAddress *to,
@@ -132,7 +132,7 @@ nice_pseudossl_socket_new (NiceSocket *base_socket)
 }
 
 
-static void
+static gboolean
 socket_close (NiceSocket *sock)
 {
   PseudoSSLPriv *priv = sock->priv;
@@ -144,6 +144,8 @@ socket_close (NiceSocket *sock)
   g_queue_clear (&priv->send_queue);
 
   g_slice_free(PseudoSSLPriv, sock->priv);
+
+  return FALSE;
 }
 
 
