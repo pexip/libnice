@@ -689,7 +689,7 @@ socket_request_send_internal (NiceSocket *sock, const NiceAddress *to, const cha
   sendmsg->msg_namelen = get_namelen(&write_operation->to);
   sendmsg->msg_iov = io;
   sendmsg->msg_iovlen = 1;
-  io->iov_base = (guint8 *) buf;
+  io->iov_base = (guint8 *) buffer;
   io->iov_len = buflen;
 
   /* Makes it possible to match with the socket during iterations of the list */
