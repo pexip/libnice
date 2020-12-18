@@ -158,6 +158,9 @@ struct UdpBsdSocketPrivate
 
   struct msghdr recvmsg;
   struct iovec recvvec;
+  /* To avoid deadlock never lock agent while holding privlock,
+     allways release privlock first and lock privlock again when holding
+     the agent lock */
   GMutex lock;
 
 };
@@ -566,18 +569,53 @@ socket_recvmsg_callback(NiceSocket *sock, struct msghdr * msg, int result)
   socket_attach(sock, NULL); /* Request to receive another packet */
 }
 
+static void socket_send_enqueued(NiceSocket *sock)
+{
+  struct UdpBsdSocketPrivate *priv = sock->priv;
+  /* Dequeue queued send operations */
+  agent_lock (priv->agent);
+  g_mutex_lock(&priv->lock);
+  /* A new operation was queued while the priv was unlocked, so don't enqueue,
+     wait for that to finish */
+  if (priv->current_write_operation)
+  {
+    g_mutex_unlock(&priv->lock);
+    agent_unlock (priv->agent);
+    return;
+  }
+
+  GSFList * overflow_list = &priv->agent->async_write_overflow;
+  /* Should not be put in the free list until the sendmsg callback is completed */
+  GSFListElement *enqueued_element = gsflist_visit_exit(overflow_list, nice_udp_bsd_socket_find_queued_write_operations_visitor, sock);
+
+  if (enqueued_element == NULL)
+  {
+    /* No pending writes */
+    priv->pendingwrites = FALSE;
+    priv->current_write_operation = NULL;
+  }
+  else
+  {
+    NiceAsyncPendingWriteOperation* enqueued_operation = (NiceAsyncPendingWriteOperation*) enqueued_element;
+    priv->current_write_operation = enqueued_operation;
+    g_assert(gasync_connection_socket_sendmsg(sock->transport.connection, &enqueued_operation->msg,
+        0));
+  }
+  g_mutex_unlock(&priv->lock);
+  agent_unlock (priv->agent);
+}
+
 static gboolean
 socket_request_send_internal (NiceSocket *sock, const NiceAddress *to, const char * buf,
                      gsize buflen,
                      NiceDestroyUserdataCallback destroy_callback,
                      gpointer destroy_userdata, gboolean copy_buffer)
 {
+  NiceAsyncPendingWriteOperation *write_operation;
   struct msghdr *sendmsg;
   struct iovec *io;
   struct UdpBsdSocketPrivate *priv = sock->priv;
   gchar *buffer;
-  g_mutex_lock(&priv->lock);
-  gboolean enqueue = priv->current_write_operation != NULL;
 
   gsize alloc_bufextra;
   if (copy_buffer)
@@ -589,10 +627,14 @@ socket_request_send_internal (NiceSocket *sock, const NiceAddress *to, const cha
     alloc_bufextra = 0;
   }
 
-  NiceAsyncPendingWriteOperation *write_operation;
+  g_mutex_lock(&priv->lock);
+  gboolean enqueue = priv->current_write_operation != NULL;
+
   if (enqueue)
   {
+    g_mutex_unlock(&priv->lock);
     agent_lock (priv->agent);
+    g_mutex_lock(&priv->lock);
     priv->pendingwrites = TRUE;
 
     /* Add sendmsg data to overflow list,
@@ -674,16 +716,6 @@ socket_request_send_internal (NiceSocket *sock, const NiceAddress *to, const cha
   sendmsg = &write_operation->msg;
   io = &write_operation->io;
 
-#if 0
-  if (priv->send_buffer && priv->send_buffer != buf)
-  {
-    priv->send_buffer_destroy_notify(priv->send_buffer,
-      priv->send_buffer_destroy_userdata);
-    priv->send_buffer = NULL;
-    priv->send_buffer_destroy_userdata = NULL;
-  }
-#endif
-
   memset (sendmsg, 0, sizeof (struct msghdr));
   sendmsg->msg_name = &write_operation->to;
   sendmsg->msg_namelen = get_namelen(&write_operation->to);
@@ -695,16 +727,22 @@ socket_request_send_internal (NiceSocket *sock, const NiceAddress *to, const cha
   /* Makes it possible to match with the socket during iterations of the list */
   write_operation->socket = sock;
 
-  g_mutex_unlock(&priv->lock);
   if (enqueue)
   {
+    g_mutex_unlock(&priv->lock);
+    /* Send enqueued if the current write operation was completed while
+       we were unlocked */
+    socket_send_enqueued(sock);
     return TRUE;
   }
   else
   {
+    gboolean sendmsgret;
     priv->current_write_operation = write_operation;
-    return gasync_connection_socket_sendmsg(sock->transport.connection, sendmsg,
+    sendmsgret = gasync_connection_socket_sendmsg(sock->transport.connection, sendmsg,
       0);
+    g_mutex_unlock(&priv->lock);
+    return sendmsgret;
   }
 }
 
@@ -729,11 +767,12 @@ socket_sendmsg_callback (NiceSocket *sock,  struct msghdr * msg, int result)
   }
 
   g_mutex_lock(&priv->lock);
+  NiceAsyncPendingWriteOperation * completed_write_operation = priv->current_write_operation;
   GST_DEBUG("Udp socket send callback: %p (%d): %d", sock, msg->msg_iov->iov_len, result);
 
   g_assert(msg->msg_iovlen == 1); // Currently we use only one io buffer
 
-  gboolean was_enqueued = priv->current_write_operation != priv->socket_write_operation;
+  gboolean was_enqueued = completed_write_operation != priv->socket_write_operation;
    //msg != priv->csendmsg;
 
   //priv->sendmsg.msg_iovlen = 0;
@@ -747,53 +786,33 @@ socket_sendmsg_callback (NiceSocket *sock,  struct msghdr * msg, int result)
   {
     ownership_transferred = FALSE;
   }
-  if (priv->current_write_operation->destroy_callback != local_send_buffer_destroy)
+  if (completed_write_operation->destroy_callback != local_send_buffer_destroy)
   {
-    priv->current_write_operation->destroy_callback(
+    completed_write_operation->destroy_callback(
       ownership_transferred ? NULL : msg->msg_iov->iov_base,
-      priv->current_write_operation->destroy_userdata);
+      completed_write_operation->destroy_userdata);
 
-    priv->current_write_operation->buffer = NULL;
+    completed_write_operation->buffer = NULL;
   }
+  /* Make sure write operation is not enqueued before it is freed */
+  completed_write_operation->socket = NULL;
+  priv->current_write_operation = NULL;
+  g_mutex_unlock(&priv->lock);
+
   if(was_enqueued)
   {
     agent_lock (priv->agent);
+    g_mutex_lock(&priv->lock);
+
     GSFList * overflow_list = &priv->agent->async_write_overflow;
-    gsflist_visit_all_and_free(overflow_list, nice_udp_bsd_socket_equals_visitor, priv->current_write_operation, FALSE);
-    priv->current_write_operation = NULL;
+    gsflist_visit_all_and_free(overflow_list, nice_udp_bsd_socket_equals_visitor, completed_write_operation, FALSE);
+
+    g_mutex_unlock(&priv->lock);
     agent_unlock (priv->agent);
   }
 
-  if(!priv->pendingwrites){
-    priv->current_write_operation = NULL;
-    g_mutex_unlock(&priv->lock);
-    return;
-  }
-
-  /* Enqueue queued send operations */
-  agent_lock (priv->agent);
-  GSFList * overflow_list = &priv->agent->async_write_overflow;
-  /* Should not be put in the free list until the sendmsg callback is completed */
-  GSFListElement *enqueued_element = gsflist_visit_exit(overflow_list, nice_udp_bsd_socket_find_queued_write_operations_visitor, sock);
-
-  //gsflist_visit_all_and_free(overflow_list, nice_udp_bsd_socket_find_queued_write_operations_visitor, sock, FALSE);
-  if (enqueued_element == NULL)
-  {
-    /* No pending writes after all */
-    priv->pendingwrites = FALSE;
-    priv->current_write_operation = NULL;
-    agent_unlock (priv->agent);
-    g_mutex_unlock(&priv->lock);
-    return;
-  }
-
-  NiceAsyncPendingWriteOperation* enqueued_operation = (NiceAsyncPendingWriteOperation*) enqueued_element;
-  priv->current_write_operation = enqueued_operation;
-  g_assert(gasync_connection_socket_sendmsg(sock->transport.connection, &enqueued_operation->msg,
-      0));
-
-  agent_unlock (priv->agent);
-  g_mutex_unlock(&priv->lock);
+  /* If there are more queued operations make sure they are sent */
+  socket_send_enqueued(sock);
 }
 
 #if 0

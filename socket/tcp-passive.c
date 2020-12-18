@@ -315,7 +315,7 @@ nice_tcp_passive_socket_accept (NiceSocket *socket)
   g_object_unref (gaddr);
 
   nice_address_set_from_sockaddr (&remote_addr, (struct sockaddr *)&name);
-    
+
   GST_INFO("tcp-pass %p: Accepted.", socket);
 
   NiceSocket *established_socket = nice_tcp_established_socket_new (gsock,
