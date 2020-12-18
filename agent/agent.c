@@ -2772,7 +2772,7 @@ nice_agent_dispose (GObject * object)
     g_main_context_unref (agent->main_context);
   agent->main_context = NULL;
 
-  if (agent->request_rx_buffer_callback_userdata)
+  if (agent->request_rx_buffer_callback_userdata && agent->request_rx_buffer_callback_userdata_destroy)
   {
     agent->request_rx_buffer_callback_userdata_destroy(agent->request_rx_buffer_callback_userdata);
   }
@@ -2781,6 +2781,11 @@ nice_agent_dispose (GObject * object)
 
   g_assert(agent->async_write_overflow.head == NULL);
   gsflist_clear_free(&agent->async_write_overflow, g_free);
+
+  if (agent->async)
+  {
+    g_object_unref(agent->async);
+  }
 
   agent_unlock (agent);
   g_assert (agent->agent_mutex_th == NULL);
