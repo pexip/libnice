@@ -266,9 +266,13 @@ socket_is_reliable (NiceSocket *sock)
   return TRUE;
 }
 
-static void
-tcp_passive_established_socket_rx_cb (NiceSocket* socket, NiceAddress* from,
-    gchar* buf, gint len, gpointer userdata)
+static
+gboolean
+tcp_passive_established_socket_rx_cb (NiceSocket * socket, NiceAddress * from,
+    struct msghdr * msg, gchar * buf, gint len,
+    gpointer msg_userdata, gpointer userdata)
+//tcp_passive_established_socket_rx_cb (NiceSocket* socket, NiceAddress* from,
+//    gchar* buf, gint len, gpointer userdata)
 {
   NiceSocket* passive = (NiceSocket *)userdata;
   TcpPassivePriv *priv = passive->priv;

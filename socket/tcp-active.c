@@ -246,8 +246,9 @@ socket_is_reliable (NiceSocket *sock)
 }
 
 static void
-tcp_active_established_socket_rx_cb (NiceSocket* socket, NiceAddress* from,
-    gchar* buf, gint len, gpointer userdata)
+tcp_active_established_socket_rx_cb (NiceSocket * socket, NiceAddress * from,
+    struct msghdr * msg, gchar * buf, gint len,
+    gpointer msg_userdata, gpointer userdata)
 {
   NiceSocket* active = (NiceSocket *)userdata;
   TcpActivePriv *priv = active->priv;
