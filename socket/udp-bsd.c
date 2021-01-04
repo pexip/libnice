@@ -265,7 +265,6 @@ nice_udp_bsd_socket_new (NiceAgent * agent, NiceAddress *addr,
     gasync_gasync_create_connection_socket (agent->async,
       NULL, NULL, name.ss_family, SOCK_DGRAM, NULL);
 
-  //nice_agent_set_userdata_wrapper
   void ** socket_userdata_ptr = gasync_connection_socket_get_userdata_ptr(conn_sock);
   *socket_userdata_ptr = sock;
 
@@ -320,6 +319,33 @@ nice_udp_bsd_socket_find_queued_write_operations_visitor(
   return sock == current_operation->socket;
 }
 
+
+static gboolean
+nice_udp_bsd_socket_find_and_report_queued_write_operations_visitor(
+  GSFListElement *current_element, gpointer userdata)
+{
+  NiceAsyncPendingWriteOperation *current_operation = (NiceAsyncPendingWriteOperation*) current_element;
+  NiceSocket *sock = (NiceSocket*) userdata;
+  if (sock == current_operation->socket)
+  {
+   if (current_operation->destroy_callback != local_send_buffer_destroy)
+    {
+      current_operation->destroy_callback(
+        current_operation->buffer,
+        current_operation->destroy_userdata);
+
+      current_operation->buffer = NULL;
+    }
+    GST_DEBUG("Udp socket send request present during close: %p: %d",
+      current_operation->socket, current_operation->buflen);
+    return TRUE;
+  }
+  else
+  {
+    return FALSE;
+  }
+}
+
 static gboolean
 nice_udp_bsd_socket_equals_visitor(
   GSFListElement *current_element, gpointer userdata)
@@ -331,6 +357,8 @@ static gboolean
 socket_close (NiceSocket *sock)
 {
   struct UdpBsdSocketPrivate *priv = sock->priv;
+  NiceAgent *agent = priv->agent;
+  agent_lock (agent);
   g_mutex_lock(&priv->lock);
   if (priv->recv_buffer)
   {
@@ -350,7 +378,8 @@ socket_close (NiceSocket *sock)
 
   /* TODO: Should we actually remove the pending writes instead of just asserting */
   GSFList * overflow_list = &priv->agent->async_write_overflow;
-  g_assert(gsflist_visit_exit(overflow_list->head, nice_udp_bsd_socket_find_queued_write_operations_visitor, sock) == NULL);
+  //g_assert(gsflist_visit_exit(overflow_list->head, nice_udp_bsd_socket_find_queued_write_operations_visitor, sock) == NULL);
+  gsflist_visit_all_and_free(overflow_list, nice_udp_bsd_socket_find_and_report_queued_write_operations_visitor, sock, TRUE);
 
   if(priv->socket_write_operation &&
      (priv->socket_write_operation->destroy_callback != local_send_buffer_destroy))
@@ -360,9 +389,16 @@ socket_close (NiceSocket *sock)
         priv->socket_write_operation->destroy_userdata);
   }
 
-  /* TODO: Clean up any outstanding receive async request */
-  g_slice_free (struct UdpBsdSocketPrivate, sock->priv);
-
+  /* If there are any operations in progress we must cancel them and wait
+     until they are done */
+#if 0
+  if (priv->current_operation == NULL && priv->recvmsg.msg_iovlen == 0)
+  {
+    g_mutex_unlock(&priv->lock);
+    /* TODO: Clean up any outstanding receive async request */
+    g_slice_free (struct UdpBsdSocketPrivate, sock->priv);
+  }
+#endif
   if (sock->transport.fileno) {
     //g_socket_close (sock->transport.fileno, NULL);
     gasync_connection_socket_close( sock->transport.connection ); // NB / TODO: Should wait for close to complete
@@ -371,7 +407,7 @@ socket_close (NiceSocket *sock)
     //sock->transport.fileno = NULL;
   }
   g_mutex_unlock(&priv->lock);
-
+  agent_unlock (agent);
   return TRUE;
 }
 
@@ -385,22 +421,24 @@ socket_closed (NiceSocket *sock, int result)
 static void
 socket_dispose_callback (NiceSocket *sock, GAsyncConnectionSocket *async_socket)
 {
-  //struct UdpBsdSocketPrivate *priv = sock->priv;
-  //g_object_unref(async_socket);
-  //g_slice_free (NiceSocket, sock);
+  if (sock->transport.fileno) {
+    struct UdpBsdSocketPrivate *priv = sock->priv;
+    g_mutex_lock(&priv->lock);
+    g_assert(sock->transport.fileno);
+    /* Do not free the connection socket userdata manually. The connection
+       socket userdata is this NiceSocket, and that is freed by unref */
+    /* Do not free gasync socket, it is unrefed by caller */
+    sock->transport.fileno = NULL;
+    g_mutex_unlock(&priv->lock);
+    g_slice_free (struct UdpBsdSocketPrivate, sock->priv);
+  }
 }
 
 static void
 socket_teardown_callback (NiceSocket *sock)
 {
-  if (sock->transport.fileno) {
-    //g_object_unref (sock->transport.fileno);
-    sock->transport.fileno = NULL;
-  }
+
 }
-
-
-
 
 /* Start trying to receive data */
 static void socket_attach (NiceSocket* sock, GMainContext* ctx)
