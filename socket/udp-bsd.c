@@ -282,7 +282,7 @@ nice_udp_bsd_socket_new (NiceAgent * agent, NiceAddress *addr,
   g_assert (errcode == 0);
 
 
-  priv = sock->priv = g_slice_new0 (struct UdpBsdSocketPrivate);
+  priv = sock->priv = (struct UdpBsdSocketPrivate*) g_malloc0 (sizeof(struct UdpBsdSocketPrivate));
   nice_address_init (&priv->niceaddr);
 
   unsigned int len = sizeof (struct sockaddr_storage);
@@ -381,14 +381,6 @@ socket_close (NiceSocket *sock)
   //g_assert(gsflist_visit_exit(overflow_list->head, nice_udp_bsd_socket_find_queued_write_operations_visitor, sock) == NULL);
   gsflist_visit_all_and_free(overflow_list, nice_udp_bsd_socket_find_and_report_queued_write_operations_visitor, sock, TRUE);
 
-  if(priv->socket_write_operation &&
-     (priv->socket_write_operation->destroy_callback != local_send_buffer_destroy))
-  {
-      g_assert(priv->socket_write_operation->destroy_callback);
-      priv->socket_write_operation->destroy_callback(priv->socket_write_operation->buffer,
-        priv->socket_write_operation->destroy_userdata);
-  }
-
   /* If there are any operations in progress we must cancel them and wait
      until they are done */
 #if 0
@@ -425,13 +417,31 @@ socket_dispose_callback (NiceSocket *sock, GAsyncConnectionSocket *async_socket)
     struct UdpBsdSocketPrivate *priv = sock->priv;
     g_mutex_lock(&priv->lock);
     g_assert(sock->transport.fileno);
+
+    if(priv->socket_write_operation &&
+       (priv->socket_write_operation->destroy_callback != local_send_buffer_destroy))
+    {
+        g_assert(priv->socket_write_operation->destroy_callback);
+        priv->socket_write_operation->destroy_callback(priv->socket_write_operation->buffer,
+          priv->socket_write_operation->destroy_userdata);
+    }
+
+    if(priv->socket_write_operation)
+    {
+      g_free(priv->socket_write_operation);
+      priv->socket_write_operation = NULL;
+    }
+
     /* Do not free the connection socket userdata manually. The connection
        socket userdata is this NiceSocket, and that is freed by unref */
     /* Do not free gasync socket, it is unrefed by caller */
     sock->transport.fileno = NULL;
     g_mutex_unlock(&priv->lock);
-    g_slice_free (struct UdpBsdSocketPrivate, sock->priv);
+
+    g_free(priv->userdata);
+    g_free(priv);
   }
+  g_slice_free(NiceSocket, sock);
 }
 
 static void

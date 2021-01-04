@@ -1096,6 +1096,7 @@ gst_nice_src_dispose(GObject *object)
   g_hash_table_unref(src->socket_addresses);
   src->socket_addresses = NULL;
   g_rec_mutex_unlock(&src->rec_lock);
+  g_rec_mutex_clear(&src->rec_lock);
 
   G_OBJECT_CLASS(gst_nice_src_parent_class)->dispose(object);
 }
