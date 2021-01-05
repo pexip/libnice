@@ -701,6 +701,7 @@ gst_nice_src_pad_send_segment(GstNiceSrcPad *nicepad)
 static void
 gst_nice_src_free_read_buffer ( NicePadBufferRef *bufref, gpointer addr )
 {
+  g_assert(bufref->recvmeminfo.data == NULL || addr != NULL);
   g_assert(bufref->recvmeminfo.data == NULL || bufref->recvmeminfo.data == addr);
   if(bufref->recvmeminfo.memory != NULL)
   {

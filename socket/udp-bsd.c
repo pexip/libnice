@@ -562,9 +562,13 @@ socket_recvmsg_callback(NiceSocket *sock, struct msghdr * msg, int result)
     {
       /* Clean up receive buffer */
       g_mutex_lock(&priv->lock);
-      if (priv->recv_buffer_destroy_notify)
+      buffer_destroy_notify = priv->recv_buffer_destroy_notify;
+      buffer_destroy_userdata = priv->recv_buffer_destroy_userdata;
+      priv->recv_buffer_destroy_notify = NULL;
+      priv->recv_buffer_destroy_userdata = NULL;
+      if (buffer_destroy_notify)
       {
-        buffer_destroy_notify( priv->recv_buffer_destroy_notify, priv->recv_buffer_destroy_userdata);
+        buffer_destroy_notify(msg->msg_iov->iov_base, buffer_destroy_userdata);
         priv->recv_buffer = NULL;
       }
       g_mutex_unlock(&priv->lock);
@@ -590,7 +594,7 @@ socket_recvmsg_callback(NiceSocket *sock, struct msghdr * msg, int result)
   /* recv buffer is given to rxcb, and is not owned by the socket anymore */
   priv->recv_buffer = NULL;
   buffer_destroy_notify = priv->recv_buffer_destroy_notify;
-  buffer_destroy_userdata =  priv->recv_buffer_destroy_userdata;
+  buffer_destroy_userdata = priv->recv_buffer_destroy_userdata;
   priv->recv_buffer_destroy_notify = NULL;
   priv->recv_buffer_destroy_userdata = NULL;
 
@@ -810,7 +814,45 @@ socket_sendmsg_callback (NiceSocket *sock,  struct msghdr * msg, int result)
   gpointer destroy_userdata ;
   gboolean ownership_transferred;
   struct UdpBsdSocketPrivate *priv = sock->priv;
-  if (result < 0) {
+  if (result == -ECANCELED)
+  {
+    /* Clean up canceled send operation */
+    g_mutex_lock(&priv->lock);
+    NiceAsyncPendingWriteOperation * completed_write_operation = priv->current_write_operation;
+    GST_DEBUG("Udp socket send callback canceled: %p (%d): %d", sock, msg->msg_iov->iov_len, result);
+    if (completed_write_operation->destroy_callback != local_send_buffer_destroy)
+    {
+      completed_write_operation->destroy_callback(
+        ownership_transferred ? NULL : msg->msg_iov->iov_base,
+        completed_write_operation->destroy_userdata);
+
+      completed_write_operation->buffer = NULL;
+    }
+    /* Make sure write operation is not enqueued before it is freed */
+    completed_write_operation->socket = NULL;
+    priv->current_write_operation = NULL;
+    g_mutex_unlock(&priv->lock);
+
+    gboolean was_enqueued = completed_write_operation != priv->socket_write_operation;
+    if(was_enqueued)
+    {
+      agent_lock (priv->agent);
+      g_mutex_lock(&priv->lock);
+
+      GSFList * overflow_list = &priv->agent->async_write_overflow;
+      gsflist_visit_all_and_free(overflow_list, nice_udp_bsd_socket_equals_visitor, completed_write_operation, FALSE);
+
+      g_mutex_unlock(&priv->lock);
+      agent_unlock (priv->agent);
+    }
+    /* Assumes the write operation is canceled because the socket is closing,
+       therefore any enqueued write operations are not submitted to gasync.
+
+       TODO: Ensure this assumption is valid */
+
+    return;
+  }
+  else if (result < 0) {
     g_assert(result == 0); //TODO: Update list of acceptable errors during testing
   }
 
