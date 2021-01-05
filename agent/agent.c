@@ -2884,7 +2884,7 @@ nice_agent_socket_rx_cb (NiceSocket * socket, NiceAddress * from,
         "Agent %p : Received invalid packet on local socket %u from [%s]:%u (%d octets).",
         agent, nice_socket_get_fd(socket), tmpbuf,
         nice_address_get_port (from), len);
-    return;
+    return FALSE;
   }
 #ifndef NDEBUG
   if (len > 0) {
