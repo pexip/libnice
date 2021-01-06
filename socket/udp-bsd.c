@@ -278,9 +278,14 @@ nice_udp_bsd_socket_new (NiceAgent * agent, NiceAddress *addr,
   /* Set up a test server for our library to connect to */
   int errcode = bind (conn_socket_fd, (const struct sockaddr *) &name,
       sizeof (name));
-  /* TODO: Should we propagate the errors instead of asserting */
-  g_assert (errcode == 0);
 
+  if (errcode != 0)
+  {
+    GST_DEBUG("Udp socket bind failed: %p: %d", sock, errcode);
+    //Nice socket is freed when conn_sock is destroyed
+    g_object_unref (conn_sock);
+    return NULL;
+  }
 
   priv = sock->priv = (struct UdpBsdSocketPrivate*) g_malloc0 (sizeof(struct UdpBsdSocketPrivate));
   nice_address_init (&priv->niceaddr);
@@ -391,14 +396,15 @@ socket_close (NiceSocket *sock)
     g_slice_free (struct UdpBsdSocketPrivate, sock->priv);
   }
 #endif
+  g_mutex_unlock(&priv->lock);
   if (sock->transport.fileno) {
     //g_socket_close (sock->transport.fileno, NULL);
+    /* These functions must be called with priv unlocked to avoid deadlock */
     gasync_connection_socket_close( sock->transport.connection ); // NB / TODO: Should wait for close to complete
     gasync_connection_socket_tear_down( sock->transport.connection );
     //g_object_unref (sock->transport.fileno);
     //sock->transport.fileno = NULL;
   }
-  g_mutex_unlock(&priv->lock);
   agent_unlock (agent);
   return TRUE;
 }
