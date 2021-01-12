@@ -564,7 +564,7 @@ socket_recvmsg_callback(NiceSocket *sock, struct msghdr * msg, int result)
   NiceAddress *from;
   struct UdpBsdSocketPrivate *priv = sock->priv;
   if (result < 0) {
-    if ( result == -ECANCELED )
+    if ( result == -ECANCELED || result == -EINTR )
     {
       /* Clean up receive buffer */
       g_mutex_lock(&priv->lock);
