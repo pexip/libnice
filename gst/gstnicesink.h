@@ -62,11 +62,16 @@ struct _GstNiceSink
 {
   GstBaseSink parent;
   NiceAgent *agent;
+  GMainLoop *mainloop;
   guint stream_id;
   guint component_id;
 
   gulong overflow_hid;
   gulong writable_hid;
+
+  gboolean signal_disconnection_complete;
+  GCond signal_disconnection_complete_cond;
+  GMutex signal_disconnection_complete_mutex;
 };
 
 typedef struct _GstNiceSinkClass GstNiceSinkClass;

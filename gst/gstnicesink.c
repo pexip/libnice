@@ -84,8 +84,10 @@ enum
 {
   PROP_AGENT = 1,
   PROP_STREAM,
-  PROP_COMPONENT
+  PROP_COMPONENT,
+  PROP_MAINLOOP
 };
+
 
 static void
 gst_nice_sink_class_init (GstNiceSinkClass *klass)
@@ -148,6 +150,13 @@ gst_nice_sink_class_init (GstNiceSinkClass *klass)
          G_MAXUINT,
          0,
          G_PARAM_READWRITE));
+
+  g_object_class_install_property (gobject_class, PROP_MAINLOOP,
+      g_param_spec_pointer (
+         "mainloop",
+         "Main loop",
+         "The main loop used to drive agent functions",
+         G_PARAM_READWRITE));
 }
 
 static void
@@ -165,6 +174,12 @@ gst_nice_sink_dispose (GObject *object)
     g_object_unref (sink->agent);
     sink->agent = NULL;
   }
+
+  if (sink->mainloop)
+  {
+    g_main_loop_unref (sink->mainloop);
+  }
+  sink->mainloop = NULL;
 
   G_OBJECT_CLASS (gst_nice_sink_parent_class)->dispose (object);
 }
@@ -250,6 +265,16 @@ gst_nice_sink_set_property (
       }
       break;
 
+    case PROP_MAINLOOP:
+      if (sink->mainloop) {
+        GST_ERROR_OBJECT (object,
+            "Changing the mainloop on a nice sink not allowed");
+      } else {
+        sink->mainloop = g_value_get_pointer (value);
+        g_main_loop_ref(sink->mainloop);
+      }
+      break;
+
     case PROP_STREAM:
       sink->stream_id = g_value_get_uint (value);
       break;
@@ -279,6 +304,10 @@ gst_nice_sink_get_property (
       g_value_set_object (value, sink->agent);
       break;
 
+    case PROP_MAINLOOP:
+      g_value_set_pointer (value, sink->mainloop);
+      break;
+
     case PROP_STREAM:
       g_value_set_uint (value, sink->stream_id);
       break;
@@ -291,6 +320,49 @@ gst_nice_sink_get_property (
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
     }
+}
+
+static int disconnect_signals_inside_mainloop(void *data)
+{
+  GstNiceSink *sink = GST_NICE_SINK (data);
+
+  /* Run this on the papanice thread, and wait for it to complete before
+   changing the gstreamer state */
+  g_signal_handler_disconnect (sink->agent, sink->overflow_hid);
+  g_signal_handler_disconnect (sink->agent, sink->writable_hid);
+  g_mutex_lock(&sink->signal_disconnection_complete_mutex);
+  sink->signal_disconnection_complete = TRUE;
+  g_cond_signal(&sink->signal_disconnection_complete_cond);
+  g_mutex_unlock(&sink->signal_disconnection_complete_mutex);
+  return 0;
+}
+
+static void run_disconnect_signals_in_mainloop(GstNiceSink * sink)
+{
+  /* NB: The g_main_loop_is_running test function may still be racy */
+  if ((sink->mainloop != NULL) &&
+      (g_main_loop_is_running (sink->mainloop)))
+  {
+    GSource *source = g_idle_source_new ();
+    g_source_set_callback (source, disconnect_signals_inside_mainloop, (gpointer*)sink, NULL);
+    g_source_attach (source, g_main_loop_get_context(sink->mainloop));
+    g_source_unref (source);
+
+    /* Wait for reactor to complete our asynchronous function */
+    g_mutex_lock(&sink->signal_disconnection_complete_mutex);
+    while (!sink->signal_disconnection_complete)
+    {
+      g_cond_wait(&sink->signal_disconnection_complete_cond, &sink->signal_disconnection_complete_mutex);
+    }
+    g_mutex_unlock(&sink->signal_disconnection_complete_mutex);
+  }
+  else
+  {
+    disconnect_signals_inside_mainloop(sink);
+
+    g_assert((sink->mainloop == NULL) ||
+             (!g_main_loop_is_running (sink->mainloop)));
+  }
 }
 
 static GstStateChangeReturn
@@ -318,8 +390,7 @@ gst_nice_sink_change_state (GstElement * element, GstStateChange transition)
       break;
     case GST_STATE_CHANGE_READY_TO_NULL:
       if (sink->agent != NULL) {
-        g_signal_handler_disconnect (sink->agent, sink->overflow_hid);
-        g_signal_handler_disconnect (sink->agent, sink->writable_hid);
+        run_disconnect_signals_in_mainloop(sink);
       }
       break;
     default:
