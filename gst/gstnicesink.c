@@ -40,6 +40,7 @@
 
 #include "gstnicesink.h"
 
+#include <gst/net/gsttxfeedback.h>
 
 GST_DEBUG_CATEGORY_STATIC (nicesink_debug);
 #define GST_CAT_DEFAULT nicesink_debug
@@ -184,6 +185,23 @@ gst_nice_sink_dispose (GObject *object)
   G_OBJECT_CLASS (gst_nice_sink_parent_class)->dispose (object);
 }
 
+static void
+_set_time_on_buffer (GstNiceSink * sink, GstBuffer *buffer)
+{
+  GstClock *clock = GST_ELEMENT_CLOCK (sink);
+  GstClockTime base_time = GST_ELEMENT_CAST (sink)->base_time;
+  GstClockTime now;
+  GstTxFeedbackMeta *meta;
+
+  if (clock == NULL)
+    return;
+
+  now = gst_clock_get_time (clock) - base_time;
+  meta = gst_buffer_get_tx_feedback_meta (buffer);
+  if (meta)
+    gst_tx_feedback_meta_set_tx_time (meta, now);
+}
+
 static GstFlowReturn
 gst_nice_sink_render (GstBaseSink *basesink, GstBuffer *buffer)
 {
@@ -203,6 +221,8 @@ gst_nice_sink_render (GstBaseSink *basesink, GstBuffer *buffer)
       nicesink->component_id, GST_BUFFER_SIZE (buffer),
       (gchar *) GST_BUFFER_DATA (buffer));
 #endif
+
+  _set_time_on_buffer (nicesink, buffer);
 
   return GST_FLOW_OK;
 }
