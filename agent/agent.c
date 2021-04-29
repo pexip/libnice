@@ -2222,6 +2222,31 @@ done:
   return ret;
 }
 
+NICEAPI_EXPORT gboolean
+nice_agent_set_local_credentials (NiceAgent * agent,
+    guint stream_id, const gchar * ufrag, const gchar * pwd)
+{
+  Stream *stream;
+  gboolean ret = FALSE;
+
+  agent_lock (agent);
+
+  stream = agent_find_stream (agent, stream_id);
+  /* note: oddly enough, ufrag and pwd can be empty strings */
+  if (stream && ufrag && pwd) {
+
+    g_strlcpy (stream->local_ufrag, ufrag, NICE_STREAM_MAX_UFRAG);
+    g_strlcpy (stream->local_password, pwd, NICE_STREAM_MAX_PWD);
+
+    ret = TRUE;
+    goto done;
+  }
+
+done:
+  agent_unlock (agent);
+  return ret;
+}
+
 NICEAPI_EXPORT int
 nice_agent_set_remote_candidates (NiceAgent * agent, guint stream_id,
     guint component_id, const GSList * candidates)

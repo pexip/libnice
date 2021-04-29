@@ -194,6 +194,18 @@
   )
 )
 
+(define-method set_local_credentials
+  (of-object "NiceAgent")
+  (unblock-threads t)
+  (c-name "nice_agent_set_local_credentials")
+  (return-type "gboolean")
+  (parameters
+    '("guint" "stream_id")
+    '("const-gchar*" "ufrag")
+    '("const-gchar*" "pwd")
+  )
+)
+
 (define-method set_remote_candidates
   (of-object "NiceAgent")
   (unblock-threads t)
