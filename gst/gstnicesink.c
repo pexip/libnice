@@ -379,9 +379,6 @@ static void run_disconnect_signals_in_mainloop(GstNiceSink * sink)
   else
   {
     disconnect_signals_inside_mainloop(sink);
-
-    g_assert((sink->mainloop == NULL) ||
-             (!g_main_loop_is_running (sink->mainloop)));
   }
 }
 
@@ -395,9 +392,9 @@ gst_nice_sink_change_state (GstElement * element, GstStateChange transition)
 
   switch (transition) {
     case GST_STATE_CHANGE_NULL_TO_READY:
-      if (sink->agent == NULL) {
+      if (sink->agent == NULL || sink->mainloop == NULL) {
           GST_ERROR_OBJECT (element,
-              "Trying to start Nice sink without an agent set");
+              "Trying to start Nice sink without an agent and main loop set");
           return GST_STATE_CHANGE_FAILURE;
       } else {
         sink->overflow_hid = g_signal_connect_swapped (sink->agent,
