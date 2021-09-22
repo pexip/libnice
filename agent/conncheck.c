@@ -632,9 +632,12 @@ static void priv_tick_in_progress_check (NiceAgent* agent, Stream* stream, Candi
             timeout,
             p, p->foundation);
 
-        nice_socket_send (p->local->sockptr, &p->remote->addr,
-                          stun_message_length (&p->stun_message),
-                          (gchar *)p->stun_buffer);
+      /* Don't send to the discard port */
+        if (nice_address_get_port (&p->remote->addr) != 9) {
+          nice_socket_send (p->local->sockptr, &p->remote->addr,
+              stun_message_length (&p->stun_message),
+              (gchar *)p->stun_buffer);
+        }
 
         /* note: convert from milli to microseconds for g_time_val_add() */
         p->next_tick = *now;
