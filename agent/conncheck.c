@@ -1252,6 +1252,16 @@ static gboolean priv_turn_allocate_refresh_tick (gpointer pointer)
   return FALSE;
 }
 
+/*
+ * Schedule connectivity check timer if it's not already running
+ */
+void conn_check_start_timer (NiceAgent * agent)
+{
+  if (agent->conncheck_timer_source == NULL) {
+    GST_DEBUG_OBJECT (agent, "Starting conncheck timer: timeout = %u", agent->timer_ta);
+    agent->conncheck_timer_source = agent_timeout_add_with_context (agent, agent->timer_ta, priv_conn_check_tick, agent);
+  }
+}
 
 /*
  * Initiates the next pending connectivity check.
@@ -1266,8 +1276,8 @@ gboolean conn_check_schedule_next (NiceAgent *agent)
   res = priv_conn_check_tick_unlocked ((gpointer) agent);
 
   /* step: schedule timer if not running yet */
-  if (res && agent->conncheck_timer_source == NULL) {
-    agent->conncheck_timer_source = agent_timeout_add_with_context (agent, agent->timer_ta, priv_conn_check_tick, agent);
+  if (res) {
+    conn_check_start_timer (agent);
   }
 
   /* step: also start the keepalive timer */
@@ -2681,6 +2691,7 @@ static CandidateCheckPair* priv_process_response_check_for_peer_reflexive(NiceAg
                                                               sockptr,
                                                               local_candidate,
                                                               remote_candidate);
+
   }
 
   /*
@@ -3612,6 +3623,12 @@ gboolean conn_check_handle_inbound_stun (NiceAgent *agent, Stream *stream,
             stream->id, component->id);
         remote_candidate = discovery_learn_remote_peer_reflexive_candidate (agent, stream, component, priority, from, socket,
                                                                             remote_candidate);
+
+        /*
+         * Restart the conncheck timer when we add a new prflx candidate to ensure that
+         * any newly created pairs get a chance to run and send any triggered checks
+         */
+        conn_check_start_timer (agent);
       }
 
       priv_reply_to_conn_check (agent, stream, component, remote_candidate,
