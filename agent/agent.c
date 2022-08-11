@@ -3321,3 +3321,10 @@ nice_agent_set_rx_enabled (NiceAgent * agent,
 done:
   agent_unlock (agent);
 }
+
+NICEAPI_EXPORT
+const char *
+nice_component_state_to_string (NiceComponentState state)
+{
+  return component_state_to_string (state);
+}

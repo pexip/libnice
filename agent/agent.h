@@ -923,4 +923,13 @@ nice_agent_set_rx_enabled (
 
 G_END_DECLS
 
+/**
+ * nice_component_state_to_string
+ * @state: #NiceComponentState
+ *
+ * Returns a string representing the state.
+ **/
+NICE_EXPORT const char *
+nice_component_state_to_string (NiceComponentState state);
+
 #endif /* _AGENT_H */
