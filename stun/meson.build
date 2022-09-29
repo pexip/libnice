@@ -17,6 +17,7 @@ libstun_sources = [
 
 libstun_deps = [
   glib_deps,
+  openssl_dep,
 ]
 
 libstun_includes = [

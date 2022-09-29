@@ -15,6 +15,7 @@
 #include "sha1.h"
 
 #include <string.h>
+#include <openssl/evp.h>
 
 
 /* ===== start - public domain SHA1 implementation ===== */
@@ -473,12 +474,14 @@ void sha1_prf(const uint8_t *key, size_t key_len, const char *label,
 void sha1_vector(size_t num_elem, const uint8_t *addr[], const size_t *len,
     uint8_t *mac)
 {
-  SHA1_CTX ctx;
+  EVP_MD_CTX ctx;
   size_t i;
 
-  SHA1Init(&ctx);
-  for (i = 0; i < num_elem; i++)
-    SHA1Update(&ctx, addr[i], len[i]);
-  SHA1Final(mac, &ctx);
-}
+  EVP_MD_CTX_init (&ctx);
+  EVP_DigestInit_ex(&ctx, EVP_sha1(), NULL);
 
+  for (i = 0; i < num_elem; i++)
+    EVP_DigestUpdate(&ctx, addr[i], len[i]);
+  EVP_DigestFinal_ex(&ctx, mac, NULL);
+  EVP_MD_CTX_cleanup(&ctx);
+}
