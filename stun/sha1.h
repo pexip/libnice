@@ -24,29 +24,6 @@
 
 #define SHA1_MAC_LEN 20
 
-struct SHA1Context {
-  uint32_t state[5];
-  uint32_t count[2];
-  unsigned char buffer[64];
-};
-
-typedef struct SHA1Context SHA1_CTX;
-
-void SHA1Init(SHA1_CTX *context);
-void SHA1Update(SHA1_CTX *context, const void *data, uint32_t len);
-void SHA1Final(unsigned char digest[20], SHA1_CTX *context);
-
-struct HMACContext {
-  SHA1_CTX context;
-  uint8_t key[64];
-  size_t key_len;
-};
-typedef struct HMACContext HMAC_CTX;
-
-void HMACInit(HMAC_CTX *context, const uint8_t *key, size_t key_len);
-void HMACUpdate(HMAC_CTX *context, const void *data, uint32_t len);
-void HMACFinal(unsigned char digest[20], HMAC_CTX *context);
-
 void sha1_vector(size_t num_elem, const uint8_t *addr[], const size_t *len,
     uint8_t *mac);
 void hmac_sha1_vector(const uint8_t *key, size_t key_len, size_t num_elem,
