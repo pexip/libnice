@@ -167,14 +167,13 @@ void sha1_prf(const uint8_t *key, size_t key_len, const char *label,
 void sha1_vector(size_t num_elem, const uint8_t *addr[], const size_t *len,
     uint8_t *mac)
 {
-  EVP_MD_CTX ctx;
+  EVP_MD_CTX *ctx = EVP_MD_CTX_create();
   size_t i;
 
-  EVP_MD_CTX_init (&ctx);
-  EVP_DigestInit_ex(&ctx, EVP_sha1(), NULL);
+  EVP_DigestInit_ex(ctx, EVP_sha1(), NULL);
 
   for (i = 0; i < num_elem; i++)
-    EVP_DigestUpdate(&ctx, addr[i], len[i]);
-  EVP_DigestFinal_ex(&ctx, mac, NULL);
-  EVP_MD_CTX_cleanup(&ctx);
+    EVP_DigestUpdate(ctx, addr[i], len[i]);
+  EVP_DigestFinal_ex(ctx, mac, NULL);
+  EVP_MD_CTX_destroy(ctx);
 }
