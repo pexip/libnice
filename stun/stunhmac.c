@@ -42,7 +42,7 @@
 
 #include "sha1.h"
 #include "md5.h"
-#include "rand.h"
+#include <openssl/rand.h>
 
 #include "stunmessage.h"
 #include "stunhmac.h"

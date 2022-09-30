@@ -5,7 +5,6 @@ libstun_sources = [
   'stuncrc32.c',
   'sha1.c',
   'md5.c',
-  'rand.c',
   'stunhmac.c',
   'utils.c',
   'debug.c',
