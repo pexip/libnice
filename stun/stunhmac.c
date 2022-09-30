@@ -42,13 +42,13 @@
 
 #include "sha1.h"
 #include "md5.h"
-#include <openssl/rand.h>
 
 #include "stunmessage.h"
 #include "stunhmac.h"
 
 #include <string.h>
 #include <assert.h>
+#include <openssl/rand.h>
 
 void stun_sha1 (const uint8_t *msg, size_t len, size_t msg_len, uint8_t *sha,
     const void *key, size_t keylen, int padding)
