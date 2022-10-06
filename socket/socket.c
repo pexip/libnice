@@ -98,6 +98,28 @@ nice_socket_attach (NiceSocket *sock, GMainContext* ctx)
   }
 }
 
+void
+nice_socket_buffers_and_interface_unref  (NiceSocket *sock)
+{
+  if (sock) {
+    if (sock->type == NICE_SOCKET_TYPE_UDP_BSD)
+    {
+      nice_udp_socket_buffers_and_interface_unref (sock);
+    }
+  }
+}
+
+void
+nice_socket_buffer_interface_set (NiceSocket *sock, MemlistInterface *interface)
+{
+  if (sock) {
+    if (sock->type == NICE_SOCKET_TYPE_UDP_BSD)
+    {
+      nice_udp_socket_interface_set(sock, interface);
+    }
+  }
+}
+
 const char* socket_type_to_string (NiceSocketType type)
 {
   switch (type) {

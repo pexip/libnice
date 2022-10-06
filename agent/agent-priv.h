@@ -61,6 +61,8 @@
 #include "stun/usages/turn.h"
 #include "stun/usages/ice.h"
 
+#include "memlist.h"
+
 /* XXX: starting from ICE ID-18, Ta SHOULD now be set according
  *      to session bandwidth -> this is not yet implemented in NICE */
 
@@ -103,7 +105,7 @@ struct _NiceAgent
   gboolean aggressive_mode;        /* property: use aggressive nomination when controller */
   guint regular_nomination_timeout; /* property: timeout (ms) before regular nomination starts nominating non-optimal media paths */
 
-  GSList *local_addresses;        /* list of NiceAddresses for local
+  GSList *local_addresses;        /* list of NiceAddresses for loca
                                      interfaces */
   GSList *streams;                /* list of Stream objects */
   GMainContext *main_context;     /* main context pointer */
@@ -125,6 +127,8 @@ struct _NiceAgent
   gboolean media_after_tick;       /* Received media after keepalive tick */
   gchar *software_attribute;       /* SOFTWARE attribute */
   gboolean reliable;               /* property: reliable */
+
+  MemlistInterface *mem_list_interface; /* property: mem_list_interface */
   /* XXX: add pointer to internal data struct for ABI-safe extensions */
 };
 

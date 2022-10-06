@@ -108,7 +108,8 @@ enum
   PROP_CONNCHECK_RETRANSMISSIONS,
   PROP_AGGRESSIVE_MODE,
   PROP_REGULAR_NOMINATION_TIMEOUT,
-  PROP_TIE_BREAKER
+  PROP_TIE_BREAKER,
+  PROP_MEM_LIST_INTERFACE
 };
 
 
@@ -146,6 +147,8 @@ static gboolean priv_attach_stream_component (NiceAgent * agent,
     Stream * stream, Component * component);
 static void priv_detach_stream_component (NiceAgent * agent, Stream * stream,
     Component * component);
+static void mem_list_interface_clean_up_and_replace (NiceAgent * agent, MemlistInterface* replacement);
+static void mem_list_interface_propagate (NiceAgent * agent);
 
 void
 agent_lock (NiceAgent * agent)
@@ -569,6 +572,12 @@ nice_agent_class_init (NiceAgentClass * klass)
           0,     /* Not construct time so ignored */
           G_PARAM_READWRITE));
 
+  g_object_class_install_property (gobject_class, PROP_MEM_LIST_INTERFACE,
+      g_param_spec_pointer ("mem-list-interface",
+          "Memory list interface",
+          "Interface for allocating and releasing memory buffers",
+          G_PARAM_CONSTRUCT_ONLY));
+
   /* install signals */
 
   /**
@@ -807,6 +816,9 @@ nice_agent_get_property (GObject * object,
   agent_lock (agent);
 
   switch (property_id) {
+    case PROP_MEM_LIST_INTERFACE:
+      g_value_set_pointer (value, (gpointer)agent->mem_list_interface);
+      break;
     case PROP_MAIN_CONTEXT:
       g_value_set_pointer (value, agent->main_context);
       break;
@@ -1001,6 +1013,12 @@ nice_agent_set_property (GObject * object,
       agent->proxy_password = g_value_dup_string (value);
       break;
 
+    case PROP_MEM_LIST_INTERFACE:
+      mem_list_interface_clean_up_and_replace (agent, (gpointer)agent->mem_list_interface);
+      /* TODO: The new interface must be passed down to any existing sockets */
+      g_value_set_pointer ((gpointer)agent->mem_list_interface, (gpointer)value);
+      break;
+
     case PROP_UPNP_TIMEOUT:
       break;
 
@@ -1018,6 +1036,34 @@ nice_agent_set_property (GObject * object,
 
   agent_unlock (agent);
 
+}
+
+static void mem_list_interface_clean_up_and_replace (NiceAgent * agent, MemlistInterface* replacement)
+{
+  (void)agent;
+  if (agent->mem_list_interface != NULL){
+    agent_lock (agent);
+    /* We need to go trough all (udp) sockets and release any pending buffers */
+    GSList *stream_index;
+
+    for (stream_index = agent->streams; stream_index; stream_index = stream_index->next) {
+      GSList *component_index;
+      Stream *stream = stream_index->data;
+      for (component_index = stream->components; component_index; component_index = component_index->next) {
+        GSList *socket_index;
+        Component *component = component_index->data;
+        for (socket_index = component->sockets; socket_index; socket_index = socket_index->next) {
+          NiceSocket *udpsocket = socket_index->data;
+          nice_udp_socket_buffers_and_interface_unref(udpsocket);
+          if (replacement != NULL)
+          {
+            nice_udp_socket_interface_set(udpsocket, replacement);
+          }
+        }
+      }
+    }
+    agent_unlock (agent);
+  }
 }
 
 static void

@@ -40,11 +40,18 @@
 #define _UDP_BSD_H
 
 #include "socket.h"
+#include "agent.h"
 
 G_BEGIN_DECLS
 
 NiceSocket *
 nice_udp_bsd_socket_new (NiceAddress *addr);
+
+void nice_udp_socket_interface_set(NiceSocket *udp_socket, MemlistInterface *interface);
+void nice_udp_socket_buffers_and_interface_unref(NiceSocket *udp_socket);
+gint nice_udp_socket_recvmmsg(NiceSocket *sock, gsize * num_messages_received);
+NiceMemoryBufferRef *nice_udp_socket_packet_retrieve(NiceSocket *udp_socket,
+  guint packet_index, NiceAddress *from);
 
 G_END_DECLS
 
