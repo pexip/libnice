@@ -112,6 +112,7 @@ typedef struct _NiceAgent NiceAgent;
 #include "address.h"
 #include "candidate.h"
 #include "debug.h"
+#include "memlist.h"
 
 
 G_BEGIN_DECLS
@@ -263,6 +264,27 @@ typedef void (*NiceAgentRecvFunc) (
   NiceAgent *agent, guint stream_id, guint component_id, guint len,
   gchar *buf, gpointer user_data, const NiceAddress *from, const NiceAddress *to);
 
+/**
+ * NiceAgentRecvMultipleFunc:
+ * @agent: The #NiceAgent Object
+ * @stream_id: The id of the stream
+ * @component_id: The id of the component of the stream
+ *        which received the data
+ * @len: The length of the data
+ * @buf: The buffer containing the data received
+ * @user_data: The user data set in nice_agent_attach_recv()
+ *
+ * Callback function when data is received on a component
+ *
+ */
+typedef void (*NiceAgentRecvMultipleFunc) (
+  NiceAgent *agent, guint stream_id, guint component_id, guint num_buffers,
+  gpointer user_data);
+
+/* This function should only be called inside the NiceAgentRecvMultipleFunc callback */
+NICE_EXPORT NiceMemoryBufferRef *nice_agent_memory_buffer_retrieve(NiceAgent *agent,
+  guint stream_id, guint component_id, gsize buffer_index,
+  const NiceAddress *from, const NiceAddress *to);
 
 /**
  * nice_agent_new:

@@ -39,7 +39,6 @@
 #ifndef _NICE_H
 #define _NICE_H
 
-#include "memlist.h"
 #include "agent.h"
 #include "interfaces.h"
 

@@ -118,6 +118,7 @@ struct _Component
                                   see ICE 11.1. "Sending Media" (ID-19) */
   NiceCandidate *restart_candidate; /**< for storing active remote candidate during a restart */
   NiceAgentRecvFunc g_source_io_cb; /**< function called on io cb */
+  NiceAgentRecvMultipleFunc g_source_io_multiple_cb; /**< function called on io cb for multiple packets */
   gpointer data;                    /**< data passed to the io function */
   GMainContext *ctx;                /**< context for data callbacks for this
                                        component */

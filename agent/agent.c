@@ -147,7 +147,8 @@ static gboolean priv_attach_stream_component (NiceAgent * agent,
     Stream * stream, Component * component);
 static void priv_detach_stream_component (NiceAgent * agent, Stream * stream,
     Component * component);
-static void mem_list_interface_clean_up_and_replace (NiceAgent * agent, MemlistInterface* replacement);
+static void mem_list_interface_clean_up_and_replace (NiceAgent * agent,
+    MemlistInterface * replacement);
 static void mem_list_interface_propagate (NiceAgent * agent);
 
 void
@@ -556,20 +557,10 @@ nice_agent_class_init (NiceAgentClass * klass)
           "Use aggressive nomination when controller",
           TRUE, G_PARAM_READWRITE));
 
-  g_object_class_install_property (gobject_class, PROP_REGULAR_NOMINATION_TIMEOUT,
-      g_param_spec_uint ("regular-nomination-timeout",
-          "Timeout (in ms) before regular nomination will select non-optimal media path",
-          "Timeout (in ms) before regular nomination will select non-optimal media path",
-          1, 0xffffffff,
-          NICE_AGENT_REGULAR_NOMINATION_TIMEOUT_DEFAULT,       /* Not construct time so ignored */
+  g_object_class_install_property (gobject_class, PROP_REGULAR_NOMINATION_TIMEOUT, g_param_spec_uint ("regular-nomination-timeout", "Timeout (in ms) before regular nomination will select non-optimal media path", "Timeout (in ms) before regular nomination will select non-optimal media path", 1, 0xffffffff, NICE_AGENT_REGULAR_NOMINATION_TIMEOUT_DEFAULT,       /* Not construct time so ignored */
           G_PARAM_READWRITE));
 
-  g_object_class_install_property (gobject_class, PROP_TIE_BREAKER,
-      g_param_spec_uint64 ("tie-breaker",
-          "Tie breaker value to send in connectivity checks",
-          "Tie breaker value to send in connectivity checks",
-          0, 0xffffffffffffffffLL,
-          0,     /* Not construct time so ignored */
+  g_object_class_install_property (gobject_class, PROP_TIE_BREAKER, g_param_spec_uint64 ("tie-breaker", "Tie breaker value to send in connectivity checks", "Tie breaker value to send in connectivity checks", 0, 0xffffffffffffffffLL, 0,     /* Not construct time so ignored */
           G_PARAM_READWRITE));
 
   g_object_class_install_property (gobject_class, PROP_MEM_LIST_INTERFACE,
@@ -817,7 +808,7 @@ nice_agent_get_property (GObject * object,
 
   switch (property_id) {
     case PROP_MEM_LIST_INTERFACE:
-      g_value_set_pointer (value, (gpointer)agent->mem_list_interface);
+      g_value_set_pointer (value, (gpointer) agent->mem_list_interface);
       break;
     case PROP_MAIN_CONTEXT:
       g_value_set_pointer (value, agent->main_context);
@@ -1014,9 +1005,11 @@ nice_agent_set_property (GObject * object,
       break;
 
     case PROP_MEM_LIST_INTERFACE:
-      mem_list_interface_clean_up_and_replace (agent, (gpointer)agent->mem_list_interface);
+      mem_list_interface_clean_up_and_replace (agent,
+          (gpointer) agent->mem_list_interface);
       /* TODO: The new interface must be passed down to any existing sockets */
-      g_value_set_pointer ((gpointer)agent->mem_list_interface, (gpointer)value);
+      g_value_set_pointer ((gpointer) agent->mem_list_interface,
+          (gpointer) value);
       break;
 
     case PROP_UPNP_TIMEOUT:
@@ -1038,26 +1031,30 @@ nice_agent_set_property (GObject * object,
 
 }
 
-static void mem_list_interface_clean_up_and_replace (NiceAgent * agent, MemlistInterface* replacement)
+static void
+mem_list_interface_clean_up_and_replace (NiceAgent * agent,
+    MemlistInterface * replacement)
 {
-  (void)agent;
-  if (agent->mem_list_interface != NULL){
+  (void) agent;
+  if (agent->mem_list_interface != NULL) {
     agent_lock (agent);
     /* We need to go trough all (udp) sockets and release any pending buffers */
     GSList *stream_index;
 
-    for (stream_index = agent->streams; stream_index; stream_index = stream_index->next) {
+    for (stream_index = agent->streams; stream_index;
+        stream_index = stream_index->next) {
       GSList *component_index;
       Stream *stream = stream_index->data;
-      for (component_index = stream->components; component_index; component_index = component_index->next) {
+      for (component_index = stream->components; component_index;
+          component_index = component_index->next) {
         GSList *socket_index;
         Component *component = component_index->data;
-        for (socket_index = component->sockets; socket_index; socket_index = socket_index->next) {
+        for (socket_index = component->sockets; socket_index;
+            socket_index = socket_index->next) {
           NiceSocket *udpsocket = socket_index->data;
-          nice_udp_socket_buffers_and_interface_unref(udpsocket);
-          if (replacement != NULL)
-          {
-            nice_udp_socket_interface_set(udpsocket, replacement);
+          nice_udp_socket_buffers_and_interface_unref (udpsocket);
+          if (replacement != NULL) {
+            nice_udp_socket_interface_set (udpsocket, replacement);
           }
         }
       }
@@ -1982,28 +1979,31 @@ nice_agent_add_stream_local_address_from_string (NiceAgent * agent,
  * having a specific remote candidate, and eventually update the
  * priority of the selected pair as well.
  */
-static void priv_update_pair_foundations (NiceAgent *agent,
-    guint stream_id, guint component_id, NiceCandidate *remote)
+static void
+priv_update_pair_foundations (NiceAgent * agent,
+    guint stream_id, guint component_id, NiceCandidate * remote)
 {
   Stream *stream;
   Component *component;
 
   if (agent_find_component (agent, stream_id, component_id, &stream,
-      &component)) {
+          &component)) {
     GSList *i;
 
     for (i = stream->conncheck_list; i; i = i->next) {
       CandidateCheckPair *pair = i->data;
 
       if (pair->remote == remote) {
-        gchar foundation[NICE_CANDIDATE_PAIR_MAX_FOUNDATION+1];
+        gchar foundation[NICE_CANDIDATE_PAIR_MAX_FOUNDATION + 1];
 
         g_snprintf (foundation, NICE_CANDIDATE_PAIR_MAX_FOUNDATION, "%s:%s",
             pair->local->foundation, pair->remote->foundation);
 
-        if (strncmp (pair->foundation, foundation, NICE_CANDIDATE_PAIR_MAX_FOUNDATION)) {
+        if (strncmp (pair->foundation, foundation,
+                NICE_CANDIDATE_PAIR_MAX_FOUNDATION)) {
 
-          g_strlcpy (pair->foundation, foundation, NICE_CANDIDATE_PAIR_MAX_FOUNDATION);
+          g_strlcpy (pair->foundation, foundation,
+              NICE_CANDIDATE_PAIR_MAX_FOUNDATION);
           GST_DEBUG_OBJECT (agent, "%u/%u: Updating pair %p foundation to '%s'",
               stream_id, component_id, pair, pair->foundation);
 
@@ -2017,12 +2017,13 @@ static void priv_update_pair_foundations (NiceAgent *agent,
              * an update of its priority. stun_priority doesn't change
              * because only the remote candidate foundation is modified.
              */
-            GST_DEBUG_OBJECT (agent, "%u/%u : pair %p is the selected pair, updating "
+            GST_DEBUG_OBJECT (agent,
+                "%u/%u : pair %p is the selected pair, updating "
                 "its priority.", stream_id, component_id, pair);
             component->selected_pair.priority = pair->priority;
 
             agent_signal_new_selected_pair (agent, pair->stream_id,
-              component->id, pair->local, pair->remote);
+                component->id, pair->local, pair->remote);
           }
         }
       }
@@ -2036,10 +2037,8 @@ static void priv_update_pair_foundations (NiceAgent *agent,
  * pair
  */
 static void
-priv_check_for_new_selected_pair (
-  NiceAgent *agent,
-  guint stream_id,
-  guint component_id)
+priv_check_for_new_selected_pair (NiceAgent * agent,
+    guint stream_id, guint component_id)
 {
   Stream *stream;
   Component *component;
@@ -2047,17 +2046,17 @@ priv_check_for_new_selected_pair (
   GSList *i;
 
   if (agent_find_component (agent, stream_id, component_id, &stream,
-      &component)) {
+          &component)) {
 
     for (i = stream->conncheck_list; i; i = i->next) {
       pair = i->data;
       if (pair->component_id == component_id &&
           pair->state == NICE_CHECK_SUCCEEDED &&
-          pair->valid_pair != NULL &&
-          pair->valid_pair->nominated) {
+          pair->valid_pair != NULL && pair->valid_pair->nominated) {
 
         if (pair->priority > component->selected_pair.priority) {
-          GST_INFO_OBJECT (agent, "%u/%u: New trickle candidate has promoted %p as the selected pair",
+          GST_INFO_OBJECT (agent,
+              "%u/%u: New trickle candidate has promoted %p as the selected pair",
               stream_id, component_id, pair);
           conn_check_update_selected_pair (agent, component, pair->valid_pair);
         }
@@ -2083,7 +2082,8 @@ priv_add_remote_candidate (NiceAgent * agent,
   Stream *stream;
   NiceCandidate *candidate;
 
-  if (!agent_find_component (agent, stream_id, component_id, &stream, &component))
+  if (!agent_find_component (agent, stream_id, component_id, &stream,
+          &component))
     return FALSE;
 
   /* step: check whether the candidate already exists */
@@ -2093,8 +2093,9 @@ priv_add_remote_candidate (NiceAgent * agent,
 
     if (stream->trickle_ice) {
       if (candidate->type == NICE_CANDIDATE_TYPE_PEER_REFLEXIVE) {
-        GST_DEBUG_OBJECT (agent, "%u/%u: Updating existing prflx candidate to %s",
-            stream_id, component_id, candidate_type_to_string(type));
+        GST_DEBUG_OBJECT (agent,
+            "%u/%u: Updating existing prflx candidate to %s", stream_id,
+            component_id, candidate_type_to_string (type));
 
         candidate->type = type;
       }
@@ -2102,11 +2103,10 @@ priv_add_remote_candidate (NiceAgent * agent,
       if (candidate && candidate->type == type) {
         gchar tmpbuf[INET6_ADDRSTRLEN];
         nice_address_to_string (addr, tmpbuf);
-        GST_DEBUG_OBJECT (agent, "%u/%u: Updating existing remote candidate with addr [%s]:%u"
-            " U/P '%s'/'%s' prio: %08x",
-            stream_id, component_id,
-            tmpbuf, nice_address_get_port (addr),
-            username, password, priority);
+        GST_DEBUG_OBJECT (agent,
+            "%u/%u: Updating existing remote candidate with addr [%s]:%u"
+            " U/P '%s'/'%s' prio: %08x", stream_id, component_id, tmpbuf,
+            nice_address_get_port (addr), username, password, priority);
 
         updated = TRUE;
 
@@ -2114,26 +2114,26 @@ priv_add_remote_candidate (NiceAgent * agent,
           candidate->base_addr = *base_addr;
         candidate->priority = priority;
         if (foundation)
-          g_strlcpy(candidate->foundation, foundation,
+          g_strlcpy (candidate->foundation, foundation,
               NICE_CANDIDATE_MAX_FOUNDATION);
 
         if (username) {
           if (candidate->username == NULL)
             candidate->username = g_strdup (username);
           else if (g_strcmp0 (username, candidate->username))
-            GST_WARNING_OBJECT (agent, "%u/%u: Candidate username '%s' is not allowed "
-                "to change to '%s' now (ICE restart only).",
-                stream_id, component_id,
-                candidate->username, username);
+            GST_WARNING_OBJECT (agent,
+                "%u/%u: Candidate username '%s' is not allowed "
+                "to change to '%s' now (ICE restart only).", stream_id,
+                component_id, candidate->username, username);
         }
         if (password) {
           if (candidate->password == NULL)
             candidate->password = g_strdup (password);
           else if (g_strcmp0 (password, candidate->password))
-            GST_WARNING_OBJECT (agent, "%u/%u: Candidate password '%s' is not allowed "
-                "to change to '%s' now (ICE restart only).",
-                stream_id, component_id,
-                candidate->password, password);
+            GST_WARNING_OBJECT (agent,
+                "%u/%u: Candidate password '%s' is not allowed "
+                "to change to '%s' now (ICE restart only).", stream_id,
+                component_id, candidate->password, password);
         }
 
         /* since the type of the existing candidate may have changed,
@@ -2141,7 +2141,8 @@ priv_add_remote_candidate (NiceAgent * agent,
          * to be recomputed...
          */
         conn_check_recalculate_pair_priorities (agent);
-        priv_update_pair_foundations (agent, stream_id, component_id, candidate);
+        priv_update_pair_foundations (agent, stream_id, component_id,
+            candidate);
 
         /* ... and maybe we now have another nominated pair with a higher
          * priority as the result of this priorities update.
@@ -2155,9 +2156,9 @@ priv_add_remote_candidate (NiceAgent * agent,
         nice_address_to_string (addr, tmpbuf);
         GST_DEBUG_OBJECT (agent,
             "%u/%u: Not updating existing remote candidate with addr [%s]:%u"
-            " U/P '%s'/'%s' prio: %u type:%s transport:%d", stream_id, component_id,
-            tmpbuf, nice_address_get_port (addr), username, password, priority,
-            candidate_type_to_string(type), transport);
+            " U/P '%s'/'%s' prio: %u type:%s transport:%d", stream_id,
+            component_id, tmpbuf, nice_address_get_port (addr), username,
+            password, priority, candidate_type_to_string (type), transport);
       }
     }
   } else {
@@ -2566,7 +2567,7 @@ nice_agent_get_remote_candidates (NiceAgent * agent,
 }
 
 gboolean
-nice_agent_restart (NiceAgent *agent)
+nice_agent_restart (NiceAgent * agent)
 {
   GSList *i;
 
@@ -2588,8 +2589,7 @@ nice_agent_restart (NiceAgent *agent)
 }
 
 gboolean
-nice_agent_restart_stream (NiceAgent *agent,
-    guint stream_id)
+nice_agent_restart_stream (NiceAgent * agent, guint stream_id)
 {
   gboolean res = FALSE;
   Stream *stream;
@@ -2610,7 +2610,7 @@ nice_agent_restart_stream (NiceAgent *agent,
   stream_restart (agent, stream, agent->rng);
 
   res = TRUE;
- done:
+done:
   agent_unlock (agent);
   return res;
 }
@@ -3036,7 +3036,9 @@ NICEAPI_EXPORT gboolean
 nice_agent_attach_recv (NiceAgent * agent,
     guint stream_id,
     guint component_id,
-    GMainContext * ctx, NiceAgentRecvFunc func, gpointer data)
+    GMainContext * ctx,
+    NiceAgentRecvFunc func,
+    NiceAgentRecvMultipleFunc multiple_func, gpointer data)
 {
   Component *component = NULL;
   Stream *stream = NULL;
@@ -3067,6 +3069,8 @@ nice_agent_attach_recv (NiceAgent * agent,
 
   if (func) {
     component->g_source_io_cb = func;
+    component->g_source_io_multiple_cb = multiple_func;
+
     component->data = data;
     component->ctx = ctx;
     if (ctx)
@@ -3256,8 +3260,7 @@ done:
 
 void
 nice_agent_set_stream_trickle_ice (NiceAgent * agent,
-    guint stream_id,
-    gboolean trickle_ice)
+    guint stream_id, gboolean trickle_ice)
 {
   Stream *stream;
 
@@ -3269,8 +3272,7 @@ nice_agent_set_stream_trickle_ice (NiceAgent * agent,
   }
 
   GST_DEBUG_OBJECT (agent, "%u/*: setting trickle_ice to %s",
-      stream_id,
-      trickle_ice ? "TRUE" : "FALSE");
+      stream_id, trickle_ice ? "TRUE" : "FALSE");
   stream->trickle_ice = trickle_ice;
 
 done:
@@ -3278,10 +3280,8 @@ done:
 }
 
 NICE_EXPORT void
-nice_agent_end_of_candidates (
-  NiceAgent *agent,
-  guint stream_id,
-  guint component_id)
+nice_agent_end_of_candidates (NiceAgent * agent,
+    guint stream_id, guint component_id)
 {
   Component *component;
   Stream *stream;
@@ -3290,11 +3290,14 @@ nice_agent_end_of_candidates (
 
   if (agent_find_component (agent, stream_id, component_id,
           &stream, &component)) {
-    GST_DEBUG_OBJECT (agent, "%u/%u: end-of-candidates", stream_id, component_id);
+    GST_DEBUG_OBJECT (agent, "%u/%u: end-of-candidates", stream_id,
+        component_id);
     component->peer_gathering_done = TRUE;
     conn_check_end_of_candidates (agent, stream, component);
   } else {
-    GST_WARNING_OBJECT (agent, "%u/%u: end-of-candidates unknown stream/component", stream_id, component_id);
+    GST_WARNING_OBJECT (agent,
+        "%u/%u: end-of-candidates unknown stream/component", stream_id,
+        component_id);
   }
 
   agent_unlock (agent);
@@ -3368,8 +3371,7 @@ done:
   agent_unlock (agent);
 }
 
-NICEAPI_EXPORT
-const char *
+NICEAPI_EXPORT const char *
 nice_component_state_to_string (NiceComponentState state)
 {
   return component_state_to_string (state);
