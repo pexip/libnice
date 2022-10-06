@@ -429,6 +429,22 @@ gst_nice_src_read_callback (NiceAgent *agent,
   g_main_loop_quit (nicesrc->mainloop);
 }
 
+static void
+gst_nice_src_read_multiple_callback (NiceAgent *agent,
+    guint stream_id,
+    guint component_id,
+    gpointer data,
+    const NiceAddress *from,
+    const NiceAddress *to)
+{
+    (void)agent;
+    (void)stream_id;
+    (void)component_id;
+    (void)data;
+    (void)from;
+    (void)to;
+}
+
 static gboolean
 gst_nice_src_unlock_idler (gpointer data)
 {
@@ -727,12 +743,12 @@ gst_nice_src_change_state (GstElement * element, GstStateChange transition)
       else
         {
           nice_agent_attach_recv (src->agent, src->stream_id, src->component_id,
-              src->mainctx, gst_nice_src_read_callback, (gpointer) src);
+              src->mainctx, gst_nice_src_read_callback, gst_nice_src_read_multiple_callback, (gpointer) src);
         }
       break;
     case GST_STATE_CHANGE_READY_TO_NULL:
       nice_agent_attach_recv (src->agent, src->stream_id, src->component_id,
-          src->mainctx, NULL, NULL);
+          src->mainctx, NULL, NULL, NULL);
       break;
     default:
       break;

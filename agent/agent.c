@@ -2368,44 +2368,21 @@ _nice_should_have_padding (NiceCompatibility compatibility)
     return TRUE;
   }
 }
-
-static gint
-_nice_agent_recv (NiceAgent * agent,
+/* Returns whether the buffer is processed (TRUE) or if it should be forwarded
+   to the client (FALSE) */
+static gboolean nice_agent_recv_process(NiceAgent * agent,
+    NiceSocket *socket,
     Stream * stream,
     Component * component,
-    NiceSocket * socket, guint buf_len, gchar * buf, NiceAddress * from)
+    guint buf_len, gchar * buf, NiceAddress * from)
 {
-  gint len;
+  gint len = buf_len;
   GList *item;
   gboolean has_padding = _nice_should_have_padding (agent->compatibility);
   NiceAddress stun_server;
   gboolean found_server = FALSE;
   gchar *stun_server_ip = NULL;
   guint stun_server_port;
-
-  len = nice_socket_recv (socket, from, buf_len, buf);
-
-  if (len <= 0)
-    return len;
-
-#ifndef NDEBUG
-  if (len > 0) {
-    gchar tmpbuf[INET6_ADDRSTRLEN];
-    nice_address_to_string (from, tmpbuf);
-    GST_LOG_OBJECT (agent,
-        "Packet received on local %s socket %u from [%s]:%u (%u octets).",
-        socket_type_to_string (socket->type),
-        socket->fileno ? g_socket_get_fd (socket->fileno) : 0, tmpbuf,
-        nice_address_get_port (from), len);
-  }
-#endif
-
-
-  if ((guint) len > buf_len) {
-    /* buffer is not big enough to accept this packet */
-    /* XXX: test this case */
-    return 0;
-  }
 
   /*
    * If the packet comes from a relayed candidate then let the turn socket
@@ -2478,14 +2455,117 @@ _nice_agent_recv (NiceAgent * agent,
     if (stun_message_validate_buffer_length ((uint8_t *) buf, (size_t) len,
             has_padding) != len) {
       /* If the retval is no 0, its not a valid stun packet, probably data */
-      return len;
+      return TRUE;
     }
 
     if (conn_check_handle_inbound_stun (agent, stream, component, socket,
             from, buf, len))
       /* handled STUN message */
-      return 0;
+      return FALSE;
   }
+  return TRUE;
+
+}
+
+gint
+_nice_agent_recv_multiple (NiceAgent * agent,
+    Stream * stream,
+    Component * component,
+    NiceSocket * socket,
+    gsize *num_buffers_received)
+{
+  gint num_packets_received;
+
+  /* Make sure the agent user has set a mem list interface, and that this socket
+     sopports receiving multiple messages in one call. */
+  if (agent->mem_list_interface == NULL){
+    return -ENOTSUP;
+  }
+
+  if (socket->type != NICE_SOCKET_TYPE_UDP_BSD){
+    return -ENOTSUP;
+  }
+
+  num_packets_received = nice_udp_socket_recvmmsg (socket);
+
+  if (num_packets_received <= 0)
+    return num_packets_received;
+
+  MemlistInterface *memlist_interface = agent->mem_list_interface;
+  NiceMemoryBufferRef *buffers[NICE_UDP_SOCKET_MMSG_TOTAL];
+  NiceAddress from_addresses[NICE_UDP_SOCKET_MMSG_TOTAL];
+  int out_pkt_idx = 0;
+
+  for(int pkt_idx = 0; pkt_idx < num_packets_received; pkt_idx++)
+  {
+    gboolean handled_internally;
+    NiceMemoryBufferRef *retrieved_buffer;
+    retrieved_buffer = nice_udp_socket_packet_retrieve(socket, pkt_idx, &from_addresses[out_pkt_idx]);
+    gsize buf_len = memlist_interface->buffer_size(memlist_interface, retrieved_buffer);
+    char* buf_contents = memlist_interface->buffer_contents(memlist_interface, retrieved_buffer);
+
+#ifndef NDEBUG
+    if (buf_len > 0) {
+      gchar tmpbuf[INET6_ADDRSTRLEN];
+      nice_address_to_string (&from_addresses[out_pkt_idx], tmpbuf);
+      GST_LOG_OBJECT (agent,
+          "Packet received on local %s socket %u from [%s]:%u (%lu octets).",
+          socket_type_to_string (socket->type),
+          socket->fileno ? g_socket_get_fd (socket->fileno) : 0, tmpbuf,
+          nice_address_get_port (&from_addresses[out_pkt_idx]), buf_len);
+    }
+#endif
+    /* Figure out if this is a buffer that we handle internally, or if we should forward it on to the client */
+    handled_internally = nice_agent_recv_process(agent,
+      socket, stream, component, buf_len, buf_contents, &from_addresses[out_pkt_idx]);
+
+    if (handled_internally){
+      /* Unref buffer */
+      memlist_interface->buffer_return(memlist_interface, retrieved_buffer);
+    }
+    else{
+      buffers[out_pkt_idx] = retrieved_buffer;
+
+      out_pkt_idx++;
+    }
+  }
+
+  /* unhandled STUN, pass to client */
+  return out_pkt_idx;
+}
+
+
+static gint
+_nice_agent_recv (NiceAgent * agent,
+    Stream * stream,
+    Component * component,
+    NiceSocket * socket, guint buf_len, gchar * buf, NiceAddress * from)
+{
+  gint len;
+
+  len = nice_socket_recv (socket, from, buf_len, buf);
+
+  if (len <= 0)
+    return len;
+
+#ifndef NDEBUG
+  if (len > 0) {
+    gchar tmpbuf[INET6_ADDRSTRLEN];
+    nice_address_to_string (from, tmpbuf);
+    GST_LOG_OBJECT (agent,
+        "Packet received on local %s socket %u from [%s]:%u (%u octets).",
+        socket_type_to_string (socket->type),
+        socket->fileno ? g_socket_get_fd (socket->fileno) : 0, tmpbuf,
+        nice_address_get_port (from), len);
+  }
+#endif
+  if ((guint) len > buf_len) {
+    /* buffer is not big enough to accept this packet */
+    /* XXX: test this case */
+    return FALSE;
+  }
+
+  nice_agent_recv_process(agent, socket, stream, component, buf_len, buf, from);
 
   /* unhandled STUN, pass to client */
   return len;
@@ -3062,6 +3142,7 @@ nice_agent_attach_recv (NiceAgent * agent,
   ret = TRUE;
 
   component->g_source_io_cb = NULL;
+  component->g_source_io_multiple_cb = NULL;
   component->data = NULL;
   if (component->ctx)
     g_main_context_unref (component->ctx);

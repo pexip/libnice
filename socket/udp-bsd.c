@@ -41,40 +41,25 @@
  * http://en.wikipedia.org/wiki/Berkeley_sockets.)
  */
 
-#define HAVE_RECVMMSG 1
-
-#ifdef HAVE_RECVMMSG
-#define _GNU_SOURCE
-#include <sys/socket.h>
-#endif
-
 #ifdef HAVE_CONFIG_H
 # include "config.h"
 #endif
 
+#include "udp-bsd.h"
 
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
 
+
 #include "agent-priv.h"
 #include "memlist.h"
-#include "udp-bsd.h"
+
 
 
 #ifndef G_OS_WIN32
 #include <unistd.h>
 #endif
-
-#ifdef HAVE_RECVMMSG
-#define MSG_RECEIVE_TIMES 1
-#define MMSG_LEN 32
-#else
-#define MSG_RECEIVE_TIMES 32
-#define MMSG_LEN 1
-#endif
-#define BUFFER_ALLOC_SIZE 1500
-#define MMSG_TOTAL (MSG_RECEIVE_TIMES * MMSG_LEN)
 
 static void socket_close (NiceSocket *sock);
 static gint socket_recv (NiceSocket *sock, NiceAddress *from,
@@ -84,7 +69,7 @@ static gint socket_send (NiceSocket *sock, const NiceAddress *to,
 static gboolean socket_is_reliable (NiceSocket *sock);
 static void socket_recvmmsg_structures_clean_up(NiceSocket *udp_socket);
 
-#ifdef HAVE_RECVMMSG
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
 
 struct _MessageData
 {
@@ -105,7 +90,7 @@ struct UdpBsdSocketPrivate
 {
   NiceAddress niceaddr;
   GSocketAddress *gaddr;
-#ifdef HAVE_RECVMMSG
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
   /* Alloc buffers outside callback, to avoid reallocing buffers for messages
      that are not received. Any messages that are passed along are replaced with
      freshly allocated memory. */
@@ -218,20 +203,15 @@ socket_close (NiceSocket *sock)
 
 }
 
-#ifdef HAVE_RECVMMSG
-gint nice_udp_socket_recvmmsg(NiceSocket *sock, gsize * num_messages_received)
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
+gint nice_udp_socket_recvmmsg(NiceSocket *sock)
 {
   struct UdpBsdSocketPrivate *priv = sock->priv;
 
   int socket_fd = g_socket_get_fd(sock->fileno);
-  gssize result;
+  gssize result =
+          recvmmsg (socket_fd, priv->message_headers, NICE_UDP_SOCKET_MMSG_LEN, MSG_WAITFORONE, NULL);
 
-  if ((result =
-          recvmmsg (socket_fd, priv->message_headers, MMSG_LEN, MSG_WAITFORONE, NULL)) >= 0) {
-    *num_messages_received = result;
-  } else {
-    *num_messages_received = 0;
-  }
   return result;
 }
 #endif
@@ -295,7 +275,7 @@ socket_is_reliable (NiceSocket *sock)
   return FALSE;
 }
 
-#ifdef HAVE_RECVMMSG
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
 
 /* TODO: We need a way to extract and replenish buffers once they have been received */
 
@@ -307,7 +287,7 @@ void nice_udp_socket_interface_set(NiceSocket *udp_socket, MemlistInterface *int
 NiceMemoryBufferRef *nice_udp_socket_packet_retrieve(NiceSocket *udp_socket,
   guint packet_index, NiceAddress *from)
 {
-  g_assert(packet_index < MMSG_TOTAL);
+  g_assert(packet_index < NICE_UDP_SOCKET_MMSG_TOTAL);
   struct UdpBsdSocketPrivate *priv = udp_socket->priv;
   MessageData *message_data = &priv->message_datas[packet_index];
   nice_address_set_from_sockaddr (from, (struct sockaddr *)&message_data->remote);
@@ -329,7 +309,7 @@ void nice_udp_socket_buffers_and_interface_unref(NiceSocket *udp_socket)
 {
   struct UdpBsdSocketPrivate *priv = udp_socket->priv;
   MemlistInterface *memory_interface = priv->interface;
-  for(int i = 0; i < MMSG_TOTAL; i++)
+  for(int i = 0; i < NICE_UDP_SOCKET_MMSG_TOTAL; i++)
   {
     MessageData* msgdata = &(priv->message_datas[i]);
     struct mmsghdr *message_header = &(priv->message_headers[i]);
@@ -373,7 +353,7 @@ static void socket_recvmmsg_structures_fill_entry_with_buffer(MemlistInterface *
 {
   if (message_data->buffer == NULL)
   {
-    message_data->buffer = memory_interface->buffer_get(memory_interface, BUFFER_ALLOC_SIZE);
+    message_data->buffer = memory_interface->buffer_get(memory_interface, NICE_UDP_SOCKET_BUFFER_ALLOC_SIZE);
   }
 
   gsize buffer_size = memory_interface->buffer_size(memory_interface, message_data->buffer);
@@ -388,7 +368,7 @@ static void socket_recvmmsg_structures_set_up(NiceSocket *udp_socket)
   struct UdpBsdSocketPrivate *priv = udp_socket->priv;
   MemlistInterface *memory_interface = priv->interface;
 
-  for(int i = 0; i < MMSG_TOTAL; i++)
+  for(int i = 0; i < NICE_UDP_SOCKET_MMSG_TOTAL; i++)
   {
     MessageData *message_data = &priv->message_datas[i];
     struct mmsghdr *hdr = &priv->message_headers[i];
@@ -415,7 +395,7 @@ static void socket_recvmmsg_structures_fill_new_buffers(NiceSocket *udp_socket, 
   struct UdpBsdSocketPrivate *priv = udp_socket->priv;
   MemlistInterface *memory_interface = priv->interface;
   g_assert(iter_start < iter_end);
-  g_assert(iter_end < MMSG_TOTAL);
+  g_assert(iter_end < NICE_UDP_SOCKET_MMSG_TOTAL);
   g_assert(memory_interface != NULL);
 
   for(int i = iter_start; i < iter_end; i++)

@@ -1,4 +1,4 @@
-install_headers('nice.h', 'niceconfig.h', subdir : 'nice')
+install_headers('nice.h', 'niceconfig.h', 'memlist.h', subdir : 'nice')
 
 pkg_install_dir = join_paths(get_option('libdir'), 'pkgconfig')
 pkgconf = configuration_data()
