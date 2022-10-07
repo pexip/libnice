@@ -128,7 +128,7 @@ struct _NiceAgent
   gchar *software_attribute;       /* SOFTWARE attribute */
   gboolean reliable;               /* property: reliable */
 
-  MemlistInterface *mem_list_interface; /* property: mem_list_interface */
+  MemlistInterface **mem_list_interface; /* property: mem_list_interface */
   /* XXX: add pointer to internal data struct for ABI-safe extensions */
 };
 

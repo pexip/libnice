@@ -80,8 +80,9 @@ struct _MessageData
 };
 typedef struct _MessageData MessageData;
 
-static void socket_recvmmsg_structures_fill_entry_with_buffer(MemlistInterface *memory_interface,
+static void socket_recvmmsg_structures_fill_entry_with_buffer(MemlistInterface **memory_interface,
   MessageData *message_data, struct mmsghdr *hdr);
+/* TODO: Use those where appropriate */
 static void socket_recvmmsg_structures_set_up(NiceSocket *udp_socket);
 #endif
 
@@ -98,7 +99,7 @@ struct UdpBsdSocketPrivate
   /* This is stored outside the MessageData struct as  this must be in a
      continous list to be able to be passed to recvmmsg */
   struct mmsghdr *message_headers;
-  MemlistInterface *interface;
+  MemlistInterface **interface;
 #endif
 };
 
@@ -178,6 +179,9 @@ nice_udp_bsd_socket_new (NiceAddress *addr)
   sock->is_reliable = socket_is_reliable;
   sock->close = socket_close;
   sock->attach = NULL;
+
+  priv->message_datas = NULL;
+  priv->message_headers = NULL;
 
   return sock;
 }
@@ -279,9 +283,11 @@ socket_is_reliable (NiceSocket *sock)
 
 /* TODO: We need a way to extract and replenish buffers once they have been received */
 
-void nice_udp_socket_interface_set(NiceSocket *udp_socket, MemlistInterface *interface){
+void nice_udp_socket_interface_set(NiceSocket *udp_socket, MemlistInterface **interface){
   struct UdpBsdSocketPrivate *priv = udp_socket->priv;
   g_assert(priv->interface == NULL);
+  priv->interface = interface;
+  socket_recvmmsg_structures_set_up(udp_socket);
 }
 
 NiceMemoryBufferRef *nice_udp_socket_packet_retrieve(NiceSocket *udp_socket,
@@ -308,7 +314,8 @@ NiceMemoryBufferRef *nice_udp_socket_packet_retrieve(NiceSocket *udp_socket,
 void nice_udp_socket_buffers_and_interface_unref(NiceSocket *udp_socket)
 {
   struct UdpBsdSocketPrivate *priv = udp_socket->priv;
-  MemlistInterface *memory_interface = priv->interface;
+  MemlistInterface **memory_interface_ptr = priv->interface;
+  MemlistInterface *memory_interface = *memory_interface_ptr;
   for(int i = 0; i < NICE_UDP_SOCKET_MMSG_TOTAL; i++)
   {
     MessageData* msgdata = &(priv->message_datas[i]);
@@ -316,14 +323,14 @@ void nice_udp_socket_buffers_and_interface_unref(NiceSocket *udp_socket)
 
     if (msgdata != NULL){
       if (msgdata->buffer != NULL){
-        memory_interface->buffer_return(memory_interface, msgdata->buffer);
+        memory_interface->buffer_return(memory_interface_ptr, msgdata->buffer);
       }
       msgdata->iovec.iov_len = 0;
       msgdata->iovec.iov_base = NULL;
 
       memset(message_header, 0, sizeof(struct mmsghdr));
 
-      memory_interface->buffer_return(memory_interface, priv->message_datas[i].buffer);
+      memory_interface->buffer_return(memory_interface_ptr, priv->message_datas[i].buffer);
       priv->message_datas[i].buffer = NULL;
     }
   }
@@ -348,17 +355,18 @@ static void socket_recvmmsg_structures_clean_up(NiceSocket *udp_socket)
      interface, but rather piggybacks the ownership of the agent */
 }
 
-static void socket_recvmmsg_structures_fill_entry_with_buffer(MemlistInterface *memory_interface,
+static void socket_recvmmsg_structures_fill_entry_with_buffer(MemlistInterface **memory_interface_ptr,
   MessageData *message_data, struct mmsghdr *hdr)
 {
+  MemlistInterface *memory_interface = *memory_interface_ptr;
   if (message_data->buffer == NULL)
   {
-    message_data->buffer = memory_interface->buffer_get(memory_interface, NICE_UDP_SOCKET_BUFFER_ALLOC_SIZE);
+    message_data->buffer = memory_interface->buffer_get(memory_interface_ptr, NICE_UDP_SOCKET_BUFFER_ALLOC_SIZE);
   }
 
-  gsize buffer_size = memory_interface->buffer_size(memory_interface, message_data->buffer);
+  gsize buffer_size = memory_interface->buffer_size(memory_interface_ptr, message_data->buffer);
   message_data->iovec.iov_len = buffer_size;
-  message_data->iovec.iov_base = memory_interface->buffer_contents(memory_interface, message_data->buffer);
+  message_data->iovec.iov_base = memory_interface->buffer_contents(memory_interface_ptr, message_data->buffer);
   hdr->msg_len = buffer_size;
 
 }
@@ -366,7 +374,7 @@ static void socket_recvmmsg_structures_fill_entry_with_buffer(MemlistInterface *
 static void socket_recvmmsg_structures_set_up(NiceSocket *udp_socket)
 {
   struct UdpBsdSocketPrivate *priv = udp_socket->priv;
-  MemlistInterface *memory_interface = priv->interface;
+  MemlistInterface **memory_interface = priv->interface;
 
   for(int i = 0; i < NICE_UDP_SOCKET_MMSG_TOTAL; i++)
   {
@@ -390,10 +398,10 @@ static void socket_recvmmsg_structures_set_up(NiceSocket *udp_socket)
   }
 }
 
-static void socket_recvmmsg_structures_fill_new_buffers(NiceSocket *udp_socket, guint iter_start, guint iter_end)
+void nice_udp_socket_recvmmsg_structures_fill_new_buffers(NiceSocket *udp_socket, guint iter_start, guint iter_end)
 {
   struct UdpBsdSocketPrivate *priv = udp_socket->priv;
-  MemlistInterface *memory_interface = priv->interface;
+  MemlistInterface **memory_interface = priv->interface;
   g_assert(iter_start < iter_end);
   g_assert(iter_end < NICE_UDP_SOCKET_MMSG_TOTAL);
   g_assert(memory_interface != NULL);

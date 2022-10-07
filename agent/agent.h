@@ -271,6 +271,9 @@ typedef void (*NiceAgentRecvFunc) (
  * @component_id: The id of the component of the stream
  *        which received the data
  * @num_buffers: Count of buffers retrieved
+ * @buffers: Pointers to received buffers (of num_buffers length)
+ * @from: Pointers to from addresses (of num_buffers length)
+ * @to: Ponter to to address (i.e addr of agent, of 1 length)
  * @user_data: The user data set in nice_agent_attach_recv()
  *
  * Callback function when data is received on a component
@@ -280,7 +283,7 @@ typedef void (*NiceAgentRecvFunc) (
  */
 typedef void (*NiceAgentRecvMultipleFunc) (
   NiceAgent *agent, guint stream_id, guint component_id, guint num_buffers,
-  gpointer user_data);
+  NiceMemoryBufferRef **buffers, const NiceAddress *from, const NiceAddress *to, gpointer user_data);
 
 /* This function should only be called inside the NiceAgentRecvMultipleFunc callback */
 NICE_EXPORT NiceMemoryBufferRef *nice_agent_memory_buffer_retrieve(NiceAgent *agent,

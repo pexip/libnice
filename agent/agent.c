@@ -566,7 +566,7 @@ nice_agent_class_init (NiceAgentClass * klass)
   g_object_class_install_property (gobject_class, PROP_MEM_LIST_INTERFACE,
       g_param_spec_pointer ("mem-list-interface",
           "Memory list interface",
-          "Interface for allocating and releasing memory buffers",
+          "Interface for allocating and releasing memory buffers (should be a double ptr)",
           G_PARAM_CONSTRUCT_ONLY));
 
   /* install signals */
@@ -2467,17 +2467,19 @@ static gboolean nice_agent_recv_process(NiceAgent * agent,
 
 }
 
+/* Buffers and addresses should be of at least NICE_UDP_SOCKET_MMSG_TOTAL size */
 gint
 _nice_agent_recv_multiple (NiceAgent * agent,
     Stream * stream,
     Component * component,
     NiceSocket * socket,
-    gsize *num_buffers_received)
+    NiceMemoryBufferRef ** buffers,
+    NiceAddress * from_addresses)
 {
   gint num_packets_received;
 
   /* Make sure the agent user has set a mem list interface, and that this socket
-     sopports receiving multiple messages in one call. */
+     supports receiving multiple messages in one call. */
   if (agent->mem_list_interface == NULL){
     return -ENOTSUP;
   }
@@ -2492,8 +2494,6 @@ _nice_agent_recv_multiple (NiceAgent * agent,
     return num_packets_received;
 
   MemlistInterface *memlist_interface = agent->mem_list_interface;
-  NiceMemoryBufferRef *buffers[NICE_UDP_SOCKET_MMSG_TOTAL];
-  NiceAddress from_addresses[NICE_UDP_SOCKET_MMSG_TOTAL];
   int out_pkt_idx = 0;
 
   for(int pkt_idx = 0; pkt_idx < num_packets_received; pkt_idx++)
@@ -2529,6 +2529,8 @@ _nice_agent_recv_multiple (NiceAgent * agent,
       out_pkt_idx++;
     }
   }
+
+  nice_udp_socket_recvmmsg_structures_fill_new_buffers(socket, 0, num_packets_received);
 
   /* unhandled STUN, pass to client */
   return out_pkt_idx;
@@ -2997,8 +2999,6 @@ nice_agent_g_source_cb (GSocket * gsocket,
   NiceAgent *agent = ctx->agent;
   Stream *stream = ctx->stream;
   Component *component = ctx->component;
-  NiceAddress from;
-  gchar buf[MAX_BUFFER_SIZE];
   gint len;
 
   agent_lock (agent);
@@ -3008,27 +3008,67 @@ nice_agent_g_source_cb (GSocket * gsocket,
     return FALSE;
   }
 
-  len = _nice_agent_recv (agent, stream, component, ctx->socket,
-      MAX_BUFFER_SIZE, buf, &from);
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
+  if (component->g_source_io_multiple_cb){
+    NiceMemoryBufferRef *buffers[NICE_UDP_SOCKET_MMSG_TOTAL];
+    NiceAddress from_addresses[NICE_UDP_SOCKET_MMSG_TOTAL];
 
-  if (len > 0 && component->g_source_io_cb) {
-    gpointer data = component->data;
-    gint sid = stream->id;
-    gint cid = component->id;
-    NiceAgentRecvFunc callback = component->g_source_io_cb;
-    /* Unlock the agent before calling the callback */
-    agent_unlock (agent);
-    callback (agent, sid, cid, len, buf, data, &from, &ctx->socket->addr);
-    goto done;
-  } else if (len < 0) {
-    GSource *source = ctx->source;
+    len = _nice_agent_recv_multiple(agent, stream, component, ctx->socket,
+      buffers, from_addresses);
 
-    GST_WARNING_OBJECT (agent, "_nice_agent_recv returned %d, errno (%d) : %s",
-        len, errno, g_strerror (errno));
-    component->gsources = g_slist_remove (component->gsources, source);
-    g_source_destroy (source);
-    g_source_unref (source);
+    if (len > 0) {
+      gpointer data = component->data;
+      gint sid = stream->id;
+      gint cid = component->id;
+      NiceAgentRecvMultipleFunc callback = component->g_source_io_multiple_cb;
+      /* Unlock the agent before calling the callback */
+      agent_unlock (agent);
+      callback (agent, sid, cid, len, buffers, from_addresses,
+        &ctx->socket->addr, data);
+      goto done;
+    } else if (len < 0 && len != -ENOTSUP) {
+      /* If ENOTSUP is received, try to call the non mmsg receive function */
+      GSource *source = ctx->source;
+
+      GST_WARNING_OBJECT (agent, "_nice_agent_recv_multiple returned %d, errno (%d) : %s",
+          len, errno, g_strerror (errno));
+      component->gsources = g_slist_remove (component->gsources, source);
+      g_source_destroy (source);
+      g_source_unref (source);
+      /* If a unknown error is received, skip the non mmsg receive function,
+         by unlocking the agent and going to done. */
+      agent_unlock(agent);
+      goto done;
+    }
   }
+#else
+  {
+    NiceAddress from;
+    gchar buf[MAX_BUFFER_SIZE];
+
+    len = _nice_agent_recv (agent, stream, component, ctx->socket,
+        MAX_BUFFER_SIZE, buf, &from);
+
+    if (len > 0 && component->g_source_io_cb) {
+      gpointer data = component->data;
+      gint sid = stream->id;
+      gint cid = component->id;
+      NiceAgentRecvFunc callback = component->g_source_io_cb;
+      /* Unlock the agent before calling the callback */
+      agent_unlock (agent);
+      callback (agent, sid, cid, len, buf, data, &from, &ctx->socket->addr);
+      goto done;
+    } else if (len < 0) {
+      GSource *source = ctx->source;
+
+      GST_WARNING_OBJECT (agent, "_nice_agent_recv returned %d, errno (%d) : %s",
+          len, errno, g_strerror (errno));
+      component->gsources = g_slist_remove (component->gsources, source);
+      g_source_destroy (source);
+      g_source_unref (source);
+    }
+  }
+#endif
 
   agent_unlock (agent);
 

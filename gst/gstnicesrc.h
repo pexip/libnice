@@ -44,6 +44,7 @@
 #include <nice/nice.h>
 
 G_BEGIN_DECLS
+#define GST_NICE_SRC_MEM_BUFFERS_PREALLOCATED 32
 
 #define GST_TYPE_NICE_SRC \
   (gst_nice_src_get_type())
@@ -60,6 +61,25 @@ G_BEGIN_DECLS
 
 typedef struct _GstNiceSrc GstNiceSrc;
 
+typedef struct _GstNiceSrcMemoryBufferRef GstNiceSrcMemoryBufferRef;
+
+struct _GstNiceSrcMemoryBufferRef{
+  GstBuffer *buffer;
+  GstMapInfo buf_map;
+};
+
+struct _GstNiceMemlistInterface{
+  /* This must be first in struct for upcasts to work */
+  const MemlistInterface *function_interface;
+  /* When embedded in GstNiceSrc this will be a self referencing pointer,
+    that is not refcounted */
+  GstNiceSrc *gst_src;
+  /* Pointers to  GstNiceSrcMemoryBufferRefs that have been returned that are 
+     waiting to be given out again. It is assumed that the buffer and mapping 
+     refed to by the reference is in an unintitialised state */
+  GArray *temp_refs;
+};
+
 struct _GstNiceSrc
 {
   GstPushSrc parent;
@@ -74,6 +94,7 @@ struct _GstNiceSrc
   GSource *idle_source;
   GstCaps *caps;
   GHashTable *socket_addresses;
+  struct _GstNiceMemlistInterface mem_list_interface;
 };
 
 typedef struct _GstNiceSrcClass GstNiceSrcClass;

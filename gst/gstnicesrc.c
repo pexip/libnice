@@ -41,11 +41,7 @@
 #include <string.h>
 
 #include "gstnicesrc.h"
-#if GST_CHECK_VERSION (1,0,0)
 #include <gst/net/gstnetaddressmeta.h>
-#else
-#include <gst/netbuffer/gstnetbuffer.h>
-#endif
 
 GST_DEBUG_CATEGORY_STATIC (nicesrc_debug);
 #define GST_CAT_DEFAULT nicesrc_debug
@@ -92,6 +88,21 @@ static GstStateChangeReturn
 gst_nice_src_change_state (
     GstElement * element,
     GstStateChange transition);
+
+
+static void gst_nice_src_mem_buffer_ref_array_clear(void *element);
+
+NiceMemoryBufferRef* gst_nice_src_buffer_get(MemlistInterface **interface, gsize size);
+void gst_nice_src_buffer_return(MemlistInterface **interface, NiceMemoryBufferRef* buffer);
+char* gst_nice_src_buffer_contents(MemlistInterface **interface, NiceMemoryBufferRef* buffer);
+gsize gst_nice_src_buffer_size(MemlistInterface **interface, NiceMemoryBufferRef* buffer);
+
+static const MemlistInterface nice_src_mem_interface = {
+    .buffer_get = gst_nice_src_buffer_get,
+    .buffer_return = gst_nice_src_buffer_return,
+    .buffer_contents = gst_nice_src_buffer_contents,
+    .buffer_size = gst_nice_src_buffer_size,
+};
 
 static GstStaticPadTemplate gst_nice_src_src_template =
 GST_STATIC_PAD_TEMPLATE (
@@ -178,11 +189,7 @@ gst_nice_src_class_init (GstNiceSrcClass *klass)
 
   gst_element_class_add_pad_template (gstelement_class,
       gst_static_pad_template_get (&gst_nice_src_src_template));
-#if GST_CHECK_VERSION (1,0,0)
   gst_element_class_set_metadata (gstelement_class,
-#else
-  gst_element_class_set_details_simple (gstelement_class,
-#endif
       "ICE source",
       "Source",
       "Interactive UDP connectivity establishment",
@@ -345,8 +352,29 @@ gst_nice_src_init (GstNiceSrc *src)
                                                 gst_nice_src_nice_address_compare,
                                                 gst_nice_src_destroy_hash_key,
                                                 gst_object_unref);
+  src->mem_list_interface.function_interface = &nice_src_mem_interface;
+  src->mem_list_interface.gst_src = src;
+  src->mem_list_interface.temp_refs = g_array_sized_new(FALSE, TRUE,
+    sizeof(GstNiceSrcMemoryBufferRef*), GST_NICE_SRC_MEM_BUFFERS_PREALLOCATED);
+  g_array_set_clear_func(src->mem_list_interface.temp_refs, &gst_nice_src_mem_buffer_ref_array_clear);
 }
 
+static void gst_nice_buffer_address_meta_add(
+    GstNiceSrc *nicesrc,
+    const NiceAddress *from,
+    GstBuffer* buffer
+  ){
+   if (from != NULL) {
+    GSocketAddress * saddr = gst_nice_src_gsocket_addr_create_or_retrieve(
+      nicesrc, from);
+    if (saddr != NULL) {
+      gst_buffer_add_net_address_meta (buffer, saddr);
+      g_object_unref (saddr);
+    } else {
+      GST_ERROR_OBJECT (nicesrc, "Could not convert address to GSocketAddress");
+    }
+  }
+}
 static void
 gst_nice_src_read_callback (NiceAgent *agent,
     guint stream_id,
@@ -360,9 +388,6 @@ gst_nice_src_read_callback (NiceAgent *agent,
   GstBaseSrc *basesrc = GST_BASE_SRC (data);
   GstNiceSrc *nicesrc = GST_NICE_SRC (basesrc);
   GstBaseSrcClass *bclass = GST_BASE_SRC_GET_CLASS (basesrc);
-#if !GST_CHECK_VERSION (1,0,0)
-  GstNetBuffer *netbuffer = NULL;
-#endif
   GstBuffer *buffer = NULL;
 
   (void)stream_id;
@@ -370,7 +395,6 @@ gst_nice_src_read_callback (NiceAgent *agent,
 
   GST_LOG_OBJECT (agent, "Got buffer, getting out of the main loop");
 
-#if GST_CHECK_VERSION (1,0,0)
   (void)to;
   GstFlowReturn status = bclass->alloc(basesrc, 0, len, &buffer);
   if (status != GST_FLOW_OK)
@@ -381,68 +405,48 @@ gst_nice_src_read_callback (NiceAgent *agent,
   }
   gst_buffer_fill (buffer, 0, buf, len);
 
-  if (from != NULL) {
-    GSocketAddress * saddr = gst_nice_src_gsocket_addr_create_or_retrieve(
-      nicesrc, from);
-    if (saddr != NULL) {
-      gst_buffer_add_net_address_meta (buffer, saddr);
-      g_object_unref (saddr);
-    } else {
-      GST_ERROR_OBJECT (nicesrc, "Could not convert address to GSocketAddress");
-    }
-  }
-#else
-  if (from != NULL && to != NULL) {
-    netbuffer = gst_netbuffer_new();
+  gst_nice_buffer_address_meta_add(nicesrc, from, buffer);
 
-    GST_BUFFER_DATA(netbuffer) = g_memdup(buf, len);
-    GST_BUFFER_MALLOCDATA(netbuffer) = GST_BUFFER_DATA(netbuffer);
-    GST_BUFFER_SIZE(netbuffer) = len;
-
-    switch (from->s.addr.sa_family) {
-    case AF_INET:
-      {
-        gst_netaddress_set_ip4_address (&netbuffer->from, from->s.ip4.sin_addr.s_addr, from->s.ip4.sin_port);
-        gst_netaddress_set_ip4_address (&netbuffer->to, to->s.ip4.sin_addr.s_addr, to->s.ip4.sin_port);
-      }
-      break;
-    case AF_INET6:
-      {
-        gst_netaddress_set_ip6_address (&netbuffer->from, (guint8 *)(&from->s.ip6.sin6_addr), from->s.ip6.sin6_port);
-        gst_netaddress_set_ip6_address (&netbuffer->to, (guint8 *)(&to->s.ip6.sin6_addr), to->s.ip6.sin6_port);
-      }
-      break;
-    default:
-      GST_ERROR_OBJECT (nicesrc, "Unknown address family");
-      break;
-    }
-
-
-    buffer = GST_BUFFER_CAST(netbuffer);
-  } else {
-    buffer = gst_buffer_new_and_alloc (len);
-    memcpy (GST_BUFFER_DATA (buffer), buf, len);
-  }
-#endif
   g_queue_push_tail (nicesrc->outbufs, buffer);
 
   g_main_loop_quit (nicesrc->mainloop);
 }
 
+/* typedef void (*NiceAgentRecvMultipleFunc) (
+  NiceAgent *agent, guint stream_id, guint component_id,
+  guint num_buffers,
+  NiceMemoryBufferRef **buffers, const NiceAddress *from, const NiceAddress *to, gpointer user_data);
+*/
+/* NB: This function does not support pre 1.0 gstreamer */
 static void
 gst_nice_src_read_multiple_callback (NiceAgent *agent,
     guint stream_id,
     guint component_id,
-    gpointer data,
+    guint num_buffers,
+    NiceMemoryBufferRef **buffers,
     const NiceAddress *from,
-    const NiceAddress *to)
+    const NiceAddress *to,
+    gpointer data)
 {
-    (void)agent;
-    (void)stream_id;
-    (void)component_id;
-    (void)data;
-    (void)from;
-    (void)to;
+  /*(void)agent;
+  (void)stream_id;
+  (void)component_id;
+  (void)data;
+  (void)from;
+  (void)to;*/
+  GstBaseSrc *basesrc = GST_BASE_SRC (data);
+  GstNiceSrc *nicesrc = GST_NICE_SRC (basesrc);
+
+  GstBufferList *outlist = gst_buffer_list_new_sized (num_buffers);
+  for (int i = 0; i < num_buffers; ++i) {
+    GstNiceSrcMemoryBufferRef *buffer_ref = (GstNiceSrcMemoryBufferRef*)&buffers[i];
+    GstBuffer *gbuffer = buffer_ref->buffer;
+    gst_buffer_unmap(gbuffer, &(buffer_ref->buf_map));
+    gst_nice_buffer_address_meta_add(nicesrc, &from[i], gbuffer);
+    gst_buffer_list_insert (outlist, -1, gbuffer);
+    buffer_ref->buffer = NULL;
+    gst_nice_src_buffer_return((MemlistInterface**)&(nicesrc->mem_list_interface.function_interface), buffer_ref);
+  }
 }
 
 static gboolean
@@ -554,11 +558,7 @@ gst_nice_src_create (
   GST_OBJECT_LOCK (basesrc);
   if (nicesrc->unlocked) {
     GST_OBJECT_UNLOCK (basesrc);
-#if GST_CHECK_VERSION (1,0,0)
     return GST_FLOW_FLUSHING;
-#else
-    return GST_FLOW_WRONG_STATE;
-#endif
   }
   GST_OBJECT_UNLOCK (basesrc);
 
@@ -571,11 +571,7 @@ gst_nice_src_create (
     return GST_FLOW_OK;
   } else {
     GST_LOG_OBJECT (nicesrc, "Got interrupting, returning wrong-state");
-#if GST_CHECK_VERSION (1,0,0)
     return GST_FLOW_FLUSHING;
-#else
-    return GST_FLOW_WRONG_STATE;
-#endif
   }
 
 }
@@ -595,6 +591,14 @@ gst_nice_src_dispose (GObject *object)
     g_object_unref (src->agent);
   src->agent = NULL;
 
+  if (src->mem_list_interface.temp_refs){
+    GArray *temp_refs = src->mem_list_interface.temp_refs;
+    /* Clean up all elements in array */
+    for(int i=temp_refs->len-1;i==0; i--)
+    {
+      g_array_remove_index(temp_refs, i);
+    }
+  }
   if (src->mainloop)
     g_main_loop_unref (src->mainloop);
   src->mainloop = NULL;
@@ -758,4 +762,63 @@ gst_nice_src_change_state (GstElement * element, GstStateChange transition)
       transition);
 
   return ret;
+}
+
+NiceMemoryBufferRef* gst_nice_src_buffer_ref_allocate(MemlistInterface **interface){
+  struct _GstNiceMemlistInterface *mem_list_interface = (struct _GstNiceMemlistInterface *)interface;
+
+  GstNiceSrcMemoryBufferRef* ref;
+  if (mem_list_interface->temp_refs->len > 0)
+  {
+    /* Use an existing allocated reference */
+    int last_index = mem_list_interface->temp_refs->len-1;
+    ref = (GstNiceSrcMemoryBufferRef*) g_array_index(mem_list_interface->temp_refs, GstNiceSrcMemoryBufferRef*, last_index);
+    g_array_remove_index(mem_list_interface->temp_refs, last_index);
+  }
+  else{
+    /* No existing elements are stored, allocate a new one */
+    ref = g_new0(GstNiceSrcMemoryBufferRef, 1);
+  }
+  g_assert_cmpint((gsize)ref, !=, (gsize)NULL);
+  return ref;
+}
+
+NiceMemoryBufferRef* gst_nice_src_buffer_get(MemlistInterface **interface, gsize size){
+  struct _GstNiceMemlistInterface *mem_list_interface = (struct _GstNiceMemlistInterface *)interface;
+
+  GstBaseSrc *basesrc = GST_BASE_SRC (mem_list_interface->gst_src);
+  //GstNiceSrc *nicesrc = GST_NICE_SRC (basesrc);
+  GstBaseSrcClass *bclass = GST_BASE_SRC_GET_CLASS (basesrc);
+
+  GstNiceSrcMemoryBufferRef *ref = gst_nice_src_buffer_ref_allocate(interface);
+  GstBuffer *buffer = NULL;
+  GstFlowReturn status = bclass->alloc(basesrc, 0, size, &buffer);
+  g_assert_cmpint(status, ==, GST_FLOW_OK);
+
+  gboolean mapped = gst_buffer_map (ref->buffer, &ref->buf_map,
+      GST_MAP_WRITE | GST_MAP_READ);
+  g_assert(mapped);
+
+  return (NiceMemoryBufferRef*) ref;
+}
+void gst_nice_src_buffer_return(MemlistInterface **interface, NiceMemoryBufferRef* buffer){
+  /* TODO: Implement */
+
+}
+char* gst_nice_src_buffer_contents(MemlistInterface **interface, NiceMemoryBufferRef* buffer){
+  GstNiceSrcMemoryBufferRef *buffer_ref = (GstNiceSrcMemoryBufferRef*)buffer;
+  return (char*) buffer_ref->buf_map.data;
+}
+gsize gst_nice_src_buffer_size(MemlistInterface **interface, NiceMemoryBufferRef* buffer){
+  GstNiceSrcMemoryBufferRef *buffer_ref = (GstNiceSrcMemoryBufferRef*)buffer;
+  return buffer_ref->buf_map.size;
+}
+
+/* Only to be used as a clear function for the temp_refs array, which contains uninitialised refs */
+static void gst_nice_src_mem_buffer_ref_array_clear(void *element){
+  GstNiceSrcMemoryBufferRef **ref = (GstNiceSrcMemoryBufferRef**)element;
+  if (ref != NULL){
+    g_free(*ref);
+    *ref = NULL;
+  }
 }
