@@ -105,7 +105,7 @@ struct _NiceAgent
   gboolean aggressive_mode;        /* property: use aggressive nomination when controller */
   guint regular_nomination_timeout; /* property: timeout (ms) before regular nomination starts nominating non-optimal media paths */
 
-  GSList *local_addresses;        /* list of NiceAddresses for loca
+  GSList *local_addresses;        /* list of NiceAddresses for local
                                      interfaces */
   GSList *streams;                /* list of Stream objects */
   GMainContext *main_context;     /* main context pointer */

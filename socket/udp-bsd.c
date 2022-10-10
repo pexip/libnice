@@ -315,23 +315,26 @@ void nice_udp_socket_buffers_and_interface_unref(NiceSocket *udp_socket)
 {
   struct UdpBsdSocketPrivate *priv = udp_socket->priv;
   MemlistInterface **memory_interface_ptr = priv->interface;
-  MemlistInterface *memory_interface = *memory_interface_ptr;
-  for(int i = 0; i < NICE_UDP_SOCKET_MMSG_TOTAL; i++)
+  if(memory_interface_ptr != NULL)
   {
-    MessageData* msgdata = &(priv->message_datas[i]);
-    struct mmsghdr *message_header = &(priv->message_headers[i]);
+    MemlistInterface *memory_interface = *memory_interface_ptr;
+    for(int i = 0; i < NICE_UDP_SOCKET_MMSG_TOTAL; i++)
+    {
+      MessageData* msgdata = &(priv->message_datas[i]);
+      struct mmsghdr *message_header = &(priv->message_headers[i]);
 
-    if (msgdata != NULL){
-      if (msgdata->buffer != NULL){
-        memory_interface->buffer_return(memory_interface_ptr, msgdata->buffer);
+      if (msgdata != NULL){
+        if (msgdata->buffer != NULL){
+          memory_interface->buffer_return(memory_interface_ptr, msgdata->buffer);
+        }
+        msgdata->iovec.iov_len = 0;
+        msgdata->iovec.iov_base = NULL;
+
+        memset(message_header, 0, sizeof(struct mmsghdr));
+
+        memory_interface->buffer_return(memory_interface_ptr, priv->message_datas[i].buffer);
+        priv->message_datas[i].buffer = NULL;
       }
-      msgdata->iovec.iov_len = 0;
-      msgdata->iovec.iov_base = NULL;
-
-      memset(message_header, 0, sizeof(struct mmsghdr));
-
-      memory_interface->buffer_return(memory_interface_ptr, priv->message_datas[i].buffer);
-      priv->message_datas[i].buffer = NULL;
     }
   }
   /* Currently we don't manage buffers when not recvmmsg is supported.

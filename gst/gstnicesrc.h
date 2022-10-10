@@ -78,6 +78,11 @@ struct _GstNiceMemlistInterface{
      waiting to be given out again. It is assumed that the buffer and mapping 
      refed to by the reference is in an unintitialised state */
   GArray *temp_refs;
+  /* Buffer variables needed for allocating and releasing buffers trough a pool */
+  GstAllocator *allocator;
+  GstAllocationParams params;
+  GstBufferPool *pool;
+
 };
 
 struct _GstNiceSrc

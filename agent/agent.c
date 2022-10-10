@@ -75,7 +75,7 @@
  * will it work tcp relaying??
  */
 #define MAX_BUFFER_SIZE 65536
-#define DEFAULT_STUN_PORT  3478
+#define DEFAULT_STUN_PORT 3478
 #define DEFAULT_UPNP_TIMEOUT 200
 
 #define MAX_TCP_MTU 1400        /* Use 1400 because of VPNs and we assume IEE 802.3 */
@@ -149,7 +149,6 @@ static void priv_detach_stream_component (NiceAgent * agent, Stream * stream,
     Component * component);
 static void mem_list_interface_clean_up_and_replace (NiceAgent * agent,
     MemlistInterface * replacement);
-static void mem_list_interface_propagate (NiceAgent * agent);
 
 void
 agent_lock (NiceAgent * agent)
@@ -1005,11 +1004,13 @@ nice_agent_set_property (GObject * object,
       break;
 
     case PROP_MEM_LIST_INTERFACE:
-      mem_list_interface_clean_up_and_replace (agent,
-          (gpointer) agent->mem_list_interface);
-      /* TODO: The new interface must be passed down to any existing sockets */
-      g_value_set_pointer ((gpointer) agent->mem_list_interface,
-          (gpointer) value);
+      {
+        /* Clean up and propagate new mem_list_interface */
+        MemlistInterface * interface = g_value_get_pointer(value);
+        mem_list_interface_clean_up_and_replace (agent,
+            (gpointer) agent->mem_list_interface);
+        agent->mem_list_interface = interface;
+      }
       break;
 
     case PROP_UPNP_TIMEOUT:

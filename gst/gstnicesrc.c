@@ -48,6 +48,7 @@ GST_DEBUG_CATEGORY_STATIC (nicesrc_debug);
 
 
 #define BUFFER_SIZE (65536)
+//#define BUFFER_SIZE (4096)
 
 static GstFlowReturn
 gst_nice_src_create (
@@ -83,6 +84,8 @@ gst_nice_src_get_property (
 
 static void
 gst_nice_src_dispose (GObject *object);
+static
+void gst_nice_src_clean_up_pool(GstNiceSrc * src);
 
 static GstStateChangeReturn
 gst_nice_src_change_state (
@@ -525,7 +528,6 @@ gst_nice_src_negotiate (GstBaseSrc * basesrc)
   GST_OBJECT_UNLOCK (src);
 
   gst_caps_take (&caps, intersect);
-
   if (!gst_caps_is_empty (caps)) {
     if (gst_caps_is_any (caps)) {
       GST_DEBUG_OBJECT (basesrc, "any caps, negotiation not needed");
@@ -539,11 +541,78 @@ gst_nice_src_negotiate (GstBaseSrc * basesrc)
         result = gst_base_src_set_caps (basesrc, caps);
       }
     }
+
+    // Start pool setup
+    if (src->mem_list_interface.pool) {
+      /* Clean up old pool, unmap all existing memory and allocate new */
+      gst_nice_src_clean_up_pool (src);
+    }
+
+    GstQuery *query = gst_query_new_allocation (caps, TRUE);
+    if (!gst_pad_peer_query (GST_BASE_SRC_PAD(basesrc), query))
+      GST_DEBUG_OBJECT (GST_BASE_SRC_PAD(basesrc), "didn't get downstream ALLOCATION hints");
+
+    if (src->mem_list_interface.allocator != NULL)
+      gst_object_unref (src->mem_list_interface.allocator);
+    if (gst_query_get_n_allocation_params (query) > 0) {
+      gst_query_parse_nth_allocation_param (query, 0,
+          &src->mem_list_interface.allocator, &src->mem_list_interface.params);
+    } else {
+      src->mem_list_interface.allocator = NULL;
+      gst_allocation_params_init (&src->mem_list_interface.params);
+    }
+
+    if (gst_query_get_n_allocation_pools (query) > 0) {
+      GST_DEBUG_OBJECT (GST_BASE_SRC_PAD(basesrc), "Got n allocation pools: %d",
+          gst_query_get_n_allocation_pools (query));
+      gst_query_parse_nth_allocation_pool (query, 0, &src->mem_list_interface.pool, NULL, NULL,
+          NULL);
+    } else {
+      GST_DEBUG_OBJECT (GST_BASE_SRC_PAD(basesrc), "Creating evsrc buffer pool");
+      src->mem_list_interface.pool = gst_buffer_pool_new ();
+    }
+
+    {
+      guint size = BUFFER_SIZE, min = 0, max = 0;
+      GstStructure *config;
+      config = gst_buffer_pool_get_config (src->mem_list_interface.pool);
+      /* Ensure we don't pass unfixed caps to the buffer pool config as that will
+         trigger an assert */
+      GstCaps *poolcaps;
+      if (caps != NULL && gst_caps_is_fixed (caps)) {
+        poolcaps = caps;
+      } else {
+        poolcaps = NULL;
+      }
+      gst_buffer_pool_config_set_params (config, poolcaps, (guint) size, min,
+          max);
+      gst_buffer_pool_config_set_allocator (config, src->mem_list_interface.allocator,
+          &src->mem_list_interface.params);
+      gst_buffer_pool_set_config (src->mem_list_interface.pool, config);
+    }
+    // End pool setup
+
     gst_caps_unref (caps);
   } else {
     GST_DEBUG_OBJECT (basesrc, "no common caps");
   }
   return result;
+}
+
+static void gst_nice_src_clean_up_pool(GstNiceSrc * src)
+{
+  if (src->mem_list_interface.allocator != NULL) {
+    gst_object_unref (src->mem_list_interface.allocator);
+    src->mem_list_interface.allocator = NULL;
+  }
+
+  if (src->mem_list_interface.pool != NULL) {
+    /* The entries that already exists will be with the old pool until they die
+       as we have no way of moving them to the new pool. */
+    gst_buffer_pool_set_active (src->mem_list_interface.pool, FALSE);
+    gst_object_unref (src->mem_list_interface.pool);
+    src->mem_list_interface.pool = NULL;
+  }
 }
 
 static GstFlowReturn
@@ -785,14 +854,12 @@ NiceMemoryBufferRef* gst_nice_src_buffer_ref_allocate(MemlistInterface **interfa
 
 NiceMemoryBufferRef* gst_nice_src_buffer_get(MemlistInterface **interface, gsize size){
   struct _GstNiceMemlistInterface *mem_list_interface = (struct _GstNiceMemlistInterface *)interface;
-
-  GstBaseSrc *basesrc = GST_BASE_SRC (mem_list_interface->gst_src);
-  //GstNiceSrc *nicesrc = GST_NICE_SRC (basesrc);
-  GstBaseSrcClass *bclass = GST_BASE_SRC_GET_CLASS (basesrc);
-
+  GstBufferPoolAcquireParams params = { 0 };
   GstNiceSrcMemoryBufferRef *ref = gst_nice_src_buffer_ref_allocate(interface);
   GstBuffer *buffer = NULL;
-  GstFlowReturn status = bclass->alloc(basesrc, 0, size, &buffer);
+
+  gint status = gst_buffer_pool_acquire_buffer (mem_list_interface->pool, &buffer,
+      &params);
   g_assert_cmpint(status, ==, GST_FLOW_OK);
 
   gboolean mapped = gst_buffer_map (ref->buffer, &ref->buf_map,
@@ -801,10 +868,17 @@ NiceMemoryBufferRef* gst_nice_src_buffer_get(MemlistInterface **interface, gsize
 
   return (NiceMemoryBufferRef*) ref;
 }
-void gst_nice_src_buffer_return(MemlistInterface **interface, NiceMemoryBufferRef* buffer){
-  /* TODO: Implement */
 
+void gst_nice_src_buffer_return(MemlistInterface **interface, NiceMemoryBufferRef* buffer){
+  //struct _GstNiceMemlistInterface *mem_list_interface = (struct _GstNiceMemlistInterface *)interface;
+  GstNiceSrcMemoryBufferRef *buffer_ref = (GstNiceSrcMemoryBufferRef*)buffer;
+
+  /* Return allocated buffer to the pool after it has been used */
+  gst_buffer_unmap (buffer_ref->buffer, &buffer_ref->buf_map);
+  gst_buffer_unref (buffer_ref->buffer);
+  memset (buffer_ref, 0, sizeof (GstNiceSrcMemoryBufferRef));
 }
+
 char* gst_nice_src_buffer_contents(MemlistInterface **interface, NiceMemoryBufferRef* buffer){
   GstNiceSrcMemoryBufferRef *buffer_ref = (GstNiceSrcMemoryBufferRef*)buffer;
   return (char*) buffer_ref->buf_map.data;
