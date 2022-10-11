@@ -707,8 +707,10 @@ gst_nice_src_set_property (
       if (src->agent)
         GST_ERROR_OBJECT (object,
             "Changing the agent on a nice src not allowed");
-      else
+      else{
         src->agent = g_value_dup_object (value);
+         nice_agent_set_mem_list_interface(src->agent, &src->mem_list_interface);
+      }
       break;
 
     case PROP_STREAM:

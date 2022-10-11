@@ -304,6 +304,8 @@ NICE_EXPORT NiceMemoryBufferRef *nice_agent_memory_buffer_retrieve(NiceAgent *ag
 NICE_EXPORT NiceAgent *
 nice_agent_new (GMainContext *ctx, NiceCompatibility compat, NiceCompatibility turn_compat);
 
+NICE_EXPORT void
+nice_agent_set_mem_list_interface(NiceAgent * agent, MemlistInterface *interface);
 
 /**
  * nice_agent_add_local_address: (skip)

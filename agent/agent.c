@@ -562,11 +562,11 @@ nice_agent_class_init (NiceAgentClass * klass)
   g_object_class_install_property (gobject_class, PROP_TIE_BREAKER, g_param_spec_uint64 ("tie-breaker", "Tie breaker value to send in connectivity checks", "Tie breaker value to send in connectivity checks", 0, 0xffffffffffffffffLL, 0,     /* Not construct time so ignored */
           G_PARAM_READWRITE));
 
-  g_object_class_install_property (gobject_class, PROP_MEM_LIST_INTERFACE,
+  /*g_object_class_install_property (gobject_class, PROP_MEM_LIST_INTERFACE,
       g_param_spec_pointer ("mem-list-interface",
           "Memory list interface",
           "Interface for allocating and releasing memory buffers (should be a double ptr)",
-          G_PARAM_CONSTRUCT_ONLY));
+          G_PARAM_CONSTRUCT_ONLY));*/
 
   /* install signals */
 
@@ -806,9 +806,6 @@ nice_agent_get_property (GObject * object,
   agent_lock (agent);
 
   switch (property_id) {
-    case PROP_MEM_LIST_INTERFACE:
-      g_value_set_pointer (value, (gpointer) agent->mem_list_interface);
-      break;
     case PROP_MAIN_CONTEXT:
       g_value_set_pointer (value, agent->main_context);
       break;
@@ -1003,16 +1000,6 @@ nice_agent_set_property (GObject * object,
       agent->proxy_password = g_value_dup_string (value);
       break;
 
-    case PROP_MEM_LIST_INTERFACE:
-      {
-        /* Clean up and propagate new mem_list_interface */
-        MemlistInterface * interface = g_value_get_pointer(value);
-        mem_list_interface_clean_up_and_replace (agent,
-            (gpointer) agent->mem_list_interface);
-        agent->mem_list_interface = interface;
-      }
-      break;
-
     case PROP_UPNP_TIMEOUT:
       break;
 
@@ -1030,6 +1017,12 @@ nice_agent_set_property (GObject * object,
 
   agent_unlock (agent);
 
+}
+
+void nice_agent_set_mem_list_interface(NiceAgent * agent, MemlistInterface *interface){
+  /* Clean up and propagate new mem_list_interface */
+  mem_list_interface_clean_up_and_replace (agent, interface);
+  agent->mem_list_interface = interface;
 }
 
 static void

@@ -379,6 +379,9 @@ static void socket_recvmmsg_structures_set_up(NiceSocket *udp_socket)
   struct UdpBsdSocketPrivate *priv = udp_socket->priv;
   MemlistInterface **memory_interface = priv->interface;
 
+  if (priv->message_headers == 0){
+    priv->message_headers = g_new0(struct mmsghdr, NICE_UDP_SOCKET_MMSG_TOTAL);
+  }
   for(int i = 0; i < NICE_UDP_SOCKET_MMSG_TOTAL; i++)
   {
     MessageData *message_data = &priv->message_datas[i];
