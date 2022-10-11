@@ -2375,9 +2375,9 @@ static gboolean nice_agent_recv_process(NiceAgent * agent,
     NiceSocket *socket,
     Stream * stream,
     Component * component,
-    guint buf_len, gchar * buf, NiceAddress * from)
+    guint *buf_len, gchar * buf, NiceAddress * from)
 {
-  gint len = buf_len;
+  gint len = *buf_len;
   GList *item;
   gboolean has_padding = _nice_should_have_padding (agent->compatibility);
   NiceAddress stun_server;
@@ -2451,6 +2451,7 @@ static gboolean nice_agent_recv_process(NiceAgent * agent,
   }
 
   agent->media_after_tick = TRUE;
+  *buf_len = len;
 
   if (len > 0) {
     if (stun_message_validate_buffer_length ((uint8_t *) buf, (size_t) len,
@@ -2510,17 +2511,21 @@ _nice_agent_recv_multiple (NiceAgent * agent,
       gchar tmpbuf[INET6_ADDRSTRLEN];
       nice_address_to_string (&from_addresses[out_pkt_idx], tmpbuf);
       GST_LOG_OBJECT (agent,
-          "Packet received on local %s socket %u from [%s]:%u (%lu octets).",
+          "Packet received multiple on local %s socket %u from [%s]:%u (%lu octets).",
           socket_type_to_string (socket->type),
           socket->fileno ? g_socket_get_fd (socket->fileno) : 0, tmpbuf,
           nice_address_get_port (&from_addresses[out_pkt_idx]), buf_len);
     }
 #endif
     /* Figure out if this is a buffer that we handle internally, or if we should forward it on to the client */
+    gsize new_len = buf_len;
     handled_internally = nice_agent_recv_process(agent,
-      socket, stream, component, buf_len, buf_contents, &from_addresses[out_pkt_idx]);
+      socket, stream, component, &new_len, buf_contents, &from_addresses[out_pkt_idx]);
 
-    if (handled_internally){
+    if (buf_len != new_len) {
+      memlist_interface->buffer_resize(memlist_interface, retrieved_buffer, new_len); 
+    }
+    if (handled_internally) {
       /* Unref buffer */
       memlist_interface->buffer_return(memlist_interface, retrieved_buffer);
     }
@@ -2568,7 +2573,10 @@ _nice_agent_recv (NiceAgent * agent,
     return FALSE;
   }
 
-  nice_agent_recv_process(agent, socket, stream, component, buf_len, buf, from);
+  if (nice_agent_recv_process(agent, socket, stream, component, &len, buf, from)) {
+    /* Handeled stun, don't pass to the client */
+    return FALSE;
+  }
 
   /* unhandled STUN, pass to client */
   return len;
@@ -3042,7 +3050,6 @@ nice_agent_g_source_cb (GSocket * gsocket,
       goto done;
     }
   }
-#else
   {
     NiceAddress from;
     gchar buf[MAX_BUFFER_SIZE];

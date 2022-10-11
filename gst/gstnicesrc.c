@@ -99,12 +99,15 @@ NiceMemoryBufferRef* gst_nice_src_buffer_get(MemlistInterface **interface, gsize
 void gst_nice_src_buffer_return(MemlistInterface **interface, NiceMemoryBufferRef* buffer);
 char* gst_nice_src_buffer_contents(MemlistInterface **interface, NiceMemoryBufferRef* buffer);
 gsize gst_nice_src_buffer_size(MemlistInterface **interface, NiceMemoryBufferRef* buffer);
+void gst_nice_src_buffer_resize(MemlistInterface **interface,
+  NiceMemoryBufferRef* buffer, gsize new_size);
 
 static const MemlistInterface nice_src_mem_interface = {
     .buffer_get = gst_nice_src_buffer_get,
     .buffer_return = gst_nice_src_buffer_return,
     .buffer_contents = gst_nice_src_buffer_contents,
     .buffer_size = gst_nice_src_buffer_size,
+    .buffer_resize = gst_nice_src_buffer_resize,
 };
 
 static GstStaticPadTemplate gst_nice_src_src_template =
@@ -883,9 +886,24 @@ char* gst_nice_src_buffer_contents(MemlistInterface **interface, NiceMemoryBuffe
   GstNiceSrcMemoryBufferRef *buffer_ref = (GstNiceSrcMemoryBufferRef*)buffer;
   return (char*) buffer_ref->buf_map.data;
 }
+
 gsize gst_nice_src_buffer_size(MemlistInterface **interface, NiceMemoryBufferRef* buffer){
   GstNiceSrcMemoryBufferRef *buffer_ref = (GstNiceSrcMemoryBufferRef*)buffer;
   return buffer_ref->buf_map.size;
+}
+
+void gst_nice_src_buffer_resize(MemlistInterface **interface, NiceMemoryBufferRef* buffer, gsize new_size) {
+  GstNiceSrcMemoryBufferRef *buffer_ref = (GstNiceSrcMemoryBufferRef*)buffer;
+  guint8* data_location;
+  g_assert(new_size <= buffer_ref->buf_map.size);
+  data_location = buffer_ref->buf_map.data;
+  gst_buffer_unmap (buffer_ref->buffer, &buffer_ref->buf_map);
+  gst_buffer_resize(buffer_ref->buffer, 0, new_size);
+  gboolean mapped = gst_buffer_map (buffer_ref->buffer, &buffer_ref->buf_map,
+      GST_MAP_WRITE | GST_MAP_READ);
+  g_assert(mapped);
+  g_assert(buffer_ref->buf_map.data == data_location);
+  g_assert(buffer_ref->buf_map.size == new_size);
 }
 
 /* Only to be used as a clear function for the temp_refs array, which contains uninitialised refs */

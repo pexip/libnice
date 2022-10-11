@@ -52,12 +52,15 @@ typedef void (*nice_memory_buffer_return)(MemlistInterface **interface, NiceMemo
 typedef char* (*nice_memory_buffer_contents)(MemlistInterface **interface, NiceMemoryBufferRef* buffer);
 /* Get the size of the memory buffer */
 typedef gsize (*nice_memory_buffer_size)(MemlistInterface **interface, NiceMemoryBufferRef* buffer);
+/* Reduce the size of the memory buffer */
+typedef void (*nice_memory_buffer_resize)(MemlistInterface **interface, NiceMemoryBufferRef* buffer, gsize new_size);
 
 struct _MemlistInterface {
      nice_memory_buffer_get buffer_get;
      nice_memory_buffer_return buffer_return;
      nice_memory_buffer_contents buffer_contents;
      nice_memory_buffer_size buffer_size;
+     nice_memory_buffer_resize buffer_resize;
 };
 #endif /* _NICE_MEMLIST_H */
 
