@@ -50,10 +50,27 @@ GST_DEBUG_CATEGORY_STATIC (nicesrc_debug);
 #define BUFFER_SIZE (65536)
 //#define BUFFER_SIZE (4096)
 
-static GstFlowReturn
-gst_nice_src_create (
-  GstPushSrc *basesrc,
-  GstBuffer **buffer);
+static gboolean gst_nice_src_query (
+  GstBaseSrc * src,
+  GstQuery * query);
+
+static GstFlowReturn gst_nice_src_create (
+  GstBaseSrc * bsrc,
+  guint64 offset,
+  guint length,
+  GstBuffer ** ret);
+
+static GstFlowReturn gst_nice_src_alloc (
+  GstBaseSrc * bsrc,
+  guint64 offset,
+  guint length,
+  GstBuffer ** ret);
+
+static GstFlowReturn gst_nice_src_fill (
+  GstBaseSrc * bsrc,
+  guint64 offset,
+  guint length,
+  GstBuffer * ret);
 
 static gboolean
 gst_nice_src_unlock (
@@ -119,7 +136,7 @@ GST_STATIC_PAD_TEMPLATE (
 
 #define gst_nice_src_parent_class parent_class
 
-G_DEFINE_TYPE (GstNiceSrc, gst_nice_src, GST_TYPE_PUSH_SRC);
+G_DEFINE_TYPE (GstNiceSrc, gst_nice_src, GST_TYPE_BASE_SRC);
 
 enum
 {
@@ -168,7 +185,6 @@ gst_nice_src_handle_event (GstBaseSrc *basesrc, GstEvent * event)
 static void
 gst_nice_src_class_init (GstNiceSrcClass *klass)
 {
-  GstPushSrcClass *gstpushsrc_class;
   GstBaseSrcClass *gstbasesrc_class;
   GstElementClass *gstelement_class;
   GObjectClass *gobject_class;
@@ -176,14 +192,20 @@ gst_nice_src_class_init (GstNiceSrcClass *klass)
   GST_DEBUG_CATEGORY_INIT (nicesrc_debug, "nicesrc",
       0, "libnice source");
 
-  gstpushsrc_class = (GstPushSrcClass *) klass;
-  gstpushsrc_class->create = GST_DEBUG_FUNCPTR (gst_nice_src_create);
-
+  //gstpushsrc_class = (GstPushSrcClass *) klass;
+  //gstpushsrc_class->create = GST_DEBUG_FUNCPTR (gst_nice_src_create);
+ 
   gstbasesrc_class = (GstBaseSrcClass *) klass;
   gstbasesrc_class->unlock = GST_DEBUG_FUNCPTR (gst_nice_src_unlock);
   gstbasesrc_class->unlock_stop = GST_DEBUG_FUNCPTR (gst_nice_src_unlock_stop);
   gstbasesrc_class->negotiate = GST_DEBUG_FUNCPTR (gst_nice_src_negotiate);
   gstbasesrc_class->event = GST_DEBUG_FUNCPTR (gst_nice_src_handle_event);
+
+  /* Reimplementation of gstpushsrc in order to support buffer lists */
+  gstbasesrc_class->create = GST_DEBUG_FUNCPTR (gst_nice_src_create);
+  gstbasesrc_class->alloc = GST_DEBUG_FUNCPTR (gst_nice_src_alloc);
+  gstbasesrc_class->fill = GST_DEBUG_FUNCPTR (gst_nice_src_fill);
+  gstbasesrc_class->query = GST_DEBUG_FUNCPTR (gst_nice_src_query);
 
   gobject_class = (GObjectClass *) klass;
   gobject_class->set_property = gst_nice_src_set_property;
@@ -457,10 +479,10 @@ gst_nice_src_read_multiple_callback (NiceAgent *agent,
 
   GST_LOG_OBJECT (agent, "Got multiple buffers (%d), getting out of the main loop", num_buffers);
   GST_ERROR_OBJECT (agent, "Pushing multiple buffers are not implemented for gstnicesrc yet. Dropping buffer.");
-/*
-  g_queue_push_tail (nicesrc->outbufs, buffer);
 
-  g_main_loop_quit (nicesrc->mainloop);*/
+  g_queue_push_tail (nicesrc->outbufs, outlist);
+
+  g_main_loop_quit (nicesrc->mainloop);
 }
 
 static gboolean
@@ -608,7 +630,7 @@ gst_nice_src_negotiate (GstBaseSrc * basesrc)
        which will retrieve and initialise memory buffers */
     if (src->mem_list_interface_set == FALSE)
     {
-      nice_agent_set_mem_list_interface(src->agent, &src->mem_list_interface);
+      nice_agent_set_mem_list_interface(src->agent, (MemlistInterface**)&src->mem_list_interface);
       src->mem_list_interface_set = TRUE;
     }
 
@@ -635,10 +657,35 @@ static void gst_nice_src_clean_up_pool(GstNiceSrc * src)
   }
 }
 
+
+static gboolean
+gst_nice_src_query (GstBaseSrc * src, GstQuery * query)
+{
+  gboolean ret;
+
+  switch (GST_QUERY_TYPE (query)) {
+    case GST_QUERY_SCHEDULING:
+    {
+      /* a pushsrc can by default never operate in pull mode override
+       * if you want something different. */
+      gst_query_set_scheduling (query, GST_SCHEDULING_FLAG_SEQUENTIAL, 1, -1,
+          0);
+      gst_query_add_scheduling_mode (query, GST_PAD_MODE_PUSH);
+
+      ret = TRUE;
+      break;
+    }
+    default:
+      ret = GST_BASE_SRC_CLASS (parent_class)->query (src, query);
+      break;
+  }
+  return ret;
+}
+
+
 static GstFlowReturn
-gst_nice_src_create (
-  GstPushSrc *basesrc,
-  GstBuffer **buffer)
+gst_nice_src_create (GstBaseSrc * basesrc, guint64 offset, guint length,
+    GstBuffer ** ret)
 {
   GstNiceSrc *nicesrc = GST_NICE_SRC (basesrc);
 
@@ -655,15 +702,56 @@ gst_nice_src_create (
   if (g_queue_is_empty (nicesrc->outbufs))
     g_main_loop_run (nicesrc->mainloop);
 
-  *buffer = g_queue_pop_head (nicesrc->outbufs);
-  if (*buffer != NULL) {
-    GST_LOG_OBJECT (nicesrc, "Got buffer, pushing");
+  gpointer bufptr = g_queue_pop_head (nicesrc->outbufs);
+
+  if (bufptr != NULL) {
+    if (GST_IS_BUFFER_LIST(ret)){
+      gst_base_src_submit_buffer_list (basesrc, ret);
+      *ret = NULL;
+      GST_LOG_OBJECT (nicesrc, "Got buffer list, pushing");
+    }
+    else
+    {
+      *ret = bufptr;
+      GST_LOG_OBJECT (nicesrc, "Got buffer, pushing");
+    }
     return GST_FLOW_OK;
   } else {
+    *ret = NULL;
     GST_LOG_OBJECT (nicesrc, "Got interrupting, returning wrong-state");
     return GST_FLOW_FLUSHING;
   }
 
+}
+
+static GstFlowReturn
+gst_nice_src_alloc (GstBaseSrc * bsrc, guint64 offset, guint length,
+    GstBuffer ** ret)
+{
+  GstFlowReturn fret;
+  GstNiceSrc *src;
+  GstNiceSrcClass *pclass;
+
+  src = GST_NICE_SRC (bsrc);
+  pclass = GST_NICE_SRC_GET_CLASS (src);
+  fret = GST_BASE_SRC_CLASS (parent_class)->alloc (bsrc, offset, length, ret);
+
+  return fret;
+}
+
+static GstFlowReturn
+gst_nice_src_fill (GstBaseSrc * bsrc, guint64 offset, guint length,
+    GstBuffer * ret)
+{
+  GstFlowReturn fret;
+  GstNiceSrc *src;
+  GstNiceSrcClass *pclass;
+
+  src = GST_NICE_SRC (bsrc);
+  pclass = GST_NICE_SRC_GET_CLASS (src);
+  fret = GST_BASE_SRC_CLASS (parent_class)->fill (bsrc, offset, length, ret);
+
+  return fret;
 }
 
 static void

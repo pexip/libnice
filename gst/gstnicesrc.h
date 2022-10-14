@@ -58,6 +58,8 @@ G_BEGIN_DECLS
   (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_NICE_SRC))
 #define GST_NICE_SRC_CAST(obj) \
   ((GstNiceSrc *)(obj))
+#define GST_NICE_SRC_GET_CLASS(obj) \
+      (G_TYPE_INSTANCE_GET_CLASS ((obj), GST_TYPE_NICE_SRC, GstNiceSrcClass))
 
 typedef struct _GstNiceSrc GstNiceSrc;
 
@@ -87,7 +89,7 @@ struct _GstNiceMemlistInterface{
 
 struct _GstNiceSrc
 {
-  GstPushSrc parent;
+  GstBaseSrc parent;
   GstPad *srcpad;
   NiceAgent *agent;
   guint stream_id;
@@ -107,7 +109,7 @@ typedef struct _GstNiceSrcClass GstNiceSrcClass;
 
 struct _GstNiceSrcClass
 {
-  GstPushSrcClass parent_class;
+  GstBaseSrcClass parent_class;
 };
 
 GType gst_nice_src_get_type (void);
