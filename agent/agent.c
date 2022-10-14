@@ -147,8 +147,8 @@ static gboolean priv_attach_stream_component (NiceAgent * agent,
     Stream * stream, Component * component);
 static void priv_detach_stream_component (NiceAgent * agent, Stream * stream,
     Component * component);
-static void mem_list_interface_clean_up_and_replace (NiceAgent * agent,
-    MemlistInterface * replacement);
+static void mem_list_interface_clean_up_and_replace_locked (NiceAgent * agent,
+    MemlistInterface ** replacement);
 
 void
 agent_lock (NiceAgent * agent)
@@ -1019,41 +1019,45 @@ nice_agent_set_property (GObject * object,
 
 }
 
-void nice_agent_set_mem_list_interface(NiceAgent * agent, MemlistInterface *interface){
+void nice_agent_set_mem_list_interface(NiceAgent * agent, MemlistInterface **interface){
   /* Clean up and propagate new mem_list_interface */
-  mem_list_interface_clean_up_and_replace (agent, interface);
+  agent_lock (agent);
+  mem_list_interface_clean_up_and_replace_locked (agent, interface);
   agent->mem_list_interface = interface;
+  agent_unlock (agent);
 }
 
 static void
-mem_list_interface_clean_up_and_replace (NiceAgent * agent,
-    MemlistInterface * replacement)
+mem_list_interface_clean_up_and_replace_locked (NiceAgent * agent,
+    MemlistInterface ** replacement)
 {
   (void) agent;
-  if (agent->mem_list_interface != NULL) {
-    agent_lock (agent);
-    /* We need to go trough all (udp) sockets and release any pending buffers */
-    GSList *stream_index;
+  MemlistInterface **old_interface = agent->mem_list_interface;
+  /* We need to go trough all (udp) sockets and release any pending buffers */
+  GSList *stream_index;
 
-    for (stream_index = agent->streams; stream_index;
-        stream_index = stream_index->next) {
-      GSList *component_index;
-      Stream *stream = stream_index->data;
-      for (component_index = stream->components; component_index;
-          component_index = component_index->next) {
-        GSList *socket_index;
-        Component *component = component_index->data;
-        for (socket_index = component->sockets; socket_index;
-            socket_index = socket_index->next) {
-          NiceSocket *udpsocket = socket_index->data;
-          nice_udp_socket_buffers_and_interface_unref (udpsocket);
+  for (stream_index = agent->streams; stream_index;
+      stream_index = stream_index->next) {
+    GSList *component_index;
+    Stream *stream = stream_index->data;
+    for (component_index = stream->components; component_index;
+        component_index = component_index->next) {
+      GSList *socket_index;
+      Component *component = component_index->data;
+      for (socket_index = component->sockets; socket_index;
+          socket_index = socket_index->next) {
+        NiceSocket *udpsocket = socket_index->data;
+        if (udpsocket->type == NICE_SOCKET_TYPE_UDP_BSD)
+        {
+          if ( old_interface != NULL){
+            nice_udp_socket_buffers_and_interface_unref (udpsocket);
+          }
           if (replacement != NULL) {
             nice_udp_socket_interface_set (udpsocket, replacement);
           }
         }
       }
     }
-    agent_unlock (agent);
   }
 }
 
@@ -2488,7 +2492,8 @@ _nice_agent_recv_multiple (NiceAgent * agent,
   if (num_packets_received <= 0)
     return num_packets_received;
 
-  MemlistInterface *memlist_interface = agent->mem_list_interface;
+  MemlistInterface **memlist_interface_ptr = agent->mem_list_interface;
+  MemlistInterface *memlist_interface = *(agent->mem_list_interface);
   int out_pkt_idx = 0;
 
   for(int pkt_idx = 0; pkt_idx < num_packets_received; pkt_idx++)
@@ -2496,8 +2501,9 @@ _nice_agent_recv_multiple (NiceAgent * agent,
     gboolean handled_internally;
     NiceMemoryBufferRef *retrieved_buffer;
     retrieved_buffer = nice_udp_socket_packet_retrieve(socket, pkt_idx, &from_addresses[out_pkt_idx]);
-    gsize buf_len = memlist_interface->buffer_size(memlist_interface, retrieved_buffer);
-    char* buf_contents = memlist_interface->buffer_contents(memlist_interface, retrieved_buffer);
+    g_assert(retrieved_buffer != NULL);
+    gsize buf_len = memlist_interface->buffer_size(memlist_interface_ptr, retrieved_buffer);
+    char* buf_contents = memlist_interface->buffer_contents(memlist_interface_ptr, retrieved_buffer);
 
 #ifndef NDEBUG
     if (buf_len > 0) {
@@ -2516,11 +2522,11 @@ _nice_agent_recv_multiple (NiceAgent * agent,
       socket, stream, component, &new_len, buf_contents, &from_addresses[out_pkt_idx]);
 
     if (buf_len != new_len) {
-      memlist_interface->buffer_resize(memlist_interface, retrieved_buffer, new_len); 
+      memlist_interface->buffer_resize(memlist_interface_ptr, retrieved_buffer, new_len); 
     }
     if (handled_internally) {
       /* Unref buffer */
-      memlist_interface->buffer_return(memlist_interface, retrieved_buffer);
+      memlist_interface->buffer_return(memlist_interface_ptr, retrieved_buffer);
     }
     else{
       buffers[out_pkt_idx] = retrieved_buffer;
@@ -2531,7 +2537,6 @@ _nice_agent_recv_multiple (NiceAgent * agent,
 
   nice_udp_socket_recvmmsg_structures_fill_new_buffers(socket, 0, num_packets_received);
 
-  /* unhandled STUN, pass to client */
   return out_pkt_idx;
 }
 
@@ -3028,7 +3033,7 @@ nice_agent_g_source_cb (GSocket * gsocket,
       callback (agent, sid, cid, len, buffers, from_addresses,
         &ctx->socket->addr, data);
       goto done;
-    } else if (len < 0 && len != -ENOTSUP) {
+    } else if (len < 0 && len != -ENOTSUP && len != -ENOMEM) {
       /* If ENOTSUP is received, try to call the non mmsg receive function */
       GSource *source = ctx->source;
 
@@ -3041,6 +3046,10 @@ nice_agent_g_source_cb (GSocket * gsocket,
          by unlocking the agent and going to done. */
       agent_unlock(agent);
       goto done;
+    }
+    else{
+      GST_WARNING_OBJECT (agent, "_nice_agent_recv_multiple skipped, returned %d, errno (%d) : %s",
+          len, errno, g_strerror (errno));
     }
   }
   {

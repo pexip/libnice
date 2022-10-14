@@ -100,6 +100,7 @@ struct _GstNiceSrc
   GstCaps *caps;
   GHashTable *socket_addresses;
   struct _GstNiceMemlistInterface mem_list_interface;
+  gboolean mem_list_interface_set;
 };
 
 typedef struct _GstNiceSrcClass GstNiceSrcClass;

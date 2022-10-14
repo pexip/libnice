@@ -363,6 +363,7 @@ gst_nice_src_init (GstNiceSrc *src)
   src->mem_list_interface.temp_refs = g_array_sized_new(FALSE, TRUE,
     sizeof(GstNiceSrcMemoryBufferRef*), GST_NICE_SRC_MEM_BUFFERS_PREALLOCATED);
   g_array_set_clear_func(src->mem_list_interface.temp_refs, &gst_nice_src_mem_buffer_ref_array_clear);
+  src->mem_list_interface_set = FALSE;
 }
 
 static void gst_nice_buffer_address_meta_add(
@@ -453,6 +454,13 @@ gst_nice_src_read_multiple_callback (NiceAgent *agent,
     buffer_ref->buffer = NULL;
     gst_nice_src_buffer_return((MemlistInterface**)&(nicesrc->mem_list_interface.function_interface), buffer_ref);
   }
+
+  GST_LOG_OBJECT (agent, "Got multiple buffers (%d), getting out of the main loop", num_buffers);
+  GST_ERROR_OBJECT (agent, "Pushing multiple buffers are not implemented for gstnicesrc yet. Dropping buffer.");
+/*
+  g_queue_push_tail (nicesrc->outbufs, buffer);
+
+  g_main_loop_quit (nicesrc->mainloop);*/
 }
 
 static gboolean
@@ -595,6 +603,15 @@ gst_nice_src_negotiate (GstBaseSrc * basesrc)
     }
     // End pool setup
 
+    /* Now that we have set up a memory pool and the rest of the pipeline,
+       we can set the mem list interface in the agent, 
+       which will retrieve and initialise memory buffers */
+    if (src->mem_list_interface_set == FALSE)
+    {
+      nice_agent_set_mem_list_interface(src->agent, &src->mem_list_interface);
+      src->mem_list_interface_set = TRUE;
+    }
+
     gst_caps_unref (caps);
   } else {
     GST_DEBUG_OBJECT (basesrc, "no common caps");
@@ -629,6 +646,7 @@ gst_nice_src_create (
 
   GST_OBJECT_LOCK (basesrc);
   if (nicesrc->unlocked) {
+    GST_LOG_OBJECT (nicesrc, "Source unlinkend, transitioning to flushing");
     GST_OBJECT_UNLOCK (basesrc);
     return GST_FLOW_FLUSHING;
   }
@@ -707,10 +725,8 @@ gst_nice_src_set_property (
       if (src->agent)
         GST_ERROR_OBJECT (object,
             "Changing the agent on a nice src not allowed");
-      else{
+      else
         src->agent = g_value_dup_object (value);
-         nice_agent_set_mem_list_interface(src->agent, &src->mem_list_interface);
-      }
       break;
 
     case PROP_STREAM:
@@ -824,6 +840,18 @@ gst_nice_src_change_state (GstElement * element, GstStateChange transition)
               src->mainctx, gst_nice_src_read_callback, gst_nice_src_read_multiple_callback, (gpointer) src);
         }
       break;
+#if 0
+    case GST_STATE_CHANGE_PAUSED_TO_PLAYING:
+      {
+        g_assert(src->agent != NULL);
+        /* Now that we have set up a memory pool and the rest of the pipeline,
+           we can set the mem list interface in the agent, 
+           which will retrieve and initialise memory buffers */
+        nice_agent_set_mem_list_interface(src->agent, &src->mem_list_interface);
+
+      }
+      break;
+#endif
     case GST_STATE_CHANGE_READY_TO_NULL:
       nice_agent_attach_recv (src->agent, src->stream_id, src->component_id,
           src->mainctx, NULL, NULL, NULL);
@@ -842,6 +870,7 @@ NiceMemoryBufferRef* gst_nice_src_buffer_ref_allocate(MemlistInterface **interfa
   struct _GstNiceMemlistInterface *mem_list_interface = (struct _GstNiceMemlistInterface *)interface;
 
   GstNiceSrcMemoryBufferRef* ref;
+#if 0
   if (mem_list_interface->temp_refs->len > 0)
   {
     /* Use an existing allocated reference */
@@ -849,7 +878,9 @@ NiceMemoryBufferRef* gst_nice_src_buffer_ref_allocate(MemlistInterface **interfa
     ref = (GstNiceSrcMemoryBufferRef*) g_array_index(mem_list_interface->temp_refs, GstNiceSrcMemoryBufferRef*, last_index);
     g_array_remove_index(mem_list_interface->temp_refs, last_index);
   }
-  else{
+  else
+#endif
+  {
     /* No existing elements are stored, allocate a new one */
     ref = g_new0(GstNiceSrcMemoryBufferRef, 1);
   }
@@ -863,8 +894,14 @@ NiceMemoryBufferRef* gst_nice_src_buffer_get(MemlistInterface **interface, gsize
   GstNiceSrcMemoryBufferRef *ref = gst_nice_src_buffer_ref_allocate(interface);
   GstBuffer *buffer = NULL;
 
+  g_assert(mem_list_interface->pool != NULL);
   gint status = gst_buffer_pool_acquire_buffer (mem_list_interface->pool, &buffer,
       &params);
+  if(status != GST_FLOW_OK)
+  {
+    gst_nice_src_buffer_return(interface, ref);
+    return NULL;
+  }
   g_assert_cmpint(status, ==, GST_FLOW_OK);
 
   gboolean mapped = gst_buffer_map (ref->buffer, &ref->buf_map,
@@ -877,10 +914,12 @@ NiceMemoryBufferRef* gst_nice_src_buffer_get(MemlistInterface **interface, gsize
 void gst_nice_src_buffer_return(MemlistInterface **interface, NiceMemoryBufferRef* buffer){
   //struct _GstNiceMemlistInterface *mem_list_interface = (struct _GstNiceMemlistInterface *)interface;
   GstNiceSrcMemoryBufferRef *buffer_ref = (GstNiceSrcMemoryBufferRef*)buffer;
-
-  /* Return allocated buffer to the pool after it has been used */
-  gst_buffer_unmap (buffer_ref->buffer, &buffer_ref->buf_map);
-  gst_buffer_unref (buffer_ref->buffer);
+  if(buffer_ref->buffer){
+    /* Return allocated buffer to the pool after it has been used */
+    gst_buffer_unmap (buffer_ref->buffer, &buffer_ref->buf_map);
+    gst_buffer_unref (buffer_ref->buffer);
+  }
+  /* TODO: The ref should be added to the array, this is not done at the moment */
   memset (buffer_ref, 0, sizeof (GstNiceSrcMemoryBufferRef));
 }
 
