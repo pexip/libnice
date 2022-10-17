@@ -101,8 +101,10 @@ struct _GstNiceSrc
   GSource *idle_source;
   GstCaps *caps;
   GHashTable *socket_addresses;
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
   struct _GstNiceMemlistInterface mem_list_interface;
   gboolean mem_list_interface_set;
+#endif
 };
 
 typedef struct _GstNiceSrcClass GstNiceSrcClass;

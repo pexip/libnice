@@ -38,6 +38,13 @@
 #ifndef _NICE_MEMLIST_H
 #define _NICE_MEMLIST_H
 
+//#if 0
+#ifdef __linux__
+#define NICE_UDP_SOCKET_HAVE_RECVMMSG 1
+#define _GNU_SOURCE
+#endif
+
+
 #include <glib.h>
 
 typedef struct _MemlistInterface MemlistInterface;

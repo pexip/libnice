@@ -110,7 +110,7 @@ nice_socket_buffers_and_interface_unref  (NiceSocket *sock)
 }
 
 void
-nice_socket_buffer_interface_set (NiceSocket *sock, MemlistInterface *interface)
+nice_socket_buffer_interface_set (NiceSocket *sock, MemlistInterface **interface)
 {
   if (sock) {
     if (sock->type == NICE_SOCKET_TYPE_UDP_BSD)

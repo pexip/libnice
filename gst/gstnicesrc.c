@@ -194,7 +194,7 @@ gst_nice_src_class_init (GstNiceSrcClass *klass)
 
   //gstpushsrc_class = (GstPushSrcClass *) klass;
   //gstpushsrc_class->create = GST_DEBUG_FUNCPTR (gst_nice_src_create);
- 
+
   gstbasesrc_class = (GstBaseSrcClass *) klass;
   gstbasesrc_class->unlock = GST_DEBUG_FUNCPTR (gst_nice_src_unlock);
   gstbasesrc_class->unlock_stop = GST_DEBUG_FUNCPTR (gst_nice_src_unlock_stop);
@@ -380,12 +380,14 @@ gst_nice_src_init (GstNiceSrc *src)
                                                 gst_nice_src_nice_address_compare,
                                                 gst_nice_src_destroy_hash_key,
                                                 gst_object_unref);
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
   src->mem_list_interface.function_interface = &nice_src_mem_interface;
   src->mem_list_interface.gst_src = src;
   src->mem_list_interface.temp_refs = g_array_sized_new(FALSE, TRUE,
     sizeof(GstNiceSrcMemoryBufferRef*), GST_NICE_SRC_MEM_BUFFERS_PREALLOCATED);
   g_array_set_clear_func(src->mem_list_interface.temp_refs, &gst_nice_src_mem_buffer_ref_array_clear);
   src->mem_list_interface_set = FALSE;
+#endif
 }
 
 static void gst_nice_buffer_address_meta_add(
@@ -440,7 +442,7 @@ gst_nice_src_read_callback (NiceAgent *agent,
 
   g_main_loop_quit (nicesrc->mainloop);
 }
-
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
 /* typedef void (*NiceAgentRecvMultipleFunc) (
   NiceAgent *agent, guint stream_id, guint component_id,
   guint num_buffers,
@@ -484,6 +486,7 @@ gst_nice_src_read_multiple_callback (NiceAgent *agent,
 
   g_main_loop_quit (nicesrc->mainloop);
 }
+#endif
 
 static gboolean
 gst_nice_src_unlock_idler (gpointer data)
@@ -551,7 +554,6 @@ gst_nice_src_negotiate (GstBaseSrc * basesrc)
   GstCaps *caps, *intersect;
   GstNiceSrc *src = GST_NICE_SRC_CAST (basesrc);
   gboolean result = FALSE;
-  gboolean update;
 
   caps = gst_pad_get_allowed_caps (GST_BASE_SRC_PAD (basesrc));
   if (!caps)
@@ -576,6 +578,8 @@ gst_nice_src_negotiate (GstBaseSrc * basesrc)
       }
     }
 
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
+    gboolean update;
     // Start pool setup
     if (src->mem_list_interface.pool) {
       /* Clean up old pool, unmap all existing memory and allocate new */
@@ -639,13 +643,14 @@ gst_nice_src_negotiate (GstBaseSrc * basesrc)
     // End pool setup
 
     /* Now that we have set up a memory pool and the rest of the pipeline,
-       we can set the mem list interface in the agent, 
+       we can set the mem list interface in the agent,
        which will retrieve and initialise memory buffers */
     if (src->mem_list_interface_set == FALSE)
     {
       nice_agent_set_mem_list_interface(src->agent, (MemlistInterface**)&src->mem_list_interface);
       src->mem_list_interface_set = TRUE;
     }
+#endif
 
     gst_caps_unref (caps);
   } else {
@@ -654,6 +659,7 @@ gst_nice_src_negotiate (GstBaseSrc * basesrc)
   return result;
 }
 
+#if NICE_UDP_SOCKET_HAVE_RECVMMSG
 static void gst_nice_src_clean_up_pool(GstNiceSrc * src)
 {
   if (src->mem_list_interface.allocator != NULL) {
@@ -669,7 +675,7 @@ static void gst_nice_src_clean_up_pool(GstNiceSrc * src)
     src->mem_list_interface.pool = NULL;
   }
 }
-
+#endif
 
 static gboolean
 gst_nice_src_query (GstBaseSrc * src, GstQuery * query)
@@ -782,6 +788,7 @@ gst_nice_src_dispose (GObject *object)
     g_object_unref (src->agent);
   src->agent = NULL;
 
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
   if (src->mem_list_interface.temp_refs){
     GArray *temp_refs = src->mem_list_interface.temp_refs;
     /* Clean up all elements in array */
@@ -790,6 +797,9 @@ gst_nice_src_dispose (GObject *object)
       g_array_remove_index(temp_refs, i);
     }
   }
+  gst_nice_src_clean_up_pool(src);
+#endif
+
   if (src->mainloop)
     g_main_loop_unref (src->mainloop);
   src->mainloop = NULL;
@@ -938,7 +948,13 @@ gst_nice_src_change_state (GstElement * element, GstStateChange transition)
       else
         {
           nice_agent_attach_recv (src->agent, src->stream_id, src->component_id,
-              src->mainctx, gst_nice_src_read_callback, gst_nice_src_read_multiple_callback, (gpointer) src);
+              src->mainctx, gst_nice_src_read_callback,
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
+              gst_nice_src_read_multiple_callback,
+#else
+              NULL,
+#endif
+              (gpointer) src);
         }
       break;
     case GST_STATE_CHANGE_READY_TO_NULL:
