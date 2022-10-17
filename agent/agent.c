@@ -2372,7 +2372,7 @@ static gboolean nice_agent_recv_process(NiceAgent * agent,
     NiceSocket *socket,
     Stream * stream,
     Component * component,
-    guint *buf_len, gchar * buf, NiceAddress * from)
+    gint *buf_len, gchar * buf, NiceAddress * from)
 {
   gint len = *buf_len;
   GList *item;
@@ -2454,15 +2454,15 @@ static gboolean nice_agent_recv_process(NiceAgent * agent,
     if (stun_message_validate_buffer_length ((uint8_t *) buf, (size_t) len,
             has_padding) != len) {
       /* If the retval is no 0, its not a valid stun packet, probably data */
-      return TRUE;
+      return FALSE;
     }
 
     if (conn_check_handle_inbound_stun (agent, stream, component, socket,
             from, buf, len))
       /* handled STUN message */
-      return FALSE;
+      return TRUE;
   }
-  return TRUE;
+  return FALSE;
 
 }
 
@@ -2566,12 +2566,23 @@ _nice_agent_recv (NiceAgent * agent,
   }
 #endif
   if ((guint) len > buf_len) {
+#ifndef NDEBUG
+    gchar tmpbuf[INET6_ADDRSTRLEN];
+    nice_address_to_string (from, tmpbuf);
+    GST_WARNING_OBJECT (agent,
+        "TOO BIG Packet received on local %s socket %u from [%s]:%u (%u octets).",
+        socket_type_to_string (socket->type),
+        socket->fileno ? g_socket_get_fd (socket->fileno) : 0, tmpbuf,
+        nice_address_get_port (from), len);
+#endif
     /* buffer is not big enough to accept this packet */
     /* XXX: test this case */
     return FALSE;
   }
 
   if (nice_agent_recv_process(agent, socket, stream, component, &len, buf, from)) {
+    GST_LOG_OBJECT (agent,
+        "Handled packet as an internal STUN packet, don't pass it downstream to the client.");
     /* Handeled stun, don't pass to the client */
     return FALSE;
   }
@@ -3048,10 +3059,12 @@ nice_agent_g_source_cb (GSocket * gsocket,
       goto done;
     }
     else{
-      GST_WARNING_OBJECT (agent, "_nice_agent_recv_multiple skipped, returned %d, errno (%d) : %s",
-          len, errno, g_strerror (errno));
+      GST_WARNING_OBJECT (agent, "_nice_agent_recv_multiple skipped, returned %d",
+          len);
+      goto done;
     }
   }
+#endif
   {
     NiceAddress from;
     gchar buf[MAX_BUFFER_SIZE];
@@ -3078,7 +3091,6 @@ nice_agent_g_source_cb (GSocket * gsocket,
       g_source_unref (source);
     }
   }
-#endif
 
   agent_unlock (agent);
 
@@ -3329,13 +3341,13 @@ _priv_set_socket_tos (NiceAgent * agent, NiceSocket * sock, gint tos)
   if (sock->fileno &&
       setsockopt (g_socket_get_fd (sock->fileno), IPPROTO_IP,
           IP_TOS, (const char *) &tos, sizeof (tos)) < 0) {
-    GST_WARNING_OBJECT (agent, "Could not set socket ToS", g_strerror (errno));
+    GST_WARNING_OBJECT (agent, "Could not set socket ToS %s", g_strerror (errno));
   }
 #ifdef IPV6_TCLASS
   if (sock->fileno &&
       setsockopt (g_socket_get_fd (sock->fileno), IPPROTO_IPV6,
           IPV6_TCLASS, (const char *) &tos, sizeof (tos)) < 0) {
-    GST_DEBUG_OBJECT (agent, "Could not set IPV6 socket ToS",
+    GST_DEBUG_OBJECT (agent, "Could not set IPV6 socket ToS %s",
         g_strerror (errno));
   }
 #endif

@@ -468,7 +468,7 @@ gst_nice_src_read_multiple_callback (NiceAgent *agent,
 
   GstBufferList *outlist = gst_buffer_list_new_sized (num_buffers);
   for (int i = 0; i < num_buffers; ++i) {
-    GstNiceSrcMemoryBufferRef *buffer_ref = (GstNiceSrcMemoryBufferRef*)&buffers[i];
+    GstNiceSrcMemoryBufferRef *buffer_ref = (GstNiceSrcMemoryBufferRef*)buffers[i];
     GstBuffer *gbuffer = buffer_ref->buffer;
     gst_buffer_unmap(gbuffer, &(buffer_ref->buf_map));
     gst_nice_buffer_address_meta_add(nicesrc, &from[i], gbuffer);
@@ -478,7 +478,7 @@ gst_nice_src_read_multiple_callback (NiceAgent *agent,
   }
 
   GST_LOG_OBJECT (agent, "Got multiple buffers (%d), getting out of the main loop", num_buffers);
-  GST_ERROR_OBJECT (agent, "Pushing multiple buffers are not implemented for gstnicesrc yet. Dropping buffer.");
+  //GST_ERROR_OBJECT (agent, "Pushing multiple buffers are not implemented for gstnicesrc yet. Dropping buffer.");
 
   g_queue_push_tail (nicesrc->outbufs, outlist);
 
@@ -551,6 +551,7 @@ gst_nice_src_negotiate (GstBaseSrc * basesrc)
   GstCaps *caps, *intersect;
   GstNiceSrc *src = GST_NICE_SRC_CAST (basesrc);
   gboolean result = FALSE;
+  gboolean update;
 
   caps = gst_pad_get_allowed_caps (GST_BASE_SRC_PAD (basesrc));
   if (!caps)
@@ -600,9 +601,11 @@ gst_nice_src_negotiate (GstBaseSrc * basesrc)
           gst_query_get_n_allocation_pools (query));
       gst_query_parse_nth_allocation_pool (query, 0, &src->mem_list_interface.pool, NULL, NULL,
           NULL);
+      update = TRUE;
     } else {
       GST_DEBUG_OBJECT (GST_BASE_SRC_PAD(basesrc), "Creating evsrc buffer pool");
       src->mem_list_interface.pool = gst_buffer_pool_new ();
+      update = FALSE;
     }
 
     {
@@ -622,6 +625,16 @@ gst_nice_src_negotiate (GstBaseSrc * basesrc)
       gst_buffer_pool_config_set_allocator (config, src->mem_list_interface.allocator,
           &src->mem_list_interface.params);
       gst_buffer_pool_set_config (src->mem_list_interface.pool, config);
+      if (update)
+      {
+        gst_query_set_nth_allocation_pool (query, 0, src->mem_list_interface.pool, size, 0, 0);
+      }
+      else
+      {
+        gst_query_add_allocation_pool (query, src->mem_list_interface.pool, size, 0, 0);
+      }
+      gst_buffer_pool_set_active (src->mem_list_interface.pool, TRUE);
+
     }
     // End pool setup
 
@@ -705,9 +718,9 @@ gst_nice_src_create (GstBaseSrc * basesrc, guint64 offset, guint length,
   gpointer bufptr = g_queue_pop_head (nicesrc->outbufs);
 
   if (bufptr != NULL) {
-    if (GST_IS_BUFFER_LIST(ret)){
-      gst_base_src_submit_buffer_list (basesrc, ret);
+    if (GST_IS_BUFFER_LIST(bufptr)){
       *ret = NULL;
+      gst_base_src_submit_buffer_list (basesrc, bufptr);
       GST_LOG_OBJECT (nicesrc, "Got buffer list, pushing");
     }
     else
@@ -928,18 +941,6 @@ gst_nice_src_change_state (GstElement * element, GstStateChange transition)
               src->mainctx, gst_nice_src_read_callback, gst_nice_src_read_multiple_callback, (gpointer) src);
         }
       break;
-#if 0
-    case GST_STATE_CHANGE_PAUSED_TO_PLAYING:
-      {
-        g_assert(src->agent != NULL);
-        /* Now that we have set up a memory pool and the rest of the pipeline,
-           we can set the mem list interface in the agent, 
-           which will retrieve and initialise memory buffers */
-        nice_agent_set_mem_list_interface(src->agent, &src->mem_list_interface);
-
-      }
-      break;
-#endif
     case GST_STATE_CHANGE_READY_TO_NULL:
       nice_agent_attach_recv (src->agent, src->stream_id, src->component_id,
           src->mainctx, NULL, NULL, NULL);
@@ -991,6 +992,8 @@ NiceMemoryBufferRef* gst_nice_src_buffer_get(MemlistInterface **interface, gsize
     return NULL;
   }
   g_assert_cmpint(status, ==, GST_FLOW_OK);
+  g_assert(buffer != NULL);
+  ref->buffer = buffer;
 
   gboolean mapped = gst_buffer_map (ref->buffer, &ref->buf_map,
       GST_MAP_WRITE | GST_MAP_READ);
