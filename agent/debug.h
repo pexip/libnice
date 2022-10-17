@@ -39,7 +39,7 @@
 
 
 /**
- * SECTION:debug
+ * SECTION:debug-stuff
  * @short_description: Debug messages utility functions
  * @stability: Unstable
  *
