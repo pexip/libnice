@@ -2467,7 +2467,8 @@ static gboolean nice_agent_recv_process(NiceAgent * agent,
 }
 
 /* Buffers and addresses should be of at least NICE_UDP_SOCKET_MMSG_TOTAL size */
-gint
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
+static gint
 _nice_agent_recv_multiple (NiceAgent * agent,
     Stream * stream,
     Component * component,
@@ -2539,6 +2540,7 @@ _nice_agent_recv_multiple (NiceAgent * agent,
 
   return out_pkt_idx;
 }
+#endif
 
 
 static gint

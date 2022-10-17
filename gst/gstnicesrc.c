@@ -47,8 +47,8 @@ GST_DEBUG_CATEGORY_STATIC (nicesrc_debug);
 #define GST_CAT_DEFAULT nicesrc_debug
 
 
-#define BUFFER_SIZE (65536)
-//#define BUFFER_SIZE (4096)
+//#define BUFFER_SIZE (65536)
+#define BUFFER_SIZE (4096)
 
 static gboolean gst_nice_src_query (
   GstBaseSrc * src,
@@ -959,7 +959,6 @@ NiceMemoryBufferRef* gst_nice_src_buffer_ref_allocate(MemlistInterface **interfa
   struct _GstNiceMemlistInterface *mem_list_interface = (struct _GstNiceMemlistInterface *)interface;
 
   GstNiceSrcMemoryBufferRef* ref;
-#if 0
   if (mem_list_interface->temp_refs->len > 0)
   {
     /* Use an existing allocated reference */
@@ -968,7 +967,6 @@ NiceMemoryBufferRef* gst_nice_src_buffer_ref_allocate(MemlistInterface **interfa
     g_array_remove_index(mem_list_interface->temp_refs, last_index);
   }
   else
-#endif
   {
     /* No existing elements are stored, allocate a new one */
     ref = g_new0(GstNiceSrcMemoryBufferRef, 1);
@@ -1003,7 +1001,6 @@ NiceMemoryBufferRef* gst_nice_src_buffer_get(MemlistInterface **interface, gsize
 }
 
 void gst_nice_src_buffer_return(MemlistInterface **interface, NiceMemoryBufferRef* buffer){
-  //struct _GstNiceMemlistInterface *mem_list_interface = (struct _GstNiceMemlistInterface *)interface;
   GstNiceSrcMemoryBufferRef *buffer_ref = (GstNiceSrcMemoryBufferRef*)buffer;
   if(buffer_ref->buffer){
     /* Return allocated buffer to the pool after it has been used */

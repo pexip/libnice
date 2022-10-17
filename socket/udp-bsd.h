@@ -39,7 +39,9 @@
 #ifndef _UDP_BSD_H
 #define _UDP_BSD_H
 
+#ifdef __linux__
 #define NICE_UDP_SOCKET_HAVE_RECVMMSG 1
+#endif
 
 #ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
 #define _GNU_SOURCE

@@ -182,9 +182,11 @@ nice_udp_bsd_socket_new (NiceAddress *addr)
   sock->close = socket_close;
   sock->attach = NULL;
 
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
   memset(priv->message_datas, 0, sizeof(MessageData)*NICE_UDP_SOCKET_MMSG_TOTAL);
   memset(priv->message_headers, 0, sizeof(struct mmsghdr)*NICE_UDP_SOCKET_MMSG_TOTAL);
   priv->missing_buffers = TRUE;
+#endif
 
   return sock;
 }
@@ -494,18 +496,39 @@ void socket_recvmmsg_structures_set_up(NiceSocket *udp_socket)
 {
   (void)udp_socket;
 }
+gint nice_udp_socket_recvmmsg(NiceSocket *sock);
+NiceMemoryBufferRef *nice_udp_socket_packet_retrieve(NiceSocket *udp_socket,
+  guint packet_index, NiceAddress *from);
+
 NiceMemoryBufferRef *nice_udp_socket_packet_retrieve(NiceSocket *udp_socket,
   guint packet_index, NiceAddress *from)
 {
   (void)udp_socket;
   (void)packet_index;
   (void)from;
+  (void)socket_recvmmsg_structures_clean_up;
   return NULL;
 }
-gint nice_udp_socket_recvmmsg(NiceSocket *sock, gsize * num_messages_received)
+void nice_udp_socket_recvmmsg_structures_fill_new_buffers(NiceSocket *udp_socket,
+  guint iter_start, guint iter_end)
 {
-  (void)sock;
-  num_messages_received = 0;
-  return -ENOTSUP;
+  (void)udp_socket;
+  (void)iter_start;
+  (void)iter_end;
 }
+static void socket_recvmmsg_structures_clean_up(NiceSocket *udp_socket)
+{
+  (void)udp_socket;
+}
+void nice_udp_socket_interface_set(NiceSocket *udp_socket, MemlistInterface **interface){
+  (void)udp_socket;
+  (void)interface;
+}
+
+#if 0
+static void socket_recvmmsg_structures_clean_up(NiceSocket *udp_socket)
+{
+  (void)udp_socket;
+}
+#endif
 #endif
