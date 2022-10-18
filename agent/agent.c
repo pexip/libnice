@@ -2520,11 +2520,11 @@ _nice_agent_recv_multiple (NiceAgent * agent,
     if (buf_len > 0) {
       gchar tmpbuf[INET6_ADDRSTRLEN];
       nice_address_to_string (&from_addresses[out_pkt_idx], tmpbuf);
-      GST_LOG_OBJECT (agent,
-          "Packet received multiple on local %s socket %u from [%s]:%u (%lu octets).",
+      GST_INFO_OBJECT (agent,
+          "Packet received multiple on local %s socket %u from [%s]:%u (%lu octets, %lu packets).",
           socket_type_to_string (socket->type),
           socket->fileno ? g_socket_get_fd (socket->fileno) : 0, tmpbuf,
-          nice_address_get_port (&from_addresses[out_pkt_idx]), buf_len);
+          nice_address_get_port (&from_addresses[out_pkt_idx]), buf_len, num_packets_received);
     }
 #endif
     /* Figure out if this is a buffer that we handle internally, or if we should forward it on to the client */
@@ -2533,6 +2533,7 @@ _nice_agent_recv_multiple (NiceAgent * agent,
       socket, stream, component, &new_len, buf_contents, &from_addresses[out_pkt_idx]);
 
     if (buf_len != new_len) {
+      GST_INFO_OBJECT (agent, "Packet resized: %d -> %d", buf_len, new_len);
       memlist_interface->buffer_resize(memlist_interface_ptr, retrieved_buffer, new_len); 
     }
     if (handled_internally) {
@@ -3039,7 +3040,7 @@ nice_agent_g_source_cb (GSocket * gsocket,
   }
 
 #ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
-  if (component->g_source_io_multiple_cb){
+  if (component->g_source_io_multiple_cb && ctx->socket->type == NICE_SOCKET_TYPE_UDP_BSD) {
     NiceMemoryBufferRef *buffers[NICE_UDP_SOCKET_MMSG_TOTAL];
     NiceAddress from_addresses[NICE_UDP_SOCKET_MMSG_TOTAL];
 
@@ -3070,11 +3071,12 @@ nice_agent_g_source_cb (GSocket * gsocket,
       agent_unlock(agent);
       goto done;
     }
-    else{
-      GST_WARNING_OBJECT (agent, "_nice_agent_recv_multiple skipped, returned %d",
-          len);
-      goto done;
+    else
+    {
+        GST_WARNING_OBJECT (agent, "_nice_agent_recv_multiple skipped, returned %d",
+            len);
     }
+    /* If receiving multiple packets were not supported, fall back to receiving single packets below */
   }
 #endif
   {

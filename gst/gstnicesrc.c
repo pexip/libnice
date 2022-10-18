@@ -784,8 +784,17 @@ gst_nice_src_dispose (GObject *object)
   }
   src->idle_source = NULL;
 
-  if (src->agent)
+  if (src->agent){
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
+    if (src->mem_list_interface_set == TRUE)
+    {
+      nice_agent_set_mem_list_interface(src->agent, NULL);
+      src->mem_list_interface_set = FALSE;
+    }
+#endif
     g_object_unref (src->agent);
+  }
+
   src->agent = NULL;
 
 #ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG

@@ -367,9 +367,8 @@ void nice_udp_socket_buffers_and_interface_unref(NiceSocket *udp_socket)
         msgdata->iovec.iov_base = NULL;
 
         memset(message_header, 0, sizeof(struct mmsghdr));
+        memset(msgdata, 0, sizeof(MessageData));
 
-        memory_interface->buffer_return(memory_interface_ptr, msgdata->buffer);
-        msgdata = NULL;
       }
     }
   }
