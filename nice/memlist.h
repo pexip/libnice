@@ -38,7 +38,6 @@
 #ifndef _NICE_MEMLIST_H
 #define _NICE_MEMLIST_H
 
-//#if 0
 #ifdef __linux__
 #define NICE_UDP_SOCKET_HAVE_RECVMMSG 1
 #define _GNU_SOURCE
@@ -71,6 +70,7 @@ struct _MemlistInterface {
      nice_memory_buffer_size buffer_size;
      nice_memory_buffer_resize buffer_resize;
 };
+
 G_END_DECLS
 
 #endif /* _NICE_MEMLIST_H */

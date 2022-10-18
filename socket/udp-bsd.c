@@ -67,7 +67,6 @@ static gint socket_recv (NiceSocket *sock, NiceAddress *from,
 static gint socket_send (NiceSocket *sock, const NiceAddress *to,
     guint len, const gchar *buf);
 static gboolean socket_is_reliable (NiceSocket *sock);
-static void socket_recvmmsg_structures_clean_up(NiceSocket *udp_socket);
 
 #ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
 
@@ -200,7 +199,6 @@ socket_close (NiceSocket *sock)
     g_object_unref (priv->gaddr);
 
   nice_udp_socket_buffers_and_interface_unref(sock);
-  socket_recvmmsg_structures_clean_up(sock);
 
   g_slice_free (struct UdpBsdSocketPrivate, sock->priv);
 
@@ -379,23 +377,6 @@ void nice_udp_socket_buffers_and_interface_unref(NiceSocket *udp_socket)
   priv->interface = NULL;
 }
 
-static void socket_recvmmsg_structures_clean_up(NiceSocket *udp_socket)
-{
-  /*struct UdpBsdSocketPrivate *priv = udp_socket->priv;
-  if (priv->message_datas != NULL)
-  {
-    free(priv->message_datas);
-    priv->message_datas = NULL;
-  }
-  if (priv->message_headers != NULL)
-  {
-    free(priv->message_headers);
-    priv->message_datas = NULL;
-  }*/
-  /* priv->interface is owned by agent, which again owns (indirectly) this udp
-     connection. Therefore this connection does not reference count the
-     interface, but rather piggybacks the ownership of the agent */
-}
 
 static void socket_recvmmsg_structures_fill_entry_with_buffer(MemlistInterface **memory_interface_ptr,
   MessageData *message_data, struct mmsghdr *hdr)
@@ -505,7 +486,6 @@ NiceMemoryBufferRef *nice_udp_socket_packet_retrieve(NiceSocket *udp_socket,
   (void)udp_socket;
   (void)packet_index;
   (void)from;
-  (void)socket_recvmmsg_structures_clean_up;
   return NULL;
 }
 void nice_udp_socket_recvmmsg_structures_fill_new_buffers(NiceSocket *udp_socket,
@@ -515,19 +495,9 @@ void nice_udp_socket_recvmmsg_structures_fill_new_buffers(NiceSocket *udp_socket
   (void)iter_start;
   (void)iter_end;
 }
-static void socket_recvmmsg_structures_clean_up(NiceSocket *udp_socket)
-{
-  (void)udp_socket;
-}
 void nice_udp_socket_interface_set(NiceSocket *udp_socket, MemlistInterface **interface){
   (void)udp_socket;
   (void)interface;
 }
 
-#if 0
-static void socket_recvmmsg_structures_clean_up(NiceSocket *udp_socket)
-{
-  (void)udp_socket;
-}
-#endif
 #endif
