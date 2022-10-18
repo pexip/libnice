@@ -47,6 +47,8 @@
 
 #include <glib.h>
 
+G_BEGIN_DECLS
+
 typedef struct _MemlistInterface MemlistInterface;
 typedef void NiceMemoryBufferRef;
 /* Libnice expects the buffers received trough the interface to be accessable until they are either
@@ -69,5 +71,7 @@ struct _MemlistInterface {
      nice_memory_buffer_size buffer_size;
      nice_memory_buffer_resize buffer_resize;
 };
+G_END_DECLS
+
 #endif /* _NICE_MEMLIST_H */
 

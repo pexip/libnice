@@ -556,10 +556,20 @@ nice_agent_class_init (NiceAgentClass * klass)
           "Use aggressive nomination when controller",
           TRUE, G_PARAM_READWRITE));
 
-  g_object_class_install_property (gobject_class, PROP_REGULAR_NOMINATION_TIMEOUT, g_param_spec_uint ("regular-nomination-timeout", "Timeout (in ms) before regular nomination will select non-optimal media path", "Timeout (in ms) before regular nomination will select non-optimal media path", 1, 0xffffffff, NICE_AGENT_REGULAR_NOMINATION_TIMEOUT_DEFAULT,       /* Not construct time so ignored */
+  g_object_class_install_property (gobject_class, PROP_REGULAR_NOMINATION_TIMEOUT,
+      g_param_spec_uint ("regular-nomination-timeout",
+          "Timeout (in ms) before regular nomination will select non-optimal media path",
+          "Timeout (in ms) before regular nomination will select non-optimal media path",
+          1, 0xffffffff,
+          NICE_AGENT_REGULAR_NOMINATION_TIMEOUT_DEFAULT,       /* Not construct time so ignored */
           G_PARAM_READWRITE));
 
-  g_object_class_install_property (gobject_class, PROP_TIE_BREAKER, g_param_spec_uint64 ("tie-breaker", "Tie breaker value to send in connectivity checks", "Tie breaker value to send in connectivity checks", 0, 0xffffffffffffffffLL, 0,     /* Not construct time so ignored */
+  g_object_class_install_property (gobject_class, PROP_TIE_BREAKER,
+      g_param_spec_uint64 ("tie-breaker",
+          "Tie breaker value to send in connectivity checks",
+          "Tie breaker value to send in connectivity checks",
+          0, 0xffffffffffffffffLL,
+          0,     /* Not construct time so ignored */
           G_PARAM_READWRITE));
 
   /*g_object_class_install_property (gobject_class, PROP_MEM_LIST_INTERFACE,
