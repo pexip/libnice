@@ -53,15 +53,15 @@ typedef void NiceMemoryBufferRef;
 /* Libnice expects the buffers received trough the interface to be accessable until they are either
    returned though nice_return_memory_buffer or by passing them as a result of a read operation.
    All buffers will be returned when the corresponding agent is destroyed */
-typedef NiceMemoryBufferRef* (*nice_memory_buffer_get)(MemlistInterface **interface, gsize size);
+typedef NiceMemoryBufferRef* (*nice_memory_buffer_get)(MemlistInterface **ml_interface, gsize size);
 /* Return a memory buffer to the provider */
-typedef void (*nice_memory_buffer_return)(MemlistInterface **interface, NiceMemoryBufferRef* buffer);
+typedef void (*nice_memory_buffer_return)(MemlistInterface **ml_interface, NiceMemoryBufferRef* buffer);
 /* Get a pointer to the contents (i.e. bytes) of the memory buffer */
-typedef char* (*nice_memory_buffer_contents)(MemlistInterface **interface, NiceMemoryBufferRef* buffer);
+typedef char* (*nice_memory_buffer_contents)(MemlistInterface **ml_interface, NiceMemoryBufferRef* buffer);
 /* Get the size of the memory buffer */
-typedef gsize (*nice_memory_buffer_size)(MemlistInterface **interface, NiceMemoryBufferRef* buffer);
+typedef gsize (*nice_memory_buffer_size)(MemlistInterface **ml_interface, NiceMemoryBufferRef* buffer);
 /* Reduce the size of the memory buffer */
-typedef void (*nice_memory_buffer_resize)(MemlistInterface **interface, NiceMemoryBufferRef* buffer, gsize new_size);
+typedef void (*nice_memory_buffer_resize)(MemlistInterface **ml_interface, NiceMemoryBufferRef* buffer, gsize new_size);
 
 struct _MemlistInterface {
      nice_memory_buffer_get buffer_get;

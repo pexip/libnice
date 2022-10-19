@@ -110,12 +110,12 @@ nice_socket_buffers_and_interface_unref  (NiceSocket *sock)
 }
 
 void
-nice_socket_buffer_interface_set (NiceSocket *sock, MemlistInterface **interface)
+nice_socket_buffer_interface_set (NiceSocket *sock, MemlistInterface **ml_interface)
 {
   if (sock) {
     if (sock->type == NICE_SOCKET_TYPE_UDP_BSD)
     {
-      nice_udp_socket_interface_set(sock, interface);
+      nice_udp_socket_interface_set(sock, ml_interface);
     }
   }
 }
@@ -123,17 +123,17 @@ nice_socket_buffer_interface_set (NiceSocket *sock, MemlistInterface **interface
 const char* socket_type_to_string (NiceSocketType socket_type)
 {
   switch (socket_type) {
-  case NICE_SOCKET_TYPE_UDP_BSD: return "udp";
-  case NICE_SOCKET_TYPE_TCP_BSD: return "tcp-bsd";
-  case NICE_SOCKET_TYPE_TCP_ACTIVE: return "tcp-active";
-  case NICE_SOCKET_TYPE_TCP_PASSIVE: return "tcp-passive";
-  case NICE_SOCKET_TYPE_TCP_ESTABLISHED: return "tcp-established";
-  case NICE_SOCKET_TYPE_TCP_SO: return "tcp-so";
-  case NICE_SOCKET_TYPE_PSEUDOSSL: return "pseudossl";
-  case NICE_SOCKET_TYPE_HTTP: return "http";
-  case NICE_SOCKET_TYPE_SOCKS5: return "socks5";
-  case NICE_SOCKET_TYPE_TURN: return "turn";
-  case NICE_SOCKET_TYPE_TCP_TURN: return "tcp-turn";
+    case NICE_SOCKET_TYPE_UDP_BSD: return "udp";
+    case NICE_SOCKET_TYPE_TCP_BSD: return "tcp-bsd";
+    case NICE_SOCKET_TYPE_TCP_ACTIVE: return "tcp-active";
+    case NICE_SOCKET_TYPE_TCP_PASSIVE: return "tcp-passive";
+    case NICE_SOCKET_TYPE_TCP_ESTABLISHED: return "tcp-established";
+    case NICE_SOCKET_TYPE_TCP_SO: return "tcp-so";
+    case NICE_SOCKET_TYPE_PSEUDOSSL: return "pseudossl";
+    case NICE_SOCKET_TYPE_HTTP: return "http";
+    case NICE_SOCKET_TYPE_SOCKS5: return "socks5";
+    case NICE_SOCKET_TYPE_TURN: return "turn";
+    case NICE_SOCKET_TYPE_TCP_TURN: return "tcp-turn";
   }
   return "(invalid)";
 }

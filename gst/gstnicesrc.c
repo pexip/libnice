@@ -112,11 +112,11 @@ gst_nice_src_change_state (
 
 static void gst_nice_src_mem_buffer_ref_array_clear(void *element);
 
-NiceMemoryBufferRef* gst_nice_src_buffer_get(MemlistInterface **interface, gsize size);
-void gst_nice_src_buffer_return(MemlistInterface **interface, NiceMemoryBufferRef* buffer);
-char* gst_nice_src_buffer_contents(MemlistInterface **interface, NiceMemoryBufferRef* buffer);
-gsize gst_nice_src_buffer_size(MemlistInterface **interface, NiceMemoryBufferRef* buffer);
-void gst_nice_src_buffer_resize(MemlistInterface **interface,
+NiceMemoryBufferRef* gst_nice_src_buffer_get(MemlistInterface **ml_interface, gsize size);
+void gst_nice_src_buffer_return(MemlistInterface **ml_interface, NiceMemoryBufferRef* buffer);
+char* gst_nice_src_buffer_contents(MemlistInterface **ml_interface, NiceMemoryBufferRef* buffer);
+gsize gst_nice_src_buffer_size(MemlistInterface **ml_interface, NiceMemoryBufferRef* buffer);
+void gst_nice_src_buffer_resize(MemlistInterface **ml_interface,
   NiceMemoryBufferRef* buffer, gsize new_size);
 
 static const MemlistInterface nice_src_mem_interface = {
@@ -750,11 +750,7 @@ gst_nice_src_alloc (GstBaseSrc * bsrc, guint64 offset, guint length,
     GstBuffer ** ret)
 {
   GstFlowReturn fret;
-  GstNiceSrc *src;
-  GstNiceSrcClass *pclass;
 
-  src = GST_NICE_SRC (bsrc);
-  pclass = GST_NICE_SRC_GET_CLASS (src);
   fret = GST_BASE_SRC_CLASS (parent_class)->alloc (bsrc, offset, length, ret);
 
   return fret;
@@ -765,11 +761,7 @@ gst_nice_src_fill (GstBaseSrc * bsrc, guint64 offset, guint length,
     GstBuffer * ret)
 {
   GstFlowReturn fret;
-  GstNiceSrc *src;
-  GstNiceSrcClass *pclass;
 
-  src = GST_NICE_SRC (bsrc);
-  pclass = GST_NICE_SRC_GET_CLASS (src);
   fret = GST_BASE_SRC_CLASS (parent_class)->fill (bsrc, offset, length, ret);
 
   return fret;
@@ -983,8 +975,8 @@ gst_nice_src_change_state (GstElement * element, GstStateChange transition)
   return ret;
 }
 
-NiceMemoryBufferRef* gst_nice_src_buffer_ref_allocate(MemlistInterface **interface){
-  struct _GstNiceMemlistInterface *mem_list_interface = (struct _GstNiceMemlistInterface *)interface;
+NiceMemoryBufferRef* gst_nice_src_buffer_ref_allocate(MemlistInterface **ml_interface){
+  struct _GstNiceMemlistInterface *mem_list_interface = (struct _GstNiceMemlistInterface *)ml_interface;
 
   GstNiceSrcMemoryBufferRef* ref;
   if (mem_list_interface->temp_refs->len > 0)
@@ -1005,10 +997,10 @@ NiceMemoryBufferRef* gst_nice_src_buffer_ref_allocate(MemlistInterface **interfa
   return ref;
 }
 
-NiceMemoryBufferRef* gst_nice_src_buffer_get(MemlistInterface **interface, gsize size){
-  struct _GstNiceMemlistInterface *mem_list_interface = (struct _GstNiceMemlistInterface *)interface;
+NiceMemoryBufferRef* gst_nice_src_buffer_get(MemlistInterface **ml_interface, gsize size){
+  struct _GstNiceMemlistInterface *mem_list_interface = (struct _GstNiceMemlistInterface *)ml_interface;
   GstBufferPoolAcquireParams params = { 0 };
-  GstNiceSrcMemoryBufferRef *ref = gst_nice_src_buffer_ref_allocate(interface);
+  GstNiceSrcMemoryBufferRef *ref = gst_nice_src_buffer_ref_allocate(ml_interface);
   GstBuffer *buffer = NULL;
 
   g_assert(mem_list_interface->pool != NULL);
@@ -1016,7 +1008,7 @@ NiceMemoryBufferRef* gst_nice_src_buffer_get(MemlistInterface **interface, gsize
       &params);
   if(status != GST_FLOW_OK)
   {
-    gst_nice_src_buffer_return(interface, ref);
+    gst_nice_src_buffer_return(ml_interface, ref);
     return NULL;
   }
   g_assert_cmpint(status, ==, GST_FLOW_OK);
@@ -1030,8 +1022,8 @@ NiceMemoryBufferRef* gst_nice_src_buffer_get(MemlistInterface **interface, gsize
   return (NiceMemoryBufferRef*) ref;
 }
 
-void gst_nice_src_buffer_return(MemlistInterface **interface, NiceMemoryBufferRef* buffer){
-  struct _GstNiceMemlistInterface *mem_list_interface = (struct _GstNiceMemlistInterface *)interface;
+void gst_nice_src_buffer_return(MemlistInterface **ml_interface, NiceMemoryBufferRef* buffer){
+  struct _GstNiceMemlistInterface *mem_list_interface = (struct _GstNiceMemlistInterface *)ml_interface;
   GstNiceSrcMemoryBufferRef *buffer_ref = (GstNiceSrcMemoryBufferRef*)buffer;
   if(buffer_ref->buffer){
     /* Return allocated buffer to the pool after it has been used */
@@ -1044,17 +1036,17 @@ void gst_nice_src_buffer_return(MemlistInterface **interface, NiceMemoryBufferRe
 
 }
 
-char* gst_nice_src_buffer_contents(MemlistInterface **interface, NiceMemoryBufferRef* buffer){
+char* gst_nice_src_buffer_contents(MemlistInterface **ml_interface, NiceMemoryBufferRef* buffer){
   GstNiceSrcMemoryBufferRef *buffer_ref = (GstNiceSrcMemoryBufferRef*)buffer;
   return (char*) buffer_ref->buf_map.data;
 }
 
-gsize gst_nice_src_buffer_size(MemlistInterface **interface, NiceMemoryBufferRef* buffer){
+gsize gst_nice_src_buffer_size(MemlistInterface **ml_interface, NiceMemoryBufferRef* buffer){
   GstNiceSrcMemoryBufferRef *buffer_ref = (GstNiceSrcMemoryBufferRef*)buffer;
   return buffer_ref->buf_map.size;
 }
 
-void gst_nice_src_buffer_resize(MemlistInterface **interface, NiceMemoryBufferRef* buffer, gsize new_size) {
+void gst_nice_src_buffer_resize(MemlistInterface **ml_interface, NiceMemoryBufferRef* buffer, gsize new_size) {
   GstNiceSrcMemoryBufferRef *buffer_ref = (GstNiceSrcMemoryBufferRef*)buffer;
   guint8* data_location;
   g_assert(new_size <= buffer_ref->buf_map.size);

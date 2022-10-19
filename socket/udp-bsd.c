@@ -91,7 +91,7 @@ struct UdpBsdSocketPrivate
   NiceAddress niceaddr;
   GSocketAddress *gaddr;
 #ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
-  MemlistInterface **interface;
+  MemlistInterface **ml_interface;
   /* Alloc buffers outside callback, to avoid reallocing buffers for messages
      that are not received. Any messages that are passed along are replaced with
      freshly allocated memory. */
@@ -215,7 +215,7 @@ gint nice_udp_socket_recvmmsg(NiceSocket *sock)
 {
   g_assert(sock->type == NICE_SOCKET_TYPE_UDP_BSD);
   struct UdpBsdSocketPrivate *priv = sock->priv;
-  MemlistInterface **memory_interface_ptr = priv->interface;
+  MemlistInterface **memory_interface_ptr = priv->ml_interface;
   MemlistInterface *memory_interface;
 
   if(memory_interface_ptr != NULL)
@@ -314,11 +314,11 @@ socket_is_reliable (NiceSocket *sock)
 
 /* TODO: We need a way to extract and replenish buffers once they have been received */
 
-void nice_udp_socket_interface_set(NiceSocket *udp_socket, MemlistInterface **interface){
+void nice_udp_socket_interface_set(NiceSocket *udp_socket, MemlistInterface **ml_interface){
   g_assert(udp_socket->type == NICE_SOCKET_TYPE_UDP_BSD);
   struct UdpBsdSocketPrivate *priv = udp_socket->priv;
-  g_assert(priv->interface == NULL);
-  priv->interface = interface;
+  g_assert(priv->ml_interface == NULL);
+  priv->ml_interface = ml_interface;
   socket_recvmmsg_structures_set_up(udp_socket);
 }
 
@@ -334,7 +334,7 @@ NiceMemoryBufferRef *nice_udp_socket_packet_retrieve(NiceSocket *udp_socket,
   NiceMemoryBufferRef *result = message_data->buffer;
   message_data->buffer = NULL;
   /* Replace the entry with a fresh buffer for next recvmmsg call */
-  socket_recvmmsg_structures_fill_entry_with_buffer (priv->interface,
+  socket_recvmmsg_structures_fill_entry_with_buffer (priv->ml_interface,
     message_data, message_header);
   return result;
 }
@@ -347,7 +347,7 @@ NiceMemoryBufferRef *nice_udp_socket_packet_retrieve(NiceSocket *udp_socket,
 void nice_udp_socket_buffers_and_interface_unref(NiceSocket *udp_socket)
 {
   struct UdpBsdSocketPrivate *priv = udp_socket->priv;
-  MemlistInterface **memory_interface_ptr = priv->interface;
+  MemlistInterface **memory_interface_ptr = priv->ml_interface;
   if(memory_interface_ptr != NULL)
   {
     g_assert(priv->message_datas != NULL);
@@ -374,7 +374,7 @@ void nice_udp_socket_buffers_and_interface_unref(NiceSocket *udp_socket)
      This may change in the future. However until then do nothing here. */
 
   /* Clear the interface pointer, regardless if it is set or not */
-  priv->interface = NULL;
+  priv->ml_interface = NULL;
 }
 
 
@@ -405,7 +405,7 @@ static void socket_recvmmsg_structures_fill_entry_with_buffer(MemlistInterface *
 static void socket_recvmmsg_structures_set_up(NiceSocket *udp_socket)
 {
   struct UdpBsdSocketPrivate *priv = udp_socket->priv;
-  MemlistInterface **memory_interface = priv->interface;
+  MemlistInterface **memory_interface = priv->ml_interface;
   gboolean missing_buffers = FALSE;
 
   for(int i = 0; i < NICE_UDP_SOCKET_MMSG_TOTAL; i++)
@@ -442,7 +442,7 @@ static void socket_recvmmsg_structures_set_up(NiceSocket *udp_socket)
 void nice_udp_socket_recvmmsg_structures_fill_new_buffers(NiceSocket *udp_socket, guint iter_start, guint iter_end)
 {
   struct UdpBsdSocketPrivate *priv = udp_socket->priv;
-  MemlistInterface **memory_interface = priv->interface;
+  MemlistInterface **memory_interface = priv->ml_interface;
   g_assert(iter_start < iter_end);
   g_assert(iter_end <= NICE_UDP_SOCKET_MMSG_TOTAL);
   g_assert(memory_interface != NULL);
@@ -495,9 +495,9 @@ void nice_udp_socket_recvmmsg_structures_fill_new_buffers(NiceSocket *udp_socket
   (void)iter_start;
   (void)iter_end;
 }
-void nice_udp_socket_interface_set(NiceSocket *udp_socket, MemlistInterface **interface){
+void nice_udp_socket_interface_set(NiceSocket *udp_socket, MemlistInterface **ml_interface){
   (void)udp_socket;
-  (void)interface;
+  (void)ml_interface;
 }
 
 #endif

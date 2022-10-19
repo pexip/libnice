@@ -62,7 +62,7 @@ G_BEGIN_DECLS
 NiceSocket *
 nice_udp_bsd_socket_new (NiceAddress *addr);
 
-void nice_udp_socket_interface_set(NiceSocket *udp_socket, MemlistInterface **interface);
+void nice_udp_socket_interface_set(NiceSocket *udp_socket, MemlistInterface **ml_interface);
 void nice_udp_socket_buffers_and_interface_unref(NiceSocket *udp_socket);
 gint nice_udp_socket_recvmmsg(NiceSocket *sock);
 NiceMemoryBufferRef *nice_udp_socket_packet_retrieve(NiceSocket *udp_socket,
