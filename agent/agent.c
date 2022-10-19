@@ -1029,11 +1029,11 @@ nice_agent_set_property (GObject * object,
 
 }
 
-void nice_agent_set_mem_list_interface(NiceAgent * agent, MemlistInterface **interface){
+void nice_agent_set_mem_list_interface(NiceAgent * agent, MemlistInterface **ml_interface){
   /* Clean up and propagate new mem_list_interface */
   agent_lock (agent);
-  mem_list_interface_clean_up_and_replace_locked (agent, interface);
-  agent->mem_list_interface = interface;
+  mem_list_interface_clean_up_and_replace_locked (agent, ml_interface);
+  agent->mem_list_interface = ml_interface;
   agent_unlock (agent);
 }
 
