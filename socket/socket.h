@@ -112,12 +112,6 @@ nice_socket_set_rx_enabled (NiceSocket *sock, gboolean enabled);
 void
 nice_socket_free (NiceSocket *sock);
 
-void
-nice_socket_buffer_interface_set (NiceSocket *sock, struct _MemlistInterface **interface);
-
-void
-nice_socket_buffers_and_interface_unref  (NiceSocket *sock);
-
 const char *socket_type_to_string (NiceSocketType type);
 
 #include "udp-bsd.h"

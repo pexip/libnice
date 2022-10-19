@@ -638,8 +638,10 @@ gst_nice_src_negotiate (GstBaseSrc * basesrc)
         gst_query_add_allocation_pool (query, src->mem_list_interface.pool, size, 0, 0);
       }
       gst_buffer_pool_set_active (src->mem_list_interface.pool, TRUE);
-
+      /* NB: This pool is not used by the basesrc when allocating buffers from it, as it is not possible
+         to set it when we negotiate caps ourselves (and not overwrite the appropriate functions in gstbasesrc) */
     }
+    gst_query_unref(query);
     // End pool setup
 
     /* Now that we have set up a memory pool and the rest of the pipeline,
@@ -805,6 +807,7 @@ gst_nice_src_dispose (GObject *object)
     {
       g_array_remove_index(temp_refs, i);
     }
+    g_array_free(temp_refs, TRUE);
   }
   gst_nice_src_clean_up_pool(src);
 #endif
@@ -989,6 +992,8 @@ NiceMemoryBufferRef* gst_nice_src_buffer_ref_allocate(MemlistInterface **interfa
     /* Use an existing allocated reference */
     int last_index = mem_list_interface->temp_refs->len-1;
     ref = (GstNiceSrcMemoryBufferRef*) g_array_index(mem_list_interface->temp_refs, GstNiceSrcMemoryBufferRef*, last_index);
+    // Make sure the ref is not freed when removed from the array
+    g_array_index(mem_list_interface->temp_refs, GstNiceSrcMemoryBufferRef*, last_index) = NULL;
     g_array_remove_index(mem_list_interface->temp_refs, last_index);
   }
   else
@@ -1026,6 +1031,7 @@ NiceMemoryBufferRef* gst_nice_src_buffer_get(MemlistInterface **interface, gsize
 }
 
 void gst_nice_src_buffer_return(MemlistInterface **interface, NiceMemoryBufferRef* buffer){
+  struct _GstNiceMemlistInterface *mem_list_interface = (struct _GstNiceMemlistInterface *)interface;
   GstNiceSrcMemoryBufferRef *buffer_ref = (GstNiceSrcMemoryBufferRef*)buffer;
   if(buffer_ref->buffer){
     /* Return allocated buffer to the pool after it has been used */
@@ -1034,6 +1040,8 @@ void gst_nice_src_buffer_return(MemlistInterface **interface, NiceMemoryBufferRe
   }
   /* TODO: The ref should be added to the array, this is not done at the moment */
   memset (buffer_ref, 0, sizeof (GstNiceSrcMemoryBufferRef));
+  g_array_append_vals(mem_list_interface->temp_refs, &buffer_ref, 1);
+
 }
 
 char* gst_nice_src_buffer_contents(MemlistInterface **interface, NiceMemoryBufferRef* buffer){
