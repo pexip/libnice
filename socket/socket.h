@@ -112,7 +112,7 @@ nice_socket_set_rx_enabled (NiceSocket *sock, gboolean enabled);
 void
 nice_socket_free (NiceSocket *sock);
 
-const char *socket_type_to_string (NiceSocketType type);
+const char *socket_type_to_string (NiceSocketType socket_type);
 
 #include "udp-bsd.h"
 #include "tcp-bsd.h"

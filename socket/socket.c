@@ -120,9 +120,9 @@ nice_socket_buffer_interface_set (NiceSocket *sock, MemlistInterface **interface
   }
 }
 
-const char* socket_type_to_string (NiceSocketType type)
+const char* socket_type_to_string (NiceSocketType socket_type)
 {
-  switch (type) {
+  switch (socket_type) {
   case NICE_SOCKET_TYPE_UDP_BSD: return "udp";
   case NICE_SOCKET_TYPE_TCP_BSD: return "tcp-bsd";
   case NICE_SOCKET_TYPE_TCP_ACTIVE: return "tcp-active";
