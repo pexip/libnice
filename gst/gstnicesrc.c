@@ -81,8 +81,9 @@ gst_nice_src_unlock_stop (
     GstBaseSrc *basesrc);
 
 static gboolean
-gst_nice_src_negotiate (
-    GstBaseSrc * src);
+gst_nice_src_decide_allocation (
+  GstBaseSrc * bsrc,
+  GstQuery * query);
 
 static void
 gst_nice_src_set_property (
@@ -198,7 +199,10 @@ gst_nice_src_class_init (GstNiceSrcClass *klass)
   gstbasesrc_class = (GstBaseSrcClass *) klass;
   gstbasesrc_class->unlock = GST_DEBUG_FUNCPTR (gst_nice_src_unlock);
   gstbasesrc_class->unlock_stop = GST_DEBUG_FUNCPTR (gst_nice_src_unlock_stop);
-  gstbasesrc_class->negotiate = GST_DEBUG_FUNCPTR (gst_nice_src_negotiate);
+  //gstbasesrc_class->negotiate = GST_DEBUG_FUNCPTR (gst_nice_src_negotiate);
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
+  gstbasesrc_class->decide_allocation = GST_DEBUG_FUNCPTR (gst_nice_src_decide_allocation);
+#endif
   gstbasesrc_class->event = GST_DEBUG_FUNCPTR (gst_nice_src_handle_event);
 
   /* Reimplementation of gstpushsrc in order to support buffer lists */
@@ -434,6 +438,13 @@ gst_nice_src_read_callback (NiceAgent *agent,
                                ", allocate using local allocator instead");
     buffer = gst_buffer_new_allocate (NULL, len, NULL);
   }
+
+  if (gst_buffer_get_size(buffer) != len)
+  {
+    gst_buffer_resize(buffer, 0, len);
+    g_assert(gst_buffer_get_size(buffer) == len);
+  }
+
   gst_buffer_fill (buffer, 0, buf, len);
 
   gst_nice_buffer_address_meta_add(nicesrc, from, buffer);
@@ -443,11 +454,6 @@ gst_nice_src_read_callback (NiceAgent *agent,
   g_main_loop_quit (nicesrc->mainloop);
 }
 #ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
-/* typedef void (*NiceAgentRecvMultipleFunc) (
-  NiceAgent *agent, guint stream_id, guint component_id,
-  guint num_buffers,
-  NiceMemoryBufferRef **buffers, const NiceAddress *from, const NiceAddress *to, gpointer user_data);
-*/
 /* NB: This function does not support pre 1.0 gstreamer */
 static void
 gst_nice_src_read_multiple_callback (NiceAgent *agent,
@@ -459,12 +465,6 @@ gst_nice_src_read_multiple_callback (NiceAgent *agent,
     const NiceAddress *to,
     gpointer data)
 {
-  /*(void)agent;
-  (void)stream_id;
-  (void)component_id;
-  (void)data;
-  (void)from;
-  (void)to;*/
   GstBaseSrc *basesrc = GST_BASE_SRC (data);
   GstNiceSrc *nicesrc = GST_NICE_SRC (basesrc);
 
@@ -545,134 +545,50 @@ gst_nice_src_unlock_stop (GstBaseSrc *src)
   return TRUE;
 }
 
-/* Similar to gst_base_src_default_negotiate except that it always queries
- * downstream for allowed caps. This is because the default behavior never
- * sends a caps-event if the template caps is any. */
-static gboolean
-gst_nice_src_negotiate (GstBaseSrc * basesrc)
-{
-  GstCaps *caps, *intersect;
-  GstNiceSrc *src = GST_NICE_SRC_CAST (basesrc);
-  gboolean result = FALSE;
-
-  caps = gst_pad_get_allowed_caps (GST_BASE_SRC_PAD (basesrc));
-  if (!caps)
-    caps = gst_pad_get_pad_template_caps (GST_BASE_SRC_PAD (basesrc));
-
-  GST_OBJECT_LOCK (src);
-  intersect = gst_caps_intersect (src->caps, caps);
-  GST_OBJECT_UNLOCK (src);
-
-  gst_caps_take (&caps, intersect);
-  if (!gst_caps_is_empty (caps)) {
-    if (gst_caps_is_any (caps)) {
-      GST_DEBUG_OBJECT (basesrc, "any caps, negotiation not needed");
-      result = TRUE;
-    } else {
-      GstBaseSrcClass *bclass = GST_BASE_SRC_GET_CLASS (basesrc);
-      if (bclass->fixate)
-        caps = bclass->fixate (basesrc, caps);
-      GST_DEBUG_OBJECT (basesrc, "fixated to: %" GST_PTR_FORMAT, caps);
-      if (gst_caps_is_fixed (caps)) {
-        result = gst_base_src_set_caps (basesrc, caps);
-      }
-    }
-
 #ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
-    gboolean update;
-    // Start pool setup
-    if (src->mem_list_interface.pool) {
-      /* Clean up old pool, unmap all existing memory and allocate new */
-      gst_nice_src_clean_up_pool (src);
-    }
+static gboolean
+gst_nice_src_decide_allocation (GstBaseSrc * bsrc, GstQuery * query)
+{
+  GstBufferPool *pool;
+  gboolean update;
+  GstStructure *config;
+  GstCaps *caps = NULL;
+  guint size = BUFFER_SIZE;
 
-    GstQuery *query = gst_query_new_allocation (caps, TRUE);
-    if (!gst_pad_peer_query (GST_BASE_SRC_PAD(basesrc), query))
-      GST_DEBUG_OBJECT (GST_BASE_SRC_PAD(basesrc), "didn't get downstream ALLOCATION hints");
+  GstNiceSrc *src = GST_NICE_SRC_CAST (bsrc);
 
-    if (src->mem_list_interface.allocator != NULL)
-      gst_object_unref (src->mem_list_interface.allocator);
-    if (gst_query_get_n_allocation_params (query) > 0) {
-      gst_query_parse_nth_allocation_param (query, 0,
-          &src->mem_list_interface.allocator, &src->mem_list_interface.params);
-    } else {
-      src->mem_list_interface.allocator = NULL;
-      gst_allocation_params_init (&src->mem_list_interface.params);
-    }
-
-    if (gst_query_get_n_allocation_pools (query) > 0) {
-      GST_DEBUG_OBJECT (GST_BASE_SRC_PAD(basesrc), "Got n allocation pools: %d",
-          gst_query_get_n_allocation_pools (query));
-      gst_query_parse_nth_allocation_pool (query, 0, &src->mem_list_interface.pool, NULL, NULL,
-          NULL);
-      update = TRUE;
-    } else {
-      GST_DEBUG_OBJECT (GST_BASE_SRC_PAD(basesrc), "Creating evsrc buffer pool");
-      src->mem_list_interface.pool = gst_buffer_pool_new ();
-      update = FALSE;
-    }
-
-    {
-      guint size = BUFFER_SIZE, min = 0, max = 0;
-      GstStructure *config;
-      config = gst_buffer_pool_get_config (src->mem_list_interface.pool);
-      /* Ensure we don't pass unfixed caps to the buffer pool config as that will
-         trigger an assert */
-      GstCaps *poolcaps;
-      if (caps != NULL && gst_caps_is_fixed (caps)) {
-        poolcaps = caps;
-      } else {
-        poolcaps = NULL;
-      }
-      gst_buffer_pool_config_set_params (config, poolcaps, (guint) size, min,
-          max);
-      gst_buffer_pool_config_set_allocator (config, src->mem_list_interface.allocator,
-          &src->mem_list_interface.params);
-      gst_buffer_pool_set_config (src->mem_list_interface.pool, config);
-      if (update)
-      {
-        gst_query_set_nth_allocation_pool (query, 0, src->mem_list_interface.pool, size, 0, 0);
-      }
-      else
-      {
-        gst_query_add_allocation_pool (query, src->mem_list_interface.pool, size, 0, 0);
-      }
-      gst_buffer_pool_set_active (src->mem_list_interface.pool, TRUE);
-      /* NB: This pool is not used by the basesrc when allocating buffers from it, as it is not possible
-         to set it when we negotiate caps ourselves (and not overwrite the appropriate functions in gstbasesrc) */
-    }
-    gst_query_unref(query);
-    // End pool setup
-
-    /* Now that we have set up a memory pool and the rest of the pipeline,
-       we can set the mem list interface in the agent,
-       which will retrieve and initialise memory buffers */
-    if (src->mem_list_interface_set == FALSE)
-    {
-      nice_agent_set_mem_list_interface(src->agent, (MemlistInterface**)&src->mem_list_interface);
-      src->mem_list_interface_set = TRUE;
-    }
-#endif
-
-    gst_caps_unref (caps);
+  if (gst_query_get_n_allocation_pools (query) > 0) {
+    update = TRUE;
   } else {
-    GST_DEBUG_OBJECT (basesrc, "no common caps");
+    update = FALSE;
   }
-  return result;
+
+  pool = gst_buffer_pool_new ();
+
+  config = gst_buffer_pool_get_config (pool);
+
+  gst_query_parse_allocation (query, &caps, NULL);
+
+  gst_buffer_pool_config_set_params (config, caps, size, 0, 0);
+
+  gst_buffer_pool_set_config (pool, config);
+
+  if (update)
+    gst_query_set_nth_allocation_pool (query, 0, pool, size, 0, 0);
+  else
+    gst_query_add_allocation_pool (query, pool, size, 0, 0);
+
+  src->mem_list_interface.pool = pool;
+
+  return TRUE;
 }
 
-#if NICE_UDP_SOCKET_HAVE_RECVMMSG
 static void gst_nice_src_clean_up_pool(GstNiceSrc * src)
 {
-  if (src->mem_list_interface.allocator != NULL) {
-    gst_object_unref (src->mem_list_interface.allocator);
-    src->mem_list_interface.allocator = NULL;
-  }
-
   if (src->mem_list_interface.pool != NULL) {
     /* The entries that already exists will be with the old pool until they die
        as we have no way of moving them to the new pool. */
-    gst_buffer_pool_set_active (src->mem_list_interface.pool, FALSE);
+    //gst_buffer_pool_set_active (src->mem_list_interface.pool, FALSE);
     gst_object_unref (src->mem_list_interface.pool);
     src->mem_list_interface.pool = NULL;
   }

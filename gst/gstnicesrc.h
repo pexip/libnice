@@ -76,13 +76,10 @@ struct _GstNiceMemlistInterface{
   /* When embedded in GstNiceSrc this will be a self referencing pointer,
     that is not refcounted */
   GstNiceSrc *gst_src;
-  /* Pointers to  GstNiceSrcMemoryBufferRefs that have been returned that are 
-     waiting to be given out again. It is assumed that the buffer and mapping 
+  /* Pointers to  GstNiceSrcMemoryBufferRefs that have been returned that are
+     waiting to be given out again. It is assumed that the buffer and mapping
      refed to by the reference is in an unintitialised state */
   GArray *temp_refs;
-  /* Buffer variables needed for allocating and releasing buffers trough a pool */
-  GstAllocator *allocator;
-  GstAllocationParams params;
   GstBufferPool *pool;
 
 };
