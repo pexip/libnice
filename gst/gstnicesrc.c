@@ -580,6 +580,14 @@ gst_nice_src_decide_allocation (GstBaseSrc * bsrc, GstQuery * query)
 
   src->mem_list_interface.pool = pool;
 
+  if (src->agent){
+    if (src->mem_list_interface_set == FALSE)
+    {
+      nice_agent_set_mem_list_interface(src->agent, &src->mem_list_interface);
+      src->mem_list_interface_set = TRUE;
+    }
+  }
+
   return TRUE;
 }
 
@@ -618,7 +626,6 @@ gst_nice_src_query (GstBaseSrc * src, GstQuery * query)
   }
   return ret;
 }
-
 
 static GstFlowReturn
 gst_nice_src_create (GstBaseSrc * basesrc, guint64 offset, guint length,
