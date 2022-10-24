@@ -3040,8 +3040,10 @@ nice_agent_g_source_cb (GSocket * gsocket,
   }
 
 #ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
-  if (component->g_source_io_multiple_cb && ctx->socket->type == NICE_SOCKET_TYPE_UDP_BSD) {
-    NiceMemoryBufferRef *buffers[NICE_UDP_SOCKET_MMSG_TOTAL];
+  if (component->g_source_io_multiple_cb
+    && ctx->socket->type == NICE_SOCKET_TYPE_UDP_BSD
+    && agent->mem_list_interface != NULL) {
+     NiceMemoryBufferRef *buffers[NICE_UDP_SOCKET_MMSG_TOTAL];
     NiceAddress from_addresses[NICE_UDP_SOCKET_MMSG_TOTAL];
 
     len = _nice_agent_recv_multiple(agent, stream, component, ctx->socket,
