@@ -85,6 +85,10 @@ gst_nice_src_decide_allocation (
   GstBaseSrc * bsrc,
   GstQuery * query);
 
+static gboolean
+gst_nice_src_negotiate (
+  GstBaseSrc * basesrc);
+
 static void
 gst_nice_src_set_property (
   GObject *object,
@@ -199,7 +203,7 @@ gst_nice_src_class_init (GstNiceSrcClass *klass)
   gstbasesrc_class = (GstBaseSrcClass *) klass;
   gstbasesrc_class->unlock = GST_DEBUG_FUNCPTR (gst_nice_src_unlock);
   gstbasesrc_class->unlock_stop = GST_DEBUG_FUNCPTR (gst_nice_src_unlock_stop);
-  //gstbasesrc_class->negotiate = GST_DEBUG_FUNCPTR (gst_nice_src_negotiate);
+  gstbasesrc_class->negotiate = GST_DEBUG_FUNCPTR (gst_nice_src_negotiate);
 #ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
   gstbasesrc_class->decide_allocation = GST_DEBUG_FUNCPTR (gst_nice_src_decide_allocation);
 #endif
@@ -545,6 +549,46 @@ gst_nice_src_unlock_stop (GstBaseSrc *src)
   return TRUE;
 }
 
+/* Similar to gst_base_src_default_negotiate except that it always queries
+ * downstream for allowed caps. This is because the default behavior never
+ * sends a caps-event if the template caps is any. */
+static gboolean
+gst_nice_src_negotiate (GstBaseSrc * basesrc)
+{
+  GstCaps *caps, *intersect;
+  GstNiceSrc *src = GST_NICE_SRC_CAST (basesrc);
+  gboolean result = FALSE;
+
+  caps = gst_pad_get_allowed_caps (GST_BASE_SRC_PAD (basesrc));
+  if (!caps)
+    caps = gst_pad_get_pad_template_caps (GST_BASE_SRC_PAD (basesrc));
+
+  GST_OBJECT_LOCK (src);
+  intersect = gst_caps_intersect (src->caps, caps);
+  GST_OBJECT_UNLOCK (src);
+
+  gst_caps_take (&caps, intersect);
+
+  if (!gst_caps_is_empty (caps)) {
+    if (gst_caps_is_any (caps)) {
+      GST_DEBUG_OBJECT (basesrc, "any caps, negotiation not needed");
+      result = TRUE;
+    } else {
+      GstBaseSrcClass *bclass = GST_BASE_SRC_GET_CLASS (basesrc);
+      if (bclass->fixate)
+        caps = bclass->fixate (basesrc, caps);
+      GST_DEBUG_OBJECT (basesrc, "fixated to: %" GST_PTR_FORMAT, caps);
+      if (gst_caps_is_fixed (caps)) {
+        result = gst_base_src_set_caps (basesrc, caps);
+      }
+    }
+    gst_caps_unref (caps);
+  } else {
+    GST_DEBUG_OBJECT (basesrc, "no common caps");
+  }
+  return result;
+}
+
 #ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
 static gboolean
 gst_nice_src_decide_allocation (GstBaseSrc * bsrc, GstQuery * query)
@@ -583,7 +627,7 @@ gst_nice_src_decide_allocation (GstBaseSrc * bsrc, GstQuery * query)
   if (src->agent){
     if (src->mem_list_interface_set == FALSE)
     {
-      nice_agent_set_mem_list_interface(src->agent, &src->mem_list_interface);
+      nice_agent_set_mem_list_interface(src->agent, (MemlistInterface**)&src->mem_list_interface);
       src->mem_list_interface_set = TRUE;
     }
   }
@@ -626,7 +670,32 @@ gst_nice_src_query (GstBaseSrc * src, GstQuery * query)
   }
   return ret;
 }
+static void gst_nice_src_set_timestamp(GstBaseSrc * basesrc, GstBuffer *buffer)
+{
+  GstClock *clock;
+  GstClockTime running_time, now;
+  GstClockTime base_time = GST_ELEMENT_CAST (basesrc)->base_time;
 
+  /* get clock, if no clock, we can't sync or do timestamps */
+  if ((clock = GST_ELEMENT_CLOCK (basesrc)) == NULL)
+  {
+    return;
+  }
+  else
+  {
+    gst_object_ref (clock);
+  }
+
+  now = gst_clock_get_time (clock);
+  running_time = now - base_time;
+
+  GST_BUFFER_DTS (buffer) = running_time;
+
+  GST_LOG_OBJECT (basesrc, "created DTS %" GST_TIME_FORMAT,
+      GST_TIME_ARGS (running_time));
+
+  gst_object_unref(clock);
+}
 static GstFlowReturn
 gst_nice_src_create (GstBaseSrc * basesrc, guint64 offset, guint length,
     GstBuffer ** ret)
@@ -651,12 +720,19 @@ gst_nice_src_create (GstBaseSrc * basesrc, guint64 offset, guint length,
   if (bufptr != NULL) {
     if (GST_IS_BUFFER_LIST(bufptr)){
       *ret = NULL;
+      guint bl_len = gst_buffer_list_length(bufptr);
+      for(int i = 0; i < bl_len; i++){
+        GstBuffer *buf = gst_buffer_list_get(bufptr, i);
+        gst_nice_src_set_timestamp(basesrc, buf);
+      }
       gst_base_src_submit_buffer_list (basesrc, bufptr);
       GST_LOG_OBJECT (nicesrc, "Got buffer list, pushing");
     }
     else
     {
       *ret = bufptr;
+      gst_nice_src_set_timestamp(basesrc, bufptr);
+
       GST_LOG_OBJECT (nicesrc, "Got buffer, pushing");
     }
     return GST_FLOW_OK;
