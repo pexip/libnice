@@ -560,7 +560,7 @@ gst_nice_src_negotiate (GstBaseSrc * basesrc)
   gboolean result = FALSE;
 
   caps = gst_pad_get_allowed_caps (GST_BASE_SRC_PAD (basesrc));
-  if (!caps)
+  if (caps == NULL)
     caps = gst_pad_get_pad_template_caps (GST_BASE_SRC_PAD (basesrc));
 
   GST_OBJECT_LOCK (src);
@@ -575,16 +575,21 @@ gst_nice_src_negotiate (GstBaseSrc * basesrc)
       result = TRUE;
     } else {
       GstBaseSrcClass *bclass = GST_BASE_SRC_GET_CLASS (basesrc);
-      if (bclass->fixate)
+      if (bclass->fixate){
+        GstCaps *oldcaps = caps;
         caps = bclass->fixate (basesrc, caps);
+        //gst_caps_unref(oldcaps);
+      }
       GST_DEBUG_OBJECT (basesrc, "fixated to: %" GST_PTR_FORMAT, caps);
       if (gst_caps_is_fixed (caps)) {
         result = gst_base_src_set_caps (basesrc, caps);
       }
     }
-    gst_caps_unref (caps);
   } else {
     GST_DEBUG_OBJECT (basesrc, "no common caps");
+  }
+  if (caps != NULL){
+    gst_caps_unref (caps);
   }
   return result;
 }
@@ -621,6 +626,8 @@ gst_nice_src_decide_allocation (GstBaseSrc * bsrc, GstQuery * query)
     gst_query_set_nth_allocation_pool (query, 0, pool, size, 0, 0);
   else
     gst_query_add_allocation_pool (query, pool, size, 0, 0);
+
+  gst_nice_src_clean_up_pool(src);
 
   src->mem_list_interface.pool = pool;
 
