@@ -40,7 +40,7 @@ if host_system == 'windows'
   libagent_deps += [iphlpapi_dep]
 endif
 
-libagent = shared_library('nice',
+libagent = library('nice',
   libagent_sources + libagent_extra_sources,
   c_args : libagent_cargs,
   include_directories: [config_h_inc, libnice_incdir],

@@ -48,10 +48,11 @@ endif
 
 install_dir = get_option('libdir')
 plugins_install_dir = '@0@/gstreamer-1.0'.format(install_dir)
+static_build = get_option('default_library') == 'static'
 
 gir = find_program('g-ir-scanner', required : false)
 gnome = import('gnome')
-build_gir = gir.found() and not meson.is_cross_build()
+build_gir = gir.found() and not meson.is_cross_build() and not static_build
 
 # config.h generation
 config_h_inc = include_directories('.')
