@@ -386,11 +386,6 @@ static void socket_recvmmsg_structures_fill_entry_with_buffer(MemlistInterface *
   {
     message_data->buffer = memory_interface->buffer_get(memory_interface_ptr, NICE_UDP_SOCKET_BUFFER_ALLOC_SIZE);
   }
-#if 0
-  else{
-    uint64_t bufval = *((uint64_t*)message_data->buffer); /* Breakpoint */
-  }
-#endif
   if (message_data->buffer == NULL){
     return;
   }
