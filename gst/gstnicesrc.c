@@ -197,9 +197,6 @@ gst_nice_src_class_init (GstNiceSrcClass *klass)
   GST_DEBUG_CATEGORY_INIT (nicesrc_debug, "nicesrc",
       0, "libnice source");
 
-  //gstpushsrc_class = (GstPushSrcClass *) klass;
-  //gstpushsrc_class->create = GST_DEBUG_FUNCPTR (gst_nice_src_create);
-
   gstbasesrc_class = (GstBaseSrcClass *) klass;
   gstbasesrc_class->unlock = GST_DEBUG_FUNCPTR (gst_nice_src_unlock);
   gstbasesrc_class->unlock_stop = GST_DEBUG_FUNCPTR (gst_nice_src_unlock_stop);
@@ -484,7 +481,6 @@ gst_nice_src_read_multiple_callback (NiceAgent *agent,
   }
 
   GST_LOG_OBJECT (agent, "Got multiple buffers (%d), getting out of the main loop", num_buffers);
-  //GST_ERROR_OBJECT (agent, "Pushing multiple buffers are not implemented for gstnicesrc yet. Dropping buffer.");
 
   g_queue_push_tail (nicesrc->outbufs, outlist);
 
@@ -578,7 +574,6 @@ gst_nice_src_negotiate (GstBaseSrc * basesrc)
       if (bclass->fixate){
         GstCaps *oldcaps = caps;
         caps = bclass->fixate (basesrc, caps);
-        //gst_caps_unref(oldcaps);
       }
       GST_DEBUG_OBJECT (basesrc, "fixated to: %" GST_PTR_FORMAT, caps);
       if (gst_caps_is_fixed (caps)) {

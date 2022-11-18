@@ -235,7 +235,6 @@ gint nice_udp_socket_recvmmsg(NiceSocket *sock)
     }
   }
 
-  //g_assert(priv->message_headers != NULL);
   /* What do we do here if we haven't been able to initiate enough buffers to put data in?*/
   int socket_fd = g_socket_get_fd(sock->fileno);
   gssize result =
@@ -311,8 +310,6 @@ socket_is_reliable (NiceSocket *sock)
 }
 
 #ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
-
-/* TODO: We need a way to extract and replenish buffers once they have been received */
 
 void nice_udp_socket_interface_set(NiceSocket *udp_socket, MemlistInterface **ml_interface){
   g_assert(udp_socket->type == NICE_SOCKET_TYPE_UDP_BSD);
