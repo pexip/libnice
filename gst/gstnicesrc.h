@@ -44,6 +44,7 @@
 #include <nice/nice.h>
 
 G_BEGIN_DECLS
+#define GST_NICE_SRC_MEM_BUFFERS_PREALLOCATED 32
 
 #define GST_TYPE_NICE_SRC \
   (gst_nice_src_get_type())
@@ -57,12 +58,35 @@ G_BEGIN_DECLS
   (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_NICE_SRC))
 #define GST_NICE_SRC_CAST(obj) \
   ((GstNiceSrc *)(obj))
+#define GST_NICE_SRC_GET_CLASS(obj) \
+      (G_TYPE_INSTANCE_GET_CLASS ((obj), GST_TYPE_NICE_SRC, GstNiceSrcClass))
 
 typedef struct _GstNiceSrc GstNiceSrc;
 
+typedef struct _GstNiceSrcMemoryBufferRef GstNiceSrcMemoryBufferRef;
+
+struct _GstNiceSrcMemoryBufferRef{
+  GstBuffer *buffer;
+  GstMapInfo buf_map;
+};
+
+struct _GstNiceMemlistInterface{
+  /* This must be first in struct for upcasts to work */
+  const MemlistInterface *function_interface;
+  /* When embedded in GstNiceSrc this will be a self referencing pointer,
+    that is not refcounted */
+  GstNiceSrc *gst_src;
+  /* Pointers to  GstNiceSrcMemoryBufferRefs that have been returned that are
+     waiting to be given out again. It is assumed that the buffer and mapping
+     refed to by the reference is in an unintitialised state */
+  GArray *temp_refs;
+  GstBufferPool *pool;
+
+};
+
 struct _GstNiceSrc
 {
-  GstPushSrc parent;
+  GstBaseSrc parent;
   GstPad *srcpad;
   NiceAgent *agent;
   guint stream_id;
@@ -74,13 +98,17 @@ struct _GstNiceSrc
   GSource *idle_source;
   GstCaps *caps;
   GHashTable *socket_addresses;
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
+  struct _GstNiceMemlistInterface mem_list_interface;
+  gboolean mem_list_interface_set;
+#endif
 };
 
 typedef struct _GstNiceSrcClass GstNiceSrcClass;
 
 struct _GstNiceSrcClass
 {
-  GstPushSrcClass parent_class;
+  GstBaseSrcClass parent_class;
 };
 
 GType gst_nice_src_get_type (void);

@@ -41,22 +41,36 @@
 #include <string.h>
 
 #include "gstnicesrc.h"
-#if GST_CHECK_VERSION (1,0,0)
 #include <gst/net/gstnetaddressmeta.h>
-#else
-#include <gst/netbuffer/gstnetbuffer.h>
-#endif
 
 GST_DEBUG_CATEGORY_STATIC (nicesrc_debug);
 #define GST_CAT_DEFAULT nicesrc_debug
 
 
-#define BUFFER_SIZE (65536)
+//#define BUFFER_SIZE (65536)
+#define BUFFER_SIZE (4096)
 
-static GstFlowReturn
-gst_nice_src_create (
-  GstPushSrc *basesrc,
-  GstBuffer **buffer);
+static gboolean gst_nice_src_query (
+  GstBaseSrc * src,
+  GstQuery * query);
+
+static GstFlowReturn gst_nice_src_create (
+  GstBaseSrc * bsrc,
+  guint64 offset,
+  guint length,
+  GstBuffer ** ret);
+
+static GstFlowReturn gst_nice_src_alloc (
+  GstBaseSrc * bsrc,
+  guint64 offset,
+  guint length,
+  GstBuffer ** ret);
+
+static GstFlowReturn gst_nice_src_fill (
+  GstBaseSrc * bsrc,
+  guint64 offset,
+  guint length,
+  GstBuffer * ret);
 
 static gboolean
 gst_nice_src_unlock (
@@ -67,8 +81,13 @@ gst_nice_src_unlock_stop (
     GstBaseSrc *basesrc);
 
 static gboolean
+gst_nice_src_decide_allocation (
+  GstBaseSrc * bsrc,
+  GstQuery * query);
+
+static gboolean
 gst_nice_src_negotiate (
-    GstBaseSrc * src);
+  GstBaseSrc * basesrc);
 
 static void
 gst_nice_src_set_property (
@@ -87,11 +106,31 @@ gst_nice_src_get_property (
 
 static void
 gst_nice_src_dispose (GObject *object);
+static
+void gst_nice_src_clean_up_pool(GstNiceSrc * src);
 
 static GstStateChangeReturn
 gst_nice_src_change_state (
     GstElement * element,
     GstStateChange transition);
+
+
+static void gst_nice_src_mem_buffer_ref_array_clear(void *element);
+
+NiceMemoryBufferRef* gst_nice_src_buffer_get(MemlistInterface **ml_interface, gsize size);
+void gst_nice_src_buffer_return(MemlistInterface **ml_interface, NiceMemoryBufferRef* buffer);
+char* gst_nice_src_buffer_contents(MemlistInterface **ml_interface, NiceMemoryBufferRef* buffer);
+gsize gst_nice_src_buffer_size(MemlistInterface **ml_interface, NiceMemoryBufferRef* buffer);
+void gst_nice_src_buffer_resize(MemlistInterface **ml_interface,
+  NiceMemoryBufferRef* buffer, gsize new_size);
+
+static const MemlistInterface nice_src_mem_interface = {
+    .buffer_get = gst_nice_src_buffer_get,
+    .buffer_return = gst_nice_src_buffer_return,
+    .buffer_contents = gst_nice_src_buffer_contents,
+    .buffer_size = gst_nice_src_buffer_size,
+    .buffer_resize = gst_nice_src_buffer_resize,
+};
 
 static GstStaticPadTemplate gst_nice_src_src_template =
 GST_STATIC_PAD_TEMPLATE (
@@ -102,7 +141,7 @@ GST_STATIC_PAD_TEMPLATE (
 
 #define gst_nice_src_parent_class parent_class
 
-G_DEFINE_TYPE (GstNiceSrc, gst_nice_src, GST_TYPE_PUSH_SRC);
+G_DEFINE_TYPE (GstNiceSrc, gst_nice_src, GST_TYPE_BASE_SRC);
 
 enum
 {
@@ -151,7 +190,6 @@ gst_nice_src_handle_event (GstBaseSrc *basesrc, GstEvent * event)
 static void
 gst_nice_src_class_init (GstNiceSrcClass *klass)
 {
-  GstPushSrcClass *gstpushsrc_class;
   GstBaseSrcClass *gstbasesrc_class;
   GstElementClass *gstelement_class;
   GObjectClass *gobject_class;
@@ -159,14 +197,20 @@ gst_nice_src_class_init (GstNiceSrcClass *klass)
   GST_DEBUG_CATEGORY_INIT (nicesrc_debug, "nicesrc",
       0, "libnice source");
 
-  gstpushsrc_class = (GstPushSrcClass *) klass;
-  gstpushsrc_class->create = GST_DEBUG_FUNCPTR (gst_nice_src_create);
-
   gstbasesrc_class = (GstBaseSrcClass *) klass;
   gstbasesrc_class->unlock = GST_DEBUG_FUNCPTR (gst_nice_src_unlock);
   gstbasesrc_class->unlock_stop = GST_DEBUG_FUNCPTR (gst_nice_src_unlock_stop);
   gstbasesrc_class->negotiate = GST_DEBUG_FUNCPTR (gst_nice_src_negotiate);
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
+  gstbasesrc_class->decide_allocation = GST_DEBUG_FUNCPTR (gst_nice_src_decide_allocation);
+#endif
   gstbasesrc_class->event = GST_DEBUG_FUNCPTR (gst_nice_src_handle_event);
+
+  /* Reimplementation of gstpushsrc in order to support buffer lists */
+  gstbasesrc_class->create = GST_DEBUG_FUNCPTR (gst_nice_src_create);
+  gstbasesrc_class->alloc = GST_DEBUG_FUNCPTR (gst_nice_src_alloc);
+  gstbasesrc_class->fill = GST_DEBUG_FUNCPTR (gst_nice_src_fill);
+  gstbasesrc_class->query = GST_DEBUG_FUNCPTR (gst_nice_src_query);
 
   gobject_class = (GObjectClass *) klass;
   gobject_class->set_property = gst_nice_src_set_property;
@@ -178,11 +222,7 @@ gst_nice_src_class_init (GstNiceSrcClass *klass)
 
   gst_element_class_add_pad_template (gstelement_class,
       gst_static_pad_template_get (&gst_nice_src_src_template));
-#if GST_CHECK_VERSION (1,0,0)
   gst_element_class_set_metadata (gstelement_class,
-#else
-  gst_element_class_set_details_simple (gstelement_class,
-#endif
       "ICE source",
       "Source",
       "Interactive UDP connectivity establishment",
@@ -345,8 +385,32 @@ gst_nice_src_init (GstNiceSrc *src)
                                                 gst_nice_src_nice_address_compare,
                                                 gst_nice_src_destroy_hash_key,
                                                 gst_object_unref);
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
+  src->mem_list_interface.function_interface = &nice_src_mem_interface;
+  src->mem_list_interface.gst_src = src;
+  src->mem_list_interface.temp_refs = g_array_sized_new(FALSE, TRUE,
+    sizeof(GstNiceSrcMemoryBufferRef*), GST_NICE_SRC_MEM_BUFFERS_PREALLOCATED);
+  g_array_set_clear_func(src->mem_list_interface.temp_refs, &gst_nice_src_mem_buffer_ref_array_clear);
+  src->mem_list_interface_set = FALSE;
+#endif
 }
 
+static void gst_nice_buffer_address_meta_add(
+    GstNiceSrc *nicesrc,
+    const NiceAddress *from,
+    GstBuffer* buffer
+  ){
+   if (from != NULL) {
+    GSocketAddress * saddr = gst_nice_src_gsocket_addr_create_or_retrieve(
+      nicesrc, from);
+    if (saddr != NULL) {
+      gst_buffer_add_net_address_meta (buffer, saddr);
+      g_object_unref (saddr);
+    } else {
+      GST_ERROR_OBJECT (nicesrc, "Could not convert address to GSocketAddress");
+    }
+  }
+}
 static void
 gst_nice_src_read_callback (NiceAgent *agent,
     guint stream_id,
@@ -360,9 +424,6 @@ gst_nice_src_read_callback (NiceAgent *agent,
   GstBaseSrc *basesrc = GST_BASE_SRC (data);
   GstNiceSrc *nicesrc = GST_NICE_SRC (basesrc);
   GstBaseSrcClass *bclass = GST_BASE_SRC_GET_CLASS (basesrc);
-#if !GST_CHECK_VERSION (1,0,0)
-  GstNetBuffer *netbuffer = NULL;
-#endif
   GstBuffer *buffer = NULL;
 
   (void)stream_id;
@@ -370,7 +431,6 @@ gst_nice_src_read_callback (NiceAgent *agent,
 
   GST_LOG_OBJECT (agent, "Got buffer, getting out of the main loop");
 
-#if GST_CHECK_VERSION (1,0,0)
   (void)to;
   GstFlowReturn status = bclass->alloc(basesrc, 0, len, &buffer);
   if (status != GST_FLOW_OK)
@@ -379,55 +439,54 @@ gst_nice_src_read_callback (NiceAgent *agent,
                                ", allocate using local allocator instead");
     buffer = gst_buffer_new_allocate (NULL, len, NULL);
   }
+
+  if (gst_buffer_get_size(buffer) != len)
+  {
+    gst_buffer_resize(buffer, 0, len);
+    g_assert(gst_buffer_get_size(buffer) == len);
+  }
+
   gst_buffer_fill (buffer, 0, buf, len);
 
-  if (from != NULL) {
-    GSocketAddress * saddr = gst_nice_src_gsocket_addr_create_or_retrieve(
-      nicesrc, from);
-    if (saddr != NULL) {
-      gst_buffer_add_net_address_meta (buffer, saddr);
-      g_object_unref (saddr);
-    } else {
-      GST_ERROR_OBJECT (nicesrc, "Could not convert address to GSocketAddress");
-    }
-  }
-#else
-  if (from != NULL && to != NULL) {
-    netbuffer = gst_netbuffer_new();
+  gst_nice_buffer_address_meta_add(nicesrc, from, buffer);
 
-    GST_BUFFER_DATA(netbuffer) = g_memdup(buf, len);
-    GST_BUFFER_MALLOCDATA(netbuffer) = GST_BUFFER_DATA(netbuffer);
-    GST_BUFFER_SIZE(netbuffer) = len;
-
-    switch (from->s.addr.sa_family) {
-    case AF_INET:
-      {
-        gst_netaddress_set_ip4_address (&netbuffer->from, from->s.ip4.sin_addr.s_addr, from->s.ip4.sin_port);
-        gst_netaddress_set_ip4_address (&netbuffer->to, to->s.ip4.sin_addr.s_addr, to->s.ip4.sin_port);
-      }
-      break;
-    case AF_INET6:
-      {
-        gst_netaddress_set_ip6_address (&netbuffer->from, (guint8 *)(&from->s.ip6.sin6_addr), from->s.ip6.sin6_port);
-        gst_netaddress_set_ip6_address (&netbuffer->to, (guint8 *)(&to->s.ip6.sin6_addr), to->s.ip6.sin6_port);
-      }
-      break;
-    default:
-      GST_ERROR_OBJECT (nicesrc, "Unknown address family");
-      break;
-    }
-
-
-    buffer = GST_BUFFER_CAST(netbuffer);
-  } else {
-    buffer = gst_buffer_new_and_alloc (len);
-    memcpy (GST_BUFFER_DATA (buffer), buf, len);
-  }
-#endif
   g_queue_push_tail (nicesrc->outbufs, buffer);
 
   g_main_loop_quit (nicesrc->mainloop);
 }
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
+/* NB: This function does not support pre 1.0 gstreamer */
+static void
+gst_nice_src_read_multiple_callback (NiceAgent *agent,
+    guint stream_id,
+    guint component_id,
+    guint num_buffers,
+    NiceMemoryBufferRef **buffers,
+    const NiceAddress *from,
+    const NiceAddress *to,
+    gpointer data)
+{
+  GstBaseSrc *basesrc = GST_BASE_SRC (data);
+  GstNiceSrc *nicesrc = GST_NICE_SRC (basesrc);
+
+  GstBufferList *outlist = gst_buffer_list_new_sized (num_buffers);
+  for (int i = 0; i < num_buffers; ++i) {
+    GstNiceSrcMemoryBufferRef *buffer_ref = (GstNiceSrcMemoryBufferRef*)buffers[i];
+    GstBuffer *gbuffer = buffer_ref->buffer;
+    gst_buffer_unmap(gbuffer, &(buffer_ref->buf_map));
+    gst_nice_buffer_address_meta_add(nicesrc, &from[i], gbuffer);
+    gst_buffer_list_insert (outlist, -1, gbuffer);
+    buffer_ref->buffer = NULL;
+    gst_nice_src_buffer_return((MemlistInterface**)&(nicesrc->mem_list_interface.function_interface), buffer_ref);
+  }
+
+  GST_LOG_OBJECT (agent, "Got multiple buffers (%d), getting out of the main loop", num_buffers);
+
+  g_queue_push_tail (nicesrc->outbufs, outlist);
+
+  g_main_loop_quit (nicesrc->mainloop);
+}
+#endif
 
 static gboolean
 gst_nice_src_unlock_idler (gpointer data)
@@ -497,7 +556,7 @@ gst_nice_src_negotiate (GstBaseSrc * basesrc)
   gboolean result = FALSE;
 
   caps = gst_pad_get_allowed_caps (GST_BASE_SRC_PAD (basesrc));
-  if (!caps)
+  if (caps == NULL)
     caps = gst_pad_get_pad_template_caps (GST_BASE_SRC_PAD (basesrc));
 
   GST_OBJECT_LOCK (src);
@@ -512,24 +571,136 @@ gst_nice_src_negotiate (GstBaseSrc * basesrc)
       result = TRUE;
     } else {
       GstBaseSrcClass *bclass = GST_BASE_SRC_GET_CLASS (basesrc);
-      if (bclass->fixate)
+      if (bclass->fixate){
+        GstCaps *oldcaps = caps;
         caps = bclass->fixate (basesrc, caps);
+      }
       GST_DEBUG_OBJECT (basesrc, "fixated to: %" GST_PTR_FORMAT, caps);
       if (gst_caps_is_fixed (caps)) {
         result = gst_base_src_set_caps (basesrc, caps);
       }
     }
-    gst_caps_unref (caps);
   } else {
     GST_DEBUG_OBJECT (basesrc, "no common caps");
+  }
+  if (caps != NULL){
+    gst_caps_unref (caps);
   }
   return result;
 }
 
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
+static gboolean
+gst_nice_src_decide_allocation (GstBaseSrc * bsrc, GstQuery * query)
+{
+  GstBufferPool *pool;
+  gboolean update;
+  GstStructure *config;
+  GstCaps *caps = NULL;
+  guint size = BUFFER_SIZE;
+
+  GstNiceSrc *src = GST_NICE_SRC_CAST (bsrc);
+
+  if (gst_query_get_n_allocation_pools (query) > 0) {
+    update = TRUE;
+  } else {
+    update = FALSE;
+  }
+
+  pool = gst_buffer_pool_new ();
+
+  config = gst_buffer_pool_get_config (pool);
+
+  gst_query_parse_allocation (query, &caps, NULL);
+
+  gst_buffer_pool_config_set_params (config, caps, size, 0, 0);
+
+  gst_buffer_pool_set_config (pool, config);
+
+  if (update)
+    gst_query_set_nth_allocation_pool (query, 0, pool, size, 0, 0);
+  else
+    gst_query_add_allocation_pool (query, pool, size, 0, 0);
+
+  gst_nice_src_clean_up_pool(src);
+
+  src->mem_list_interface.pool = pool;
+
+  if (src->agent){
+    if (src->mem_list_interface_set == FALSE)
+    {
+      nice_agent_set_mem_list_interface(src->agent, (MemlistInterface**)&src->mem_list_interface);
+      src->mem_list_interface_set = TRUE;
+    }
+  }
+
+  return TRUE;
+}
+
+static void gst_nice_src_clean_up_pool(GstNiceSrc * src)
+{
+  if (src->mem_list_interface.pool != NULL) {
+    /* The entries that already exists will be with the old pool until they die
+       as we have no way of moving them to the new pool. */
+    //gst_buffer_pool_set_active (src->mem_list_interface.pool, FALSE);
+    gst_object_unref (src->mem_list_interface.pool);
+    src->mem_list_interface.pool = NULL;
+  }
+}
+#endif
+
+static gboolean
+gst_nice_src_query (GstBaseSrc * src, GstQuery * query)
+{
+  gboolean ret;
+
+  switch (GST_QUERY_TYPE (query)) {
+    case GST_QUERY_SCHEDULING:
+    {
+      /* a pushsrc can by default never operate in pull mode override
+       * if you want something different. */
+      gst_query_set_scheduling (query, GST_SCHEDULING_FLAG_SEQUENTIAL, 1, -1,
+          0);
+      gst_query_add_scheduling_mode (query, GST_PAD_MODE_PUSH);
+
+      ret = TRUE;
+      break;
+    }
+    default:
+      ret = GST_BASE_SRC_CLASS (parent_class)->query (src, query);
+      break;
+  }
+  return ret;
+}
+static void gst_nice_src_set_timestamp(GstBaseSrc * basesrc, GstBuffer *buffer)
+{
+  GstClock *clock;
+  GstClockTime running_time, now;
+  GstClockTime base_time = GST_ELEMENT_CAST (basesrc)->base_time;
+
+  /* get clock, if no clock, we can't sync or do timestamps */
+  if ((clock = GST_ELEMENT_CLOCK (basesrc)) == NULL)
+  {
+    return;
+  }
+  else
+  {
+    gst_object_ref (clock);
+  }
+
+  now = gst_clock_get_time (clock);
+  running_time = now - base_time;
+
+  GST_BUFFER_DTS (buffer) = running_time;
+
+  GST_LOG_OBJECT (basesrc, "created DTS %" GST_TIME_FORMAT,
+      GST_TIME_ARGS (running_time));
+
+  gst_object_unref(clock);
+}
 static GstFlowReturn
-gst_nice_src_create (
-  GstPushSrc *basesrc,
-  GstBuffer **buffer)
+gst_nice_src_create (GstBaseSrc * basesrc, guint64 offset, guint length,
+    GstBuffer ** ret)
 {
   GstNiceSrc *nicesrc = GST_NICE_SRC (basesrc);
 
@@ -537,31 +708,64 @@ gst_nice_src_create (
 
   GST_OBJECT_LOCK (basesrc);
   if (nicesrc->unlocked) {
+    GST_LOG_OBJECT (nicesrc, "Source unlinkend, transitioning to flushing");
     GST_OBJECT_UNLOCK (basesrc);
-#if GST_CHECK_VERSION (1,0,0)
     return GST_FLOW_FLUSHING;
-#else
-    return GST_FLOW_WRONG_STATE;
-#endif
   }
   GST_OBJECT_UNLOCK (basesrc);
 
   if (g_queue_is_empty (nicesrc->outbufs))
     g_main_loop_run (nicesrc->mainloop);
 
-  *buffer = g_queue_pop_head (nicesrc->outbufs);
-  if (*buffer != NULL) {
-    GST_LOG_OBJECT (nicesrc, "Got buffer, pushing");
+  gpointer bufptr = g_queue_pop_head (nicesrc->outbufs);
+
+  if (bufptr != NULL) {
+    if (GST_IS_BUFFER_LIST(bufptr)){
+      *ret = NULL;
+      guint bl_len = gst_buffer_list_length(bufptr);
+      for(int i = 0; i < bl_len; i++){
+        GstBuffer *buf = gst_buffer_list_get(bufptr, i);
+        gst_nice_src_set_timestamp(basesrc, buf);
+      }
+      gst_base_src_submit_buffer_list (basesrc, bufptr);
+      GST_LOG_OBJECT (nicesrc, "Got buffer list, pushing");
+    }
+    else
+    {
+      *ret = bufptr;
+      gst_nice_src_set_timestamp(basesrc, bufptr);
+
+      GST_LOG_OBJECT (nicesrc, "Got buffer, pushing");
+    }
     return GST_FLOW_OK;
   } else {
+    *ret = NULL;
     GST_LOG_OBJECT (nicesrc, "Got interrupting, returning wrong-state");
-#if GST_CHECK_VERSION (1,0,0)
     return GST_FLOW_FLUSHING;
-#else
-    return GST_FLOW_WRONG_STATE;
-#endif
   }
 
+}
+
+static GstFlowReturn
+gst_nice_src_alloc (GstBaseSrc * bsrc, guint64 offset, guint length,
+    GstBuffer ** ret)
+{
+  GstFlowReturn fret;
+
+  fret = GST_BASE_SRC_CLASS (parent_class)->alloc (bsrc, offset, length, ret);
+
+  return fret;
+}
+
+static GstFlowReturn
+gst_nice_src_fill (GstBaseSrc * bsrc, guint64 offset, guint length,
+    GstBuffer * ret)
+{
+  GstFlowReturn fret;
+
+  fret = GST_BASE_SRC_CLASS (parent_class)->fill (bsrc, offset, length, ret);
+
+  return fret;
 }
 
 static void
@@ -575,9 +779,31 @@ gst_nice_src_dispose (GObject *object)
   }
   src->idle_source = NULL;
 
-  if (src->agent)
+  if (src->agent){
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
+    if (src->mem_list_interface_set == TRUE)
+    {
+      nice_agent_set_mem_list_interface(src->agent, NULL);
+      src->mem_list_interface_set = FALSE;
+    }
+#endif
     g_object_unref (src->agent);
+  }
+
   src->agent = NULL;
+
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
+  if (src->mem_list_interface.temp_refs){
+    GArray *temp_refs = src->mem_list_interface.temp_refs;
+    /* Clean up all elements in array */
+    for(int i=temp_refs->len-1;i==0; i--)
+    {
+      g_array_remove_index(temp_refs, i);
+    }
+    g_array_free(temp_refs, TRUE);
+  }
+  gst_nice_src_clean_up_pool(src);
+#endif
 
   if (src->mainloop)
     g_main_loop_unref (src->mainloop);
@@ -727,12 +953,18 @@ gst_nice_src_change_state (GstElement * element, GstStateChange transition)
       else
         {
           nice_agent_attach_recv (src->agent, src->stream_id, src->component_id,
-              src->mainctx, gst_nice_src_read_callback, (gpointer) src);
+              src->mainctx, gst_nice_src_read_callback,
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
+              gst_nice_src_read_multiple_callback,
+#else
+              NULL,
+#endif
+              (gpointer) src);
         }
       break;
     case GST_STATE_CHANGE_READY_TO_NULL:
       nice_agent_attach_recv (src->agent, src->stream_id, src->component_id,
-          src->mainctx, NULL, NULL);
+          src->mainctx, NULL, NULL, NULL);
       break;
     default:
       break;
@@ -742,4 +974,98 @@ gst_nice_src_change_state (GstElement * element, GstStateChange transition)
       transition);
 
   return ret;
+}
+
+NiceMemoryBufferRef* gst_nice_src_buffer_ref_allocate(MemlistInterface **ml_interface){
+  struct _GstNiceMemlistInterface *mem_list_interface = (struct _GstNiceMemlistInterface *)ml_interface;
+
+  GstNiceSrcMemoryBufferRef* ref;
+  if (mem_list_interface->temp_refs->len > 0)
+  {
+    /* Use an existing allocated reference */
+    int last_index = mem_list_interface->temp_refs->len-1;
+    ref = (GstNiceSrcMemoryBufferRef*) g_array_index(mem_list_interface->temp_refs, GstNiceSrcMemoryBufferRef*, last_index);
+    // Make sure the ref is not freed when removed from the array
+    g_array_index(mem_list_interface->temp_refs, GstNiceSrcMemoryBufferRef*, last_index) = NULL;
+    g_array_remove_index(mem_list_interface->temp_refs, last_index);
+  }
+  else
+  {
+    /* No existing elements are stored, allocate a new one */
+    ref = g_new0(GstNiceSrcMemoryBufferRef, 1);
+  }
+  g_assert_cmpint((gsize)ref, !=, (gsize)NULL);
+  return ref;
+}
+
+NiceMemoryBufferRef* gst_nice_src_buffer_get(MemlistInterface **ml_interface, gsize size){
+  struct _GstNiceMemlistInterface *mem_list_interface = (struct _GstNiceMemlistInterface *)ml_interface;
+  GstBufferPoolAcquireParams params = { 0 };
+  GstNiceSrcMemoryBufferRef *ref = gst_nice_src_buffer_ref_allocate(ml_interface);
+  GstBuffer *buffer = NULL;
+
+  g_assert(mem_list_interface->pool != NULL);
+  gint status = gst_buffer_pool_acquire_buffer (mem_list_interface->pool, &buffer,
+      &params);
+  if(status != GST_FLOW_OK)
+  {
+    gst_nice_src_buffer_return(ml_interface, ref);
+    return NULL;
+  }
+  g_assert_cmpint(status, ==, GST_FLOW_OK);
+  g_assert(buffer != NULL);
+  ref->buffer = buffer;
+
+  gboolean mapped = gst_buffer_map (ref->buffer, &ref->buf_map,
+      GST_MAP_WRITE | GST_MAP_READ);
+  g_assert(mapped);
+
+  return (NiceMemoryBufferRef*) ref;
+}
+
+void gst_nice_src_buffer_return(MemlistInterface **ml_interface, NiceMemoryBufferRef* buffer){
+  struct _GstNiceMemlistInterface *mem_list_interface = (struct _GstNiceMemlistInterface *)ml_interface;
+  GstNiceSrcMemoryBufferRef *buffer_ref = (GstNiceSrcMemoryBufferRef*)buffer;
+  if(buffer_ref->buffer){
+    /* Return allocated buffer to the pool after it has been used */
+    gst_buffer_unmap (buffer_ref->buffer, &buffer_ref->buf_map);
+    gst_buffer_unref (buffer_ref->buffer);
+  }
+  /* TODO: The ref should be added to the array, this is not done at the moment */
+  memset (buffer_ref, 0, sizeof (GstNiceSrcMemoryBufferRef));
+  g_array_append_vals(mem_list_interface->temp_refs, &buffer_ref, 1);
+
+}
+
+char* gst_nice_src_buffer_contents(MemlistInterface **ml_interface, NiceMemoryBufferRef* buffer){
+  GstNiceSrcMemoryBufferRef *buffer_ref = (GstNiceSrcMemoryBufferRef*)buffer;
+  return (char*) buffer_ref->buf_map.data;
+}
+
+gsize gst_nice_src_buffer_size(MemlistInterface **ml_interface, NiceMemoryBufferRef* buffer){
+  GstNiceSrcMemoryBufferRef *buffer_ref = (GstNiceSrcMemoryBufferRef*)buffer;
+  return buffer_ref->buf_map.size;
+}
+
+void gst_nice_src_buffer_resize(MemlistInterface **ml_interface, NiceMemoryBufferRef* buffer, gsize new_size) {
+  GstNiceSrcMemoryBufferRef *buffer_ref = (GstNiceSrcMemoryBufferRef*)buffer;
+  guint8* data_location;
+  g_assert(new_size <= buffer_ref->buf_map.size);
+  data_location = buffer_ref->buf_map.data;
+  gst_buffer_unmap (buffer_ref->buffer, &buffer_ref->buf_map);
+  gst_buffer_resize(buffer_ref->buffer, 0, new_size);
+  gboolean mapped = gst_buffer_map (buffer_ref->buffer, &buffer_ref->buf_map,
+      GST_MAP_WRITE | GST_MAP_READ);
+  g_assert(mapped);
+  g_assert(buffer_ref->buf_map.data == data_location);
+  g_assert(buffer_ref->buf_map.size == new_size);
+}
+
+/* Only to be used as a clear function for the temp_refs array, which contains uninitialised refs */
+static void gst_nice_src_mem_buffer_ref_array_clear(void *element){
+  GstNiceSrcMemoryBufferRef **ref = (GstNiceSrcMemoryBufferRef**)element;
+  if (ref != NULL){
+    g_free(*ref);
+    *ref = NULL;
+  }
 }

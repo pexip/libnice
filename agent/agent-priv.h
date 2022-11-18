@@ -61,6 +61,8 @@
 #include "stun/usages/turn.h"
 #include "stun/usages/ice.h"
 
+#include "memlist.h"
+
 /* XXX: starting from ICE ID-18, Ta SHOULD now be set according
  *      to session bandwidth -> this is not yet implemented in NICE */
 
@@ -125,6 +127,8 @@ struct _NiceAgent
   gboolean media_after_tick;       /* Received media after keepalive tick */
   gchar *software_attribute;       /* SOFTWARE attribute */
   gboolean reliable;               /* property: reliable */
+
+  MemlistInterface **mem_list_interface; /* mem_list_interface: used for recvmmsg buffer access */
   /* XXX: add pointer to internal data struct for ABI-safe extensions */
 };
 

@@ -39,12 +39,36 @@
 #ifndef _UDP_BSD_H
 #define _UDP_BSD_H
 
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
+#define _GNU_SOURCE
+#include <sys/socket.h>
+#endif
+
 #include "socket.h"
+#include "agent.h"
 
 G_BEGIN_DECLS
 
+#ifdef NICE_UDP_SOCKET_HAVE_RECVMMSG
+#define NICE_UDP_SOCKET_MSG_RECEIVE_TIMES 1
+#define NICE_UDP_SOCKET_MMSG_LEN 32
+#else
+#define NICE_UDP_SOCKET_MSG_RECEIVE_TIMES 32
+#define NICE_UDP_SOCKET_MMSG_LEN 1
+#endif
+#define NICE_UDP_SOCKET_BUFFER_ALLOC_SIZE 1500
+#define NICE_UDP_SOCKET_MMSG_TOTAL (NICE_UDP_SOCKET_MSG_RECEIVE_TIMES * NICE_UDP_SOCKET_MMSG_LEN)
+
 NiceSocket *
 nice_udp_bsd_socket_new (NiceAddress *addr);
+
+void nice_udp_socket_interface_set(NiceSocket *udp_socket, MemlistInterface **ml_interface);
+void nice_udp_socket_buffers_and_interface_unref(NiceSocket *udp_socket);
+gint nice_udp_socket_recvmmsg(NiceSocket *sock);
+NiceMemoryBufferRef *nice_udp_socket_packet_retrieve(NiceSocket *udp_socket,
+  guint packet_index, NiceAddress *from);
+void nice_udp_socket_recvmmsg_structures_fill_new_buffers(NiceSocket *udp_socket,
+  guint iter_start, guint iter_end);
 
 G_END_DECLS
 

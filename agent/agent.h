@@ -112,6 +112,7 @@ typedef struct _NiceAgent NiceAgent;
 #include "address.h"
 #include "candidate.h"
 #include "debug.h"
+#include "memlist.h"
 
 
 G_BEGIN_DECLS
@@ -263,6 +264,31 @@ typedef void (*NiceAgentRecvFunc) (
   NiceAgent *agent, guint stream_id, guint component_id, guint len,
   gchar *buf, gpointer user_data, const NiceAddress *from, const NiceAddress *to);
 
+/**
+ * NiceAgentRecvMultipleFunc:
+ * @agent: The #NiceAgent Object
+ * @stream_id: The id of the stream
+ * @component_id: The id of the component of the stream
+ *        which received the data
+ * @num_buffers: Count of buffers retrieved
+ * @buffers: Pointers to received buffers (of num_buffers length)
+ * @from: Pointers to from addresses (of num_buffers length)
+ * @to: Ponter to to address (i.e addr of agent, of 1 length)
+ * @user_data: The user data set in nice_agent_attach_recv()
+ *
+ * Callback function when data is received on a component
+ * In order to get the buffers that are retrieved, call
+ * nice_agent_memory_buffer_retrieve with indices from 0 to num_buffers-1
+ * while executing this function.
+ */
+typedef void (*NiceAgentRecvMultipleFunc) (
+  NiceAgent *agent, guint stream_id, guint component_id, guint num_buffers,
+  NiceMemoryBufferRef **buffers, const NiceAddress *from, const NiceAddress *to, gpointer user_data);
+
+/* This function should only be called inside the NiceAgentRecvMultipleFunc callback */
+NICE_EXPORT NiceMemoryBufferRef *nice_agent_memory_buffer_retrieve(NiceAgent *agent,
+  guint stream_id, guint component_id, gsize buffer_index, gpointer user_data,
+  const NiceAddress *from, const NiceAddress *to);
 
 /**
  * nice_agent_new:
@@ -278,6 +304,8 @@ typedef void (*NiceAgentRecvFunc) (
 NICE_EXPORT NiceAgent *
 nice_agent_new (GMainContext *ctx, NiceCompatibility compat, NiceCompatibility turn_compat);
 
+NICE_EXPORT void
+nice_agent_set_mem_list_interface(NiceAgent * agent, MemlistInterface **ml_interface);
 
 /**
  * nice_agent_add_local_address: (skip)
@@ -763,6 +791,9 @@ nice_agent_restart_stream (
  * @ctx: The Glib Mainloop Context to use for listening on the component
  * @func: The callback function to be called when data is received on
  * the stream's component
+ * @func: The callback function to be called when data spanning multiple buffers
+ * is received on the stream's component, or null if receiving mutiple buffers
+ * are not received by the agent user.
  * @data: user data associated with the callback
  *
  * Attaches the stream's component's sockets to the Glib Mainloop Context in
@@ -777,6 +808,7 @@ nice_agent_attach_recv (
   guint component_id,
   GMainContext *ctx,
   NiceAgentRecvFunc func,
+  NiceAgentRecvMultipleFunc multi_func,
   gpointer data);
 
 /**
