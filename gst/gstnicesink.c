@@ -1,4 +1,4 @@
-/*
+ /*
  * This file is part of the Nice GLib ICE library.
  *
  * (C) 2006, 2007 Collabora Ltd.
@@ -189,14 +189,13 @@ static void
 _set_time_on_buffer (GstNiceSink * sink, GstBuffer *buffer)
 {
   GstClock *clock = GST_ELEMENT_CLOCK (sink);
-  GstClockTime base_time = GST_ELEMENT_CAST (sink)->base_time;
   GstClockTime now;
   GstTxFeedbackMeta *meta;
 
   if (clock == NULL)
     return;
 
-  now = gst_clock_get_time (clock) - base_time;
+  now = gst_clock_get_time (clock);
   meta = gst_buffer_get_tx_feedback_meta (buffer);
   if (meta)
     gst_tx_feedback_meta_set_tx_time (meta, now);
