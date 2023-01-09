@@ -211,10 +211,17 @@ gst_nice_sink_render (GstBaseSink *basesink, GstBuffer *buffer)
   GstMapInfo info;
 
   gst_buffer_map (buffer, &info, GST_MAP_READ);
-
+#if 0 //TEMP logging (remove)
   nice_agent_send (nicesink->agent, nicesink->stream_id,
       nicesink->component_id, info.size, (gchar *) info.data);
-
+#else
+  if (-1 == nice_agent_send (nicesink->agent, nicesink->stream_id,
+      nicesink->component_id, info.size, (gchar *) info.data)) {
+        GST_ERROR_OBJECT (nicesink, "(TMP) Failed to send buffer with size:%lu "
+        "stream %d, component %d", info.size, nicesink->stream_id,
+        nicesink->component_id);
+  }
+#endif
   gst_buffer_unmap (buffer, &info);
 #else
   nice_agent_send (nicesink->agent, nicesink->stream_id,
