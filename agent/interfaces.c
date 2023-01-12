@@ -58,10 +58,10 @@
 #endif
 #include <arpa/inet.h>
 
-#ifdef HAVE_GETIFADDRS
-
 GST_DEBUG_CATEGORY_EXTERN (niceagent_debug);
 #define GST_CAT_DEFAULT niceagent_debug
+
+#ifdef HAVE_GETIFADDRS
 
 GList *
 nice_interfaces_get_local_interfaces (void)
