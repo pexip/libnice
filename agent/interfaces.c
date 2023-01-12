@@ -62,7 +62,6 @@ GST_DEBUG_CATEGORY_EXTERN (niceagent_debug);
 #define GST_CAT_DEFAULT niceagent_debug
 
 #ifdef HAVE_IFADDRS_H
-
 GList *
 nice_interfaces_get_local_interfaces (void)
 {
@@ -78,6 +77,18 @@ nice_interfaces_get_local_interfaces (void)
     /* no ip address from interface that is down */
     if ((ifa->ifa_flags & IFF_UP) == 0)
       continue;
+
+    /* no ip address from interface that is not running */
+    if ((ifa->ifa_flags & IFF_RUNNING) == 0){
+      GST_DEBUG("Skip interface %s, not running", ifa->ifa_name);
+      continue;
+    }
+
+    /* no ip address from loopback interfaces */
+    if ((ifa->ifa_flags & IFF_LOOPBACK) != 0){
+      GST_DEBUG("Skip interface %s, loopback", ifa->ifa_name);
+      continue;
+    }
 
     if (ifa->ifa_addr == NULL)
       continue;
@@ -195,6 +206,18 @@ nice_interfaces_get_local_ips (gboolean include_loopback)
     /* no ip address from interface that is down */
     if ((ifa->ifa_flags & IFF_UP) == 0)
       continue;
+
+    /* no ip address from interface that is not running */
+    if ((ifa->ifa_flags & IFF_RUNNING) == 0){
+      GST_DEBUG("Skip interface %s, not running", ifa->ifa_name);
+      continue;
+    }
+
+    /* no ip address from loopback interfaces */
+    if ((ifa->ifa_flags & IFF_LOOPBACK) != 0){
+      GST_DEBUG("Skip interface %s, loopback", ifa->ifa_name);
+      continue;
+    }
 
     if (ifa->ifa_addr == NULL) {
       continue;
