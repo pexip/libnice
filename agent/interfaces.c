@@ -48,7 +48,7 @@
 #include <sys/sockio.h>
 #endif
 
-#ifdef HAVE_GETIFADDRS
+#ifdef HAVE_IFADDRS_H
  #include <ifaddrs.h>
 #endif
 
@@ -61,7 +61,7 @@
 GST_DEBUG_CATEGORY_EXTERN (niceagent_debug);
 #define GST_CAT_DEFAULT niceagent_debug
 
-#ifdef HAVE_GETIFADDRS
+#ifdef HAVE_IFADDRS_H
 
 GList *
 nice_interfaces_get_local_interfaces (void)
@@ -93,7 +93,7 @@ nice_interfaces_get_local_interfaces (void)
   return interfaces;
 }
 
-#else /* ! HAVE_GETIFADDRS */
+#else /* ! HAVE_IFADDRS_H */
 
 GList *
 nice_interfaces_get_local_interfaces (void)
@@ -146,7 +146,7 @@ nice_interfaces_get_local_interfaces (void)
 
   return interfaces;
 }
-#endif /* HAVE_GETIFADDRS */
+#endif /* HAVE_IFADDRS_H */
 
 
 static gboolean
@@ -175,7 +175,7 @@ nice_interfaces_is_private_ip (const struct sockaddr *sa)
   return FALSE;
 }
 
-#ifdef HAVE_GETIFADDRS
+#ifdef HAVE_IFADDRS_H
 
 GList *
 nice_interfaces_get_local_ips (gboolean include_loopback)
@@ -241,7 +241,7 @@ nice_interfaces_get_local_ips (gboolean include_loopback)
   return ips;
 }
 
-#else /* ! HAVE_GETIFADDRS */
+#else /* ! HAVE_IFADDRS_H */
 
 GList *
 nice_interfaces_get_local_ips (gboolean include_loopback)
@@ -319,7 +319,7 @@ nice_interfaces_get_local_ips (gboolean include_loopback)
   return ips;
 }
 
-#endif /* HAVE_GETIFADDRS */
+#endif /* HAVE_IFADDRS_H */
 
 gchar *
 nice_interfaces_get_ip_for_interface (gchar *interface_name)
