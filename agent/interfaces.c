@@ -213,12 +213,6 @@ nice_interfaces_get_local_ips (gboolean include_loopback)
       continue;
     }
 
-    /* no ip address from loopback interfaces */
-    if ((ifa->ifa_flags & IFF_LOOPBACK) != 0){
-      GST_DEBUG("Skip interface %s, loopback", ifa->ifa_name);
-      continue;
-    }
-
     if (ifa->ifa_addr == NULL) {
       continue;
     } else if (ifa->ifa_addr->sa_family == AF_INET) {
@@ -247,7 +241,7 @@ nice_interfaces_get_local_ips (gboolean include_loopback)
       if (include_loopback)
         loopbacks = g_list_append (loopbacks, g_strdup (addr_as_string));
       else
-        GST_DEBUG ("Ignoring loopback interface");
+        GST_DEBUG("Ignoring interface %s: loopback", ifa->ifa_name);
     } else {
       if (nice_interfaces_is_private_ip (ifa->ifa_addr))
         ips = g_list_append (ips, g_strdup (addr_as_string));
