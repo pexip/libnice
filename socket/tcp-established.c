@@ -566,7 +566,7 @@ add_to_be_sent (NiceSocket *sock, const gchar *buf, guint len, gboolean add_to_h
   }
 
   tbs = g_slice_new0 (struct to_be_sent);
-  tbs->buf = g_memdup (buf, len);
+  tbs->buf = g_memdup2 (buf, len);
   tbs->length = len;
 
   if (add_to_head) {

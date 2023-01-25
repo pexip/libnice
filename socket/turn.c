@@ -472,7 +472,7 @@ socket_enqueue_data(TurnPriv *priv, const NiceAddress *to,
         queue);
   }
 
-  data->data = g_memdup(buf, len);
+  data->data = g_memdup2(buf, len);
   data->data_len = len;
   g_queue_push_tail (queue, data);
 }

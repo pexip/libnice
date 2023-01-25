@@ -395,7 +395,7 @@ gst_nice_src_read_callback (NiceAgent *agent,
   if (from != NULL && to != NULL) {
     netbuffer = gst_netbuffer_new();
 
-    GST_BUFFER_DATA(netbuffer) = g_memdup(buf, len);
+    GST_BUFFER_DATA(netbuffer) = g_memdup2(buf, len);
     GST_BUFFER_MALLOCDATA(netbuffer) = GST_BUFFER_DATA(netbuffer);
     GST_BUFFER_SIZE(netbuffer) = len;
 
