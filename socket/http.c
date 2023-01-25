@@ -402,7 +402,7 @@ add_to_be_sent (NiceSocket *sock, const NiceAddress *to,
     return;
 
   tbs = g_slice_new0 (struct to_be_sent);
-  tbs->buf = g_memdup (buf, len);
+  tbs->buf = g_memdup2 (buf, len);
   tbs->length = len;
   if (to)
     tbs->to = *to;

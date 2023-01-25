@@ -2532,7 +2532,7 @@ static int priv_store_pending_check (NiceAgent *agent, Stream *stream, Component
   icheck->username_len = username_len;
   icheck->username = NULL;
   if (username_len > 0)
-    icheck->username = g_memdup (username, username_len);
+    icheck->username = g_memdup2 (username, username_len);
 
   nice_address_to_string (from, from_string);
   GST_DEBUG_OBJECT (agent, "%u/%u: Storing pending check from [%s]:%u use_cand=%d priority=%d icheck=%p",
