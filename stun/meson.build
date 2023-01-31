@@ -14,6 +14,14 @@ libstun_sources = [
   'usages/timer.c',
 ]
 
+libstun_headers = [
+  'stunagent.h',
+  'stunmessage.h',
+  'constants.h'
+]
+
+install_headers(libstun_headers, subdir : 'stun')
+
 libstun_deps = [
   glib_deps,
   openssl_dep,
