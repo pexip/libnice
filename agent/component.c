@@ -169,7 +169,7 @@ component_find_pair (Component *cmp, NiceAgent *agent, const gchar *lfoundation,
     }
   }
 
-  if (local && remote) {
+  if (local && remote && priority) {
     *priority = agent_candidate_pair_priority (agent, *local, *remote);
     return TRUE;
   }

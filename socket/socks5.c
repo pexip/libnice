@@ -194,7 +194,7 @@ socket_recv (NiceSocket *sock, NiceAddress *from, guint len, gchar *buf)
         } else if(ret == sizeof(data)) {
           if (data[0] == 0x05) {
             if (data[1] == 0x02) {
-              gchar msg[515];
+              gchar msg[1024];
               gint len = 0;
 
               if (priv->username || priv->password) {

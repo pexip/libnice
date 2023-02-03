@@ -3260,12 +3260,12 @@ nice_agent_set_software (NiceAgent * agent, const gchar * software)
 {
   agent_lock (agent);
 
-  g_free (agent->software_attribute);
-  if (software)
+  if (software) {
+    g_free (agent->software_attribute);
     agent->software_attribute = g_strdup_printf ("%s/%s",
         software, PACKAGE_STRING);
-
-  stun_agent_set_software (&agent->stun_agent, agent->software_attribute);
+    stun_agent_set_software (&agent->stun_agent, agent->software_attribute);
+  }
 
   agent_unlock (agent);
 }

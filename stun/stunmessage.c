@@ -374,7 +374,8 @@ stun_message_append_bytes (StunMessage *msg, StunAttribute type,
   if (ptr == NULL)
     return STUN_MESSAGE_RETURN_NOT_ENOUGH_SPACE;
 
-  memcpy (ptr, data, len);
+  if (data)
+    memcpy (ptr, data, len);
   return STUN_MESSAGE_RETURN_SUCCESS;
 }
 

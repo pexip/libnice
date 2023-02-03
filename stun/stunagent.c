@@ -671,9 +671,11 @@ size_t stun_agent_finish_message (StunAgent *agent, StunMessage *msg,
     stun_message_id (msg, saved->id);
     saved->method = stun_message_get_method (msg);
     saved->key_len = MIN(key_len, sizeof (saved->key) - 1);
-    memcpy (saved->key, (uint8_t *) key, saved->key_len);
+    if (key)
+      memcpy (saved->key, (uint8_t *) key, saved->key_len);
     saved->key[saved->key_len] = '\0';
-    memcpy (saved->long_term_key, msg->long_term_key, sizeof(msg->long_term_key));
+    if (msg->long_term_key)
+      memcpy (saved->long_term_key, msg->long_term_key, sizeof(msg->long_term_key));
     saved->long_term_valid = msg->long_term_valid;
     saved->valid = TRUE;
   }
