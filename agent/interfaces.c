@@ -194,6 +194,7 @@ nice_interfaces_get_local_ips (gboolean include_loopback)
   GList *ips = NULL;
   struct ifaddrs *ifa, *results;
   GList *loopbacks = NULL;
+  GHashTable *ips_set = g_hash_table_new (g_str_hash, g_str_equal);
 
 
   if (getifaddrs (&results) < 0)
@@ -234,6 +235,12 @@ nice_interfaces_get_local_ips (gboolean include_loopback)
     } else
       continue;
 
+    /* check for duplicates, and skip if found */
+    if (g_hash_table_contains (ips_set, addr_as_string)) {
+      GST_INFO ("Skipping duplicate address %s", addr_as_string);
+      continue;
+    }
+    g_hash_table_add (ips_set, addr_as_string);
 
     GST_DEBUG ("Interface:  %s", ifa->ifa_name);
     GST_DEBUG ("IP Address: %s", addr_as_string);
@@ -254,6 +261,8 @@ nice_interfaces_get_local_ips (gboolean include_loopback)
 
   if (loopbacks)
     ips = g_list_concat (ips, loopbacks);
+
+  g_hash_table_unref (ips_set);
 
   return ips;
 }
