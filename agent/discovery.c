@@ -534,10 +534,11 @@ NiceCandidate *discovery_add_local_host_candidate (
 
 errors:
   nice_candidate_free (candidate);
-  if (socket)
+  if (socket) {
     nice_socket_free (socket);
-  if (userdata)
+  } else if (userdata) {
     g_free (userdata);
+  }
   return NULL;
 }
 
