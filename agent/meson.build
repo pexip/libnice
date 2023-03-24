@@ -28,6 +28,7 @@ libagent_deps = [
   libsocket_dep,
   libstun_dep,
   gst_deps,
+  openssl_dep,
 ]
 
 libagent_cargs = [
