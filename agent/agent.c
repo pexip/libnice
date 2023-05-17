@@ -80,6 +80,9 @@
 
 #define MAX_TCP_MTU 1400        /* Use 1400 because of VPNs and we assume IEE 802.3 */
 
+/* Properties defaults */
+#define DEFAULT_PROP_FULL_MODE TRUE
+
 G_DEFINE_TYPE (NiceAgent, nice_agent, G_TYPE_OBJECT);
 
 GST_DEBUG_CATEGORY (niceagent_debug);
@@ -422,8 +425,10 @@ nice_agent_class_init (NiceAgentClass * klass)
   g_object_class_install_property (gobject_class, PROP_CONTROLLING_MODE, g_param_spec_boolean ("controlling-mode", "ICE controlling mode", "Whether the agent is in controlling mode", FALSE,   /* not a construct property, ignored */
           G_PARAM_READWRITE));
 
-  g_object_class_install_property (gobject_class, PROP_FULL_MODE, g_param_spec_boolean ("full-mode", "ICE full mode", "Whether agent runs in ICE full mode", TRUE,      /* use full mode by default */
-          G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
+  g_object_class_install_property (gobject_class, PROP_FULL_MODE,
+      g_param_spec_boolean ("full-mode", "ICE full mode",
+          "Whether agent runs in ICE full mode",
+          DEFAULT_PROP_FULL_MODE, G_PARAM_READWRITE));
 
   g_object_class_install_property (gobject_class, PROP_STUN_PACING_TIMER,
       g_param_spec_uint ("stun-pacing-timer",
@@ -755,6 +760,7 @@ nice_agent_init (NiceAgent * agent)
   agent->conncheck_timeout = STUN_TIMER_DEFAULT_TIMEOUT;
   agent->conncheck_retransmissions = STUN_TIMER_DEFAULT_MAX_RETRANSMISSIONS;
   agent->aggressive_mode = TRUE;
+  agent->full_mode = DEFAULT_PROP_FULL_MODE;
   agent->regular_nomination_timeout =
       NICE_AGENT_REGULAR_NOMINATION_TIMEOUT_DEFAULT;
 
