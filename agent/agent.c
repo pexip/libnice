@@ -80,6 +80,9 @@
 
 #define MAX_TCP_MTU 1400        /* Use 1400 because of VPNs and we assume IEE 802.3 */
 
+/* Properties defaults */
+#define DEFAULT_PROP_FULL_MODE TRUE
+
 G_DEFINE_TYPE (NiceAgent, nice_agent, G_TYPE_OBJECT);
 
 GST_DEBUG_CATEGORY (niceagent_debug);
@@ -422,7 +425,9 @@ nice_agent_class_init (NiceAgentClass * klass)
   g_object_class_install_property (gobject_class, PROP_CONTROLLING_MODE, g_param_spec_boolean ("controlling-mode", "ICE controlling mode", "Whether the agent is in controlling mode", FALSE,   /* not a construct property, ignored */
           G_PARAM_READWRITE));
 
-  g_object_class_install_property (gobject_class, PROP_FULL_MODE, g_param_spec_boolean ("full-mode", "ICE full mode", "Whether agent runs in ICE full mode", TRUE,      /* use full mode by default */
+  g_object_class_install_property (gobject_class, PROP_FULL_MODE,
+      g_param_spec_boolean ("full-mode", "ICE full mode",
+          "Whether agent runs in ICE full mode", DEFAULT_PROP_FULL_MODE,
           G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
 
   g_object_class_install_property (gobject_class, PROP_STUN_PACING_TIMER,
@@ -785,10 +790,11 @@ nice_agent_init (NiceAgent * agent)
 
 
 NICEAPI_EXPORT NiceAgent *
-nice_agent_new (GMainContext * ctx, NiceCompatibility compat,
-    NiceCompatibility turn_compat)
+nice_agent_new_full (GMainContext * ctx, gboolean lite_mode,
+    NiceCompatibility compat, NiceCompatibility turn_compat)
 {
   NiceAgent *agent = g_object_new (NICE_TYPE_AGENT,
+      "full-mode", !lite_mode,
       "compatibility", compat,
       "turn-compatibility", turn_compat,
       "main-context", ctx,
@@ -797,6 +803,13 @@ nice_agent_new (GMainContext * ctx, NiceCompatibility compat,
   return agent;
 }
 
+NICEAPI_EXPORT NiceAgent *
+nice_agent_new (GMainContext * ctx, NiceCompatibility compat,
+    NiceCompatibility turn_compat)
+{
+  return nice_agent_new_full (ctx,
+      !DEFAULT_PROP_FULL_MODE, compat, turn_compat);
+}
 
 static void
 nice_agent_get_property (GObject * object,

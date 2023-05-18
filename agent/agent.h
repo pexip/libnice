@@ -263,6 +263,21 @@ typedef void (*NiceAgentRecvFunc) (
   NiceAgent *agent, guint stream_id, guint component_id, guint len,
   gchar *buf, gpointer user_data, const NiceAddress *from, const NiceAddress *to);
 
+/**
+ * nice_agent_new_full:
+ * @ctx: The Glib Mainloop Context to use for timers
+ * @lite_mode: The ICE mode (Full/Lite)
+ * @compat: The compatibility mode of the agent
+ * @turn_compat: The TURN compatibility mode of the agent
+ *
+ * Create a new #NiceAgent.
+ * The returned object must be freed with g_object_unref()
+ *
+ * Returns: The new agent GObject
+ */
+NICE_EXPORT NiceAgent *
+nice_agent_new_full (GMainContext *ctx, gboolean lite_mode,
+    NiceCompatibility compat, NiceCompatibility turn_compat);
 
 /**
  * nice_agent_new:
@@ -277,7 +292,6 @@ typedef void (*NiceAgentRecvFunc) (
  */
 NICE_EXPORT NiceAgent *
 nice_agent_new (GMainContext *ctx, NiceCompatibility compat, NiceCompatibility turn_compat);
-
 
 /**
  * nice_agent_add_local_address: (skip)
