@@ -9,15 +9,16 @@ pname = meson.project_name()
 pversion = meson.project_version()
 cc = meson.get_compiler('c')
 host_system = host_machine.system()
+static_build = get_option('default_library') == 'static'
 
 project_arguments = [
   #'-DMESON_BUILD',
   #'-DGLIB_DISABLE_DEPRECATION_WARNINGS',
   '-DHAVE_CONFIG_H',
-  '-DNICE_EXPORTS',
   '-fno-strict-aliasing'
 ]
 project_arguments += ['-DHOST_@0@'.format(host_system.to_upper())]
+project_arguments += static_build ? ['-DNICE_STATIC_BUILD'] : ['-DNICE_EXPORTS']
 
 add_project_arguments(project_arguments, language: 'c')
 
@@ -48,7 +49,6 @@ endif
 
 install_dir = get_option('libdir')
 plugins_install_dir = '@0@/gstreamer-1.0'.format(install_dir)
-static_build = get_option('default_library') == 'static'
 
 gir = find_program('g-ir-scanner', required : false)
 gnome = import('gnome')

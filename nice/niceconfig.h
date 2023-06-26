@@ -1,7 +1,7 @@
 #ifndef _NICE_CONFIG_H_
 #define _NICE_CONFIG_H_
 
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && !defined(NICE_STATIC_BUILD)
 #  ifdef NICE_EXPORTS
 #    define NICE_EXPORT __declspec(dllexport)
 #  else
