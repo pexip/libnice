@@ -81,9 +81,6 @@ configure_file(output : 'config.h', configuration : core_conf)
 libagent_incdir = include_directories ('agent')
 libnice_incdir = include_directories ('nice')
 
-gst_libraries = []
-plugins = []
-
 subdir('random')
 subdir('socket')
 subdir('stun')
@@ -93,24 +90,3 @@ subdir('gst')
 
 #subdir('tests')
 #subdir('python')
-
-pkgconfig = import('pkgconfig')
-plugins_pkgconfig_install_dir = join_paths(plugins_install_dir, 'pkgconfig')
-
-plugin_names = []
-gst_plugins = []
-foreach plugin: plugins
-  pkgconfig.generate(plugin, install_dir: plugins_pkgconfig_install_dir)
-  dep = declare_dependency(link_with: plugin, variables: {'full_path': plugin.full_path()})
-  meson.override_dependency(plugin.name(), dep)
-  gst_plugins += [dep]
-  if plugin.name().startswith('gst')
-    plugin_names += [plugin.name().substring(3)]
-  else
-    plugin_names += [plugin.name()]
-  endif
-endforeach
-
-summary({
-    'Plugins': plugin_names,
-}, list_sep: ', ')

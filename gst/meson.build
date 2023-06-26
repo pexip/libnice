@@ -17,4 +17,3 @@ gstnice = library('gstnice',
   install : true,
   install_dir : plugins_install_dir,
 )
-plugins += [gstnice]

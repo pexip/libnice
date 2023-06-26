@@ -52,11 +52,6 @@ libagent_dep = declare_dependency(link_with : libagent,
   include_directories : include_directories('.'),
   dependencies : libagent_deps)
 
-pkg_name = 'libnice'
-library_def = {'lib': libagent}
-gst_libraries += [[pkg_name, library_def]]
-meson.override_dependency(pkg_name, libagent_dep)
-
 if build_gir
   gnome.generate_gir(libagent,
     sources : libagent_sources + libagent_headers,
