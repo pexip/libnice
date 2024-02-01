@@ -536,13 +536,9 @@ gst_nice_src_create (
   GST_LOG_OBJECT (nicesrc, "create called");
 
   GST_OBJECT_LOCK (basesrc);
-  if (nicesrc->unlocked) {
+  if (nicesrc->unlocked || !nicesrc->running) {
     GST_OBJECT_UNLOCK (basesrc);
-#if GST_CHECK_VERSION (1,0,0)
     return GST_FLOW_FLUSHING;
-#else
-    return GST_FLOW_WRONG_STATE;
-#endif
   }
   GST_OBJECT_UNLOCK (basesrc);
 
@@ -555,11 +551,7 @@ gst_nice_src_create (
     return GST_FLOW_OK;
   } else {
     GST_LOG_OBJECT (nicesrc, "Got interrupting, returning wrong-state");
-#if GST_CHECK_VERSION (1,0,0)
     return GST_FLOW_FLUSHING;
-#else
-    return GST_FLOW_WRONG_STATE;
-#endif
   }
 
 }
@@ -726,11 +718,13 @@ gst_nice_src_change_state (GstElement * element, GstStateChange transition)
         }
       else
         {
+          src->running = TRUE;
           nice_agent_attach_recv (src->agent, src->stream_id, src->component_id,
               src->mainctx, gst_nice_src_read_callback, (gpointer) src);
         }
       break;
-    case GST_STATE_CHANGE_READY_TO_NULL:
+    case GST_STATE_CHANGE_PAUSED_TO_READY:
+      src->running = FALSE;
       nice_agent_attach_recv (src->agent, src->stream_id, src->component_id,
           src->mainctx, NULL, NULL);
       break;

@@ -71,6 +71,7 @@ struct _GstNiceSrc
   GMainLoop *mainloop;
   GQueue *outbufs;
   gboolean unlocked;
+  gboolean running;
   GSource *idle_source;
   GstCaps *caps;
   GHashTable *socket_addresses;
