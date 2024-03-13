@@ -151,6 +151,9 @@ NiceCandidate *
 component_find_remote_candidate (const Component *component, const NiceAddress *addr, NiceCandidateTransport transport);
 
 NiceCandidate *
+component_find_local_candidate (const Component *component, const NiceAddress *addr, NiceCandidateTransport transport);
+
+NiceCandidate *
 component_set_selected_remote_candidate (NiceAgent *agent, Component *component,
     NiceCandidate *candidate);
 

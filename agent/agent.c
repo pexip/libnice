@@ -1502,6 +1502,11 @@ nice_agent_gather_candidates (NiceAgent * agent, guint stream_id)
     }
   }
 
+  /* 
+   * TODO: Prune any local candidates created on interfaces that no longer
+   * exist
+   */
+
   /* generate a local host candidate for each local address */
   for (i = local_addresses; i; i = i->next) {
     NiceAddress *addr = i->data;
@@ -1528,8 +1533,9 @@ nice_agent_gather_candidates (NiceAgent * agent, guint stream_id)
 
       current_port = component->min_port;
 
-      udp_host_candidate = NULL;
-      if (component->enable_udp) {
+      udp_host_candidate = component_find_local_candidate(component, addr, NICE_CANDIDATE_TRANSPORT_UDP);
+      /* TODO: Handle stun/turn server config changing when we already have a local host candidate */
+      if (component->enable_udp && udp_host_candidate == NULL) {
         while (udp_host_candidate == NULL) {
           GST_LOG_OBJECT (agent,
               "%u/%u: Trying to create host candidate on port %d", stream->id,
@@ -1581,8 +1587,8 @@ nice_agent_gather_candidates (NiceAgent * agent, guint stream_id)
         }
       }
 
-      tcp_passive_host_candidate = NULL;
-      if (component->enable_tcp_passive) {
+      tcp_passive_host_candidate = component_find_local_candidate(component, addr, NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE);
+      if (component->enable_tcp_passive && tcp_passive_host_candidate == NULL) {
         current_port = component->min_port;
 
         while (tcp_passive_host_candidate == NULL) {
@@ -1611,8 +1617,9 @@ nice_agent_gather_candidates (NiceAgent * agent, guint stream_id)
         }
       }
 
-      tcp_active_host_candidate = NULL;
-      if (component->enable_tcp_active) {
+      tcp_active_host_candidate = component_find_local_candidate(component, addr, NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE);
+      /* TODO: Handle stun/turn server config changing when we already have a local host candidate */
+      if (component->enable_tcp_active && tcp_active_host_candidate == NULL) {
         current_port = component->min_tcp_active_port;
 
         while (tcp_active_host_candidate == NULL) {

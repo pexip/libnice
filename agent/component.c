@@ -264,6 +264,29 @@ component_find_remote_candidate (const Component *component, const NiceAddress *
 }
 
 /*
+ * Finds a local candidate with matching address and
+ * transport.
+ *
+ * @return pointer to candidate or NULL if not found
+ */
+NiceCandidate *
+component_find_local_candidate (const Component *component, const NiceAddress *addr, NiceCandidateTransport transport)
+{
+  GSList *i;
+
+  for (i = component->local_candidates; i; i = i->next) {
+    NiceCandidate *candidate = i->data;
+
+    if (nice_address_equal_full(&candidate->addr, addr, FALSE) &&
+     	   candidate->transport == transport)
+      return candidate;
+
+  }
+
+  return NULL;
+}
+
+/*
  * Sets the desired remote candidate as the selected pair
  *
  * It will start sending on the highest priority pair available with
