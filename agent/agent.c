@@ -149,6 +149,8 @@ static gboolean priv_attach_stream_component (NiceAgent * agent,
     Stream * stream, Component * component);
 static void priv_detach_stream_component (NiceAgent * agent, Stream * stream,
     Component * component);
+static void priv_prune_local_candidates(NiceAgent * agent, 
+    guint stream_id, GSList *local_addresses);
 
 void
 agent_lock (NiceAgent * agent)
@@ -1503,9 +1505,10 @@ nice_agent_gather_candidates (NiceAgent * agent, guint stream_id)
   }
 
   /* 
-   * TODO: Prune any local candidates created on interfaces that no longer
+   * Prune any local candidates created on interfaces that no longer
    * exist
    */
+  priv_prune_local_candidates(agent, stream_id, local_addresses);
 
   /* generate a local host candidate for each local address */
   for (i = local_addresses; i; i = i->next) {
@@ -1890,6 +1893,33 @@ nice_agent_add_local_address (NiceAgent * agent, NiceAddress * addr)
 }
 
 NICEAPI_EXPORT gboolean
+nice_agent_remove_local_address (NiceAgent * agent, NiceAddress * addr)
+{
+  gboolean found = FALSE;
+  GSList *item;
+  GSList *new_addresses = NULL;
+
+  agent_lock (agent);
+
+  for (item = agent->local_addresses; item; item = g_slist_next (item)) {
+    NiceAddress *address = item->data;
+
+    if (nice_address_equal_full (addr, address, FALSE)) {
+      nice_address_free (address);
+      found = TRUE;
+    } else {
+      new_addresses = g_slist_append (new_addresses, address);
+    }
+  }
+
+  g_slist_free (agent->local_addresses);
+  agent->local_addresses = new_addresses;
+
+  agent_unlock (agent);
+  return found;
+}
+
+NICEAPI_EXPORT gboolean
 nice_agent_add_local_address_from_string (NiceAgent * agent, const gchar * addr)
 {
   NiceAddress nice_addr;
@@ -1897,6 +1927,16 @@ nice_agent_add_local_address_from_string (NiceAgent * agent, const gchar * addr)
   if (!nice_address_set_from_string (&nice_addr, addr))
     return FALSE;
   return nice_agent_add_local_address (agent, &nice_addr);
+}
+
+NICEAPI_EXPORT gboolean
+nice_agent_remove_local_address_from_string (NiceAgent * agent, const gchar * addr)
+{
+  NiceAddress nice_addr;
+  nice_address_init (&nice_addr);
+  if (!nice_address_set_from_string (&nice_addr, addr))
+    return FALSE;
+  return nice_agent_remove_local_address (agent, &nice_addr);
 }
 
 NICEAPI_EXPORT gboolean
@@ -1942,6 +1982,42 @@ done:
 }
 
 NICEAPI_EXPORT gboolean
+nice_agent_remove_stream_local_address (NiceAgent * agent, guint stream_id,
+    NiceAddress * addr)
+{
+  gboolean found = FALSE;
+  GSList *item;
+  GSList *new_local_addresses = NULL;
+  Stream *stream;
+
+  agent_lock (agent);
+
+  stream = agent_find_stream (agent, stream_id);
+
+  if (!stream) {
+    goto done;
+  }
+
+  for (item = stream->local_addresses; item; item = g_slist_next (item)) {
+    NiceAddress *address = item->data;
+
+    if (nice_address_equal_full (addr, address, FALSE)) {
+      found = TRUE;
+      nice_address_free (address);
+    } else {
+      new_local_addresses = g_slist_append(new_local_addresses, address);
+    }
+  }
+
+  g_slist_free (stream->local_addresses);
+  stream->local_addresses = new_local_addresses;
+
+done:
+  agent_unlock (agent);
+  return found;
+}
+
+NICEAPI_EXPORT gboolean
 nice_agent_add_stream_local_address_from_string (NiceAgent * agent,
     guint stream_id, const gchar * addr)
 {
@@ -1950,6 +2026,17 @@ nice_agent_add_stream_local_address_from_string (NiceAgent * agent,
   if (!nice_address_set_from_string (&nice_addr, addr))
     return FALSE;
   return nice_agent_add_stream_local_address (agent, stream_id, &nice_addr);
+}
+
+NICEAPI_EXPORT gboolean
+nice_agent_remove_stream_local_address_from_string (NiceAgent * agent,
+    guint stream_id, const gchar * addr)
+{
+  NiceAddress nice_addr;
+  nice_address_init (&nice_addr);
+  if (!nice_address_set_from_string (&nice_addr, addr))
+    return FALSE;
+  return nice_agent_remove_stream_local_address (agent, stream_id, &nice_addr);
 }
 
 /* Recompute foundations of all candidate pairs from a given stream
@@ -2902,6 +2989,17 @@ nice_agent_g_source_cb (GSocket * gsocket,
     return FALSE;
   }
 
+  if (g_socket_is_closed (gsocket)) {
+    GSource *source = ctx->source;
+
+    GST_DEBUG_OBJECT (agent, "_nice_agent_recv closed socket %p", gsocket);
+    component->gsources = g_slist_remove (component->gsources, source);
+    g_source_destroy (source);
+    g_source_unref (source);
+    agent_unlock (agent);
+    return FALSE;
+  }
+
   len = _nice_agent_recv (agent, stream, component, ctx->socket,
       MAX_BUFFER_SIZE, buf, &from);
 
@@ -3347,4 +3445,28 @@ const char *
 nice_component_state_to_string (NiceComponentState state)
 {
   return component_state_to_string (state);
+}
+
+/* 
+  * Prune any local candidates created on interfaces that no longer
+  * exist
+  */
+static void
+priv_prune_local_candidates(NiceAgent * agent, guint stream_id, GSList *local_addresses)
+{
+  Stream *stream;
+
+  stream = agent_find_stream (agent, stream_id);
+  if (stream == NULL) {
+    return;
+  }
+
+  for (guint n = 0; n < stream->n_components; n++) {
+    Component *component = stream_find_component_by_id (stream, n + 1);
+
+    if (component == NULL)
+      continue;
+
+    component_prune_local_candidates(component, agent, stream_id, local_addresses);
+  }
 }

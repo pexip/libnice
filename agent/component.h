@@ -159,6 +159,9 @@ component_set_selected_remote_candidate (NiceAgent *agent, Component *component,
 
 const char *component_state_to_string(NiceComponentState state);
 
+void
+component_prune_local_candidates(Component *component, NiceAgent *agent, guint stream_id, GSList *local_addresses);
+
 G_END_DECLS
 
 #endif /* _NICE_COMPONENT_H */

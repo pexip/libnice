@@ -242,6 +242,25 @@ void refresh_prune_stream (NiceAgent *agent, guint stream_id)
 
 }
 
+void refresh_prune_socket (NiceAgent *agent, NiceSocket *socket)
+{
+  GSList *i;
+
+  for (i = agent->refresh_list; i ;) {
+    CandidateRefresh *cand = i->data;
+    GSList *next = i->next;
+
+    if (cand->relay_socket == socket) {
+      GST_DEBUG_OBJECT (agent, "Pruning candidate refresh %p", cand);
+      agent->refresh_list = g_slist_remove (agent->refresh_list, cand);
+      refresh_free_item (cand, NULL);
+    }
+
+    i = next;
+  }
+
+}
+
 void refresh_cancel (CandidateRefresh *refresh)
 {
   refresh->agent->refresh_list = g_slist_remove (refresh->agent->refresh_list,

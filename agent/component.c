@@ -46,12 +46,16 @@
 # include <config.h>
 #endif
 
+#include <gst/gst.h>
 #include <string.h>
 
 #include "debug.h"
 
 #include "component.h"
 #include "agent-priv.h"
+
+GST_DEBUG_CATEGORY_EXTERN (niceagent_debug);
+#define GST_CAT_DEFAULT niceagent_debug
 
 Component *
 component_new (guint id)
@@ -223,10 +227,6 @@ component_restart (Component *cmp)
  */
 void component_update_selected_pair (Component *component, NiceCandidate* local, NiceCandidate* remote, guint64 priority)
 {
-  g_assert (component);
-  g_assert (local);
-  g_assert (remote);
-
   if (component->selected_pair.keepalive.tick_source != NULL) {
     g_source_destroy (component->selected_pair.keepalive.tick_source);
     g_source_unref (component->selected_pair.keepalive.tick_source);
@@ -359,3 +359,92 @@ const char* component_state_to_string(NiceComponentState state)
   }
   return "(invalid)";
 }
+
+void
+component_prune_local_candidates(Component *component, NiceAgent *agent, guint stream_id, GSList *local_addresses)
+{
+  GSList *i;
+  GSList *j;
+  GSList *new_local_candidates = NULL;
+  GSList *candidates_to_free = NULL;
+
+  for (i = component->local_candidates; i; i = i->next) {
+    NiceCandidate *candidate = i->data;
+    gboolean found = FALSE;
+    
+    for (j = local_addresses; j; j = j->next) {
+      NiceAddress *addr = j->data;
+         
+      switch (candidate->type) {
+        case NICE_CANDIDATE_TYPE_HOST:
+          if (nice_address_equal_full(&candidate->addr, addr, FALSE)) {
+            found = TRUE;
+          }
+          break;
+
+       case NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE:
+       case NICE_CANDIDATE_TYPE_RELAYED:
+       case NICE_CANDIDATE_TYPE_PEER_REFLEXIVE:
+          if (nice_address_equal_full(&candidate->base_addr, addr, FALSE)) {
+            found = TRUE;
+          }
+      }
+    }
+
+    if (!found) {
+      gchar* cand_str;
+      gchar  addr_str[NICE_ADDRESS_STRING_LEN];
+
+      nice_address_to_string (&candidate->addr, addr_str);
+      cand_str = g_strdup_printf ("%s %s:%u/%s", candidate_type_to_string (candidate->type),
+        addr_str, nice_address_get_port (&candidate->addr),
+        candidate_transport_to_string (candidate->transport));
+      GST_INFO_OBJECT (agent, "%u/%u: Pruning local candidate as local address no longer valid. candidate=%s", stream_id, component->id, cand_str);
+      g_free (cand_str);
+      candidates_to_free = g_slist_append (candidates_to_free, candidate);
+    } else {
+      new_local_candidates = g_slist_append (new_local_candidates, candidate);
+    }
+  }
+
+  g_slist_free (component->local_candidates);
+  component->local_candidates = new_local_candidates;
+
+  /*
+   * We have to clear up all resources for relayed candidates first as doing so will
+   * use the host candidate socket to send the turn request 
+  */
+  for (i = candidates_to_free; i; i = i->next) {
+    NiceCandidate *candidate = i->data;
+
+    /*
+    * If this candidate is in use for media then we have to clear the selected pair
+    */
+    if (component->selected_pair.local == candidate) {
+      GST_INFO_OBJECT (agent, "%u/%u: Pruned local candidate is currently selected, clearing selected_pair", stream_id, component->id);
+      component_update_selected_pair(component, 0, 0, 0);
+    }
+
+    if (candidate->type == NICE_CANDIDATE_TYPE_RELAYED) {
+      /* TODO: clear any refresh items associate with this candidate */
+      refresh_prune_socket (agent, candidate->sockptr);
+    }
+  }
+
+  /* Now we can safely release the host sockets */
+  for (i = candidates_to_free; i; i = i->next) {
+    NiceCandidate *candidate = i->data;
+
+    if (candidate->type == NICE_CANDIDATE_TYPE_HOST) {
+      /* TODO: Find a way to remove any gsources that are associated with this socket before we destroy it */
+      NiceSocket* socket1 = (NiceSocket *)(candidate->sockptr);
+      component->sockets = g_slist_remove (component->sockets, candidate->sockptr);
+      nice_socket_free (candidate->sockptr);
+    } 
+
+    nice_candidate_free (candidate);
+  }
+  g_slist_free (candidates_to_free);
+
+}
+
