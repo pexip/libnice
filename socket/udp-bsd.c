@@ -155,7 +155,7 @@ socket_close (NiceSocket *sock)
   struct UdpBsdSocketPrivate *priv = sock->priv;
 
   if (priv->gaddr)
-    g_object_unref (priv->gaddr);
+    g_object_unref (g_steal_pointer(&priv->gaddr));
   g_slice_free (struct UdpBsdSocketPrivate, sock->priv);
 
   if (sock->fileno) {
