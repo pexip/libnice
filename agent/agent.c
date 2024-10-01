@@ -1557,11 +1557,14 @@ nice_agent_gather_candidates (NiceAgent * agent, guint stream_id)
           GST_WARNING_OBJECT (agent,
               "%u/%u: Unable to gather host candidate for address %s",
               stream->id, component->id, ip);
-          ret = FALSE;
-          goto error;
+          if (configured_local_addresses){
+            /* The client specified these addresses, so treat this as an error! */
+            ret = FALSE;
+            goto error;
+          }
         }
 
-        if (agent->full_mode && stun_server_ip) {
+        if (agent->full_mode && stun_server_ip && udp_host_candidate) {
           NiceAddress stun_server;
           if (nice_address_set_from_string (&stun_server, stun_server_ip)) {
             nice_address_set_port (&stun_server, stun_server_port);
@@ -1575,7 +1578,7 @@ nice_agent_gather_candidates (NiceAgent * agent, guint stream_id)
           }
         }
 
-        if (agent->full_mode && component) {
+        if (agent->full_mode && component && udp_host_candidate) {
           GList *item;
 
           for (item = component->turn_servers; item; item = item->next) {
@@ -1612,8 +1615,11 @@ nice_agent_gather_candidates (NiceAgent * agent, guint stream_id)
           GST_WARNING_OBJECT (agent,
               "%u/%u: Unable to gather tcp-pass host candidate for address %s",
               stream->id, component->id, ip);
-          ret = FALSE;
-          goto error;
+          if (configured_local_addresses){
+            /* The client specified these addresses, so treat this as an error! */
+            ret = FALSE;
+            goto error;
+          }
         }
       }
 
@@ -1643,11 +1649,14 @@ nice_agent_gather_candidates (NiceAgent * agent, guint stream_id)
           GST_WARNING_OBJECT (agent,
               "%u/%u: Unable to gather tcp-act host candidate for address %s",
               stream->id, component->id, ip);
-          ret = FALSE;
-          goto error;
+          if (configured_local_addresses){
+            /* The client specified these addresses, so treat this as an error! */
+            ret = FALSE;
+            goto error;
+          }
         }
 
-        if (agent->full_mode && stun_server_ip) {
+        if (agent->full_mode && stun_server_ip && tcp_active_host_candidate) {
           /*
            * RDP Traversal
            * Use UDP stun to discover our server reflexive address and then advertise
@@ -1747,7 +1756,6 @@ error:
     }
     discovery_prune_stream (agent, stream_id);
   }
-
   agent_unlock (agent);
 
   return ret;
@@ -2480,15 +2488,17 @@ nice_agent_send (NiceAgent * agent,
     NiceSocket *sock = component->selected_pair.local->sockptr;
     NiceAddress *addr = &component->selected_pair.remote->addr;
 
+    if (sock->fileno){
 #ifndef NDEBUG
-    gchar tmpbuf[INET6_ADDRSTRLEN];
-    nice_address_to_string (&component->selected_pair.remote->addr, tmpbuf);
+      gchar tmpbuf[INET6_ADDRSTRLEN];
+      nice_address_to_string (&component->selected_pair.remote->addr, tmpbuf);
 
-    GST_LOG_OBJECT (agent, "%u/%u: sending %d bytes to [%s]:%d", stream_id,
-        component_id, len, tmpbuf,
-        nice_address_get_port (&component->selected_pair.remote->addr));
+      GST_LOG_OBJECT (agent, "%u/%u: sending %d bytes to [%s]:%d", stream_id,
+          component_id, len, tmpbuf,
+          nice_address_get_port (&component->selected_pair.remote->addr));
 #endif
-    ret = nice_socket_send (sock, addr, len, buf);
+      ret = nice_socket_send (sock, addr, len, buf);
+    }
   }
 
   agent_unlock (agent);
