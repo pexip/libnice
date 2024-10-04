@@ -2488,7 +2488,7 @@ nice_agent_send (NiceAgent * agent,
     NiceSocket *sock = component->selected_pair.local->sockptr;
     NiceAddress *addr = &component->selected_pair.remote->addr;
 
-    if (sock->fileno){
+    if (sock) {
 #ifndef NDEBUG
       gchar tmpbuf[INET6_ADDRSTRLEN];
       nice_address_to_string (&component->selected_pair.remote->addr, tmpbuf);
