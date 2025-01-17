@@ -70,8 +70,8 @@ nice_candidate_get_type (void)
 
 
 /* (ICE 4.1.1 "Gathering Candidates") ""Every candidate is a transport
- * address. It also has a type and a base. Three types are defined and 
- * gathered by this specification - host candidates, server reflexive 
+ * address. It also has a type and a base. Three types are defined and
+ * gathered by this specification - host candidates, server reflexive
  * candidates, and relayed candidates."" (ID-19) */
 
 NICEAPI_EXPORT NiceCandidate *
@@ -294,4 +294,15 @@ const char *candidate_transport_to_string(NiceCandidateTransport transport)
   case NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE: return "tcp-pass";
   }
   return "(invalid)";
+}
+
+NICEAPI_EXPORT gboolean
+nice_candidate_equal_target (const NiceCandidate *candidate1,
+    const NiceCandidate *candidate2)
+{
+  g_return_val_if_fail (candidate1 != NULL, FALSE);
+  g_return_val_if_fail (candidate2 != NULL, FALSE);
+
+  return (candidate1->transport == candidate2->transport &&
+      nice_address_equal (&candidate1->addr, &candidate2->addr));
 }

@@ -1502,7 +1502,7 @@ nice_agent_gather_candidates (NiceAgent * agent, guint stream_id)
     }
   }
 
-  /* 
+  /*
    * TODO: Prune any local candidates created on interfaces that no longer
    * exist
    */
@@ -2455,17 +2455,29 @@ _nice_agent_recv (NiceAgent * agent,
 
   agent->media_after_tick = TRUE;
 
+  /* If the message’s stated length is equal to its actual length, it’s probably
+   * a STUN message; otherwise it’s probably data. */
   if (len > 0) {
     if (stun_message_validate_buffer_length ((uint8_t *) buf, (size_t) len,
-            has_padding) != len) {
-      /* If the retval is no 0, its not a valid stun packet, probably data */
-      return len;
+            has_padding) == len) {
+      if (conn_check_handle_inbound_stun (agent, stream, component, socket,
+              from, buf, len))
+        /* handled STUN message */
+        return 0;
     }
 
-    if (conn_check_handle_inbound_stun (agent, stream, component, socket,
-            from, buf, len))
-      /* handled STUN message */
+    if (!nice_component_verify_remote_candidate (component,
+            from, socket)) {
+      /*
+       * Data packet not from valid remote address, drop it
+       */
+      gchar address_str[INET6_ADDRSTRLEN];
+      nice_address_to_string (from, address_str);
+      GST_LOG_OBJECT (agent, "%u/%u: Dropping packet from unknown source : %s:%d",
+          stream->id, component->id, address_str, nice_address_get_port (from));
       return 0;
+    }
+    agent->media_after_tick = TRUE;
   }
 
   /* unhandled STUN, pass to client */
@@ -2798,6 +2810,21 @@ nice_agent_socket_rx_cb (NiceSocket * socket, NiceAddress * from,
   if (!is_stun
       || !conn_check_handle_inbound_stun (agent, stream, component, socket,
           from, buf, len)) {
+
+    if (!nice_component_verify_remote_candidate (component,
+            from, socket)) {
+      /*
+       * Data packet not from valid remote address, drop it
+       */
+      gchar address_str[INET6_ADDRSTRLEN];
+      nice_address_to_string (from, address_str);
+      GST_LOG_OBJECT (agent, "%u/%u: Dropping packet from unknown source : %s:%d",
+          stream->id, component->id, address_str, nice_address_get_port (from));
+
+      agent_unlock (agent);
+      return;
+    }
+
     /* unhandled STUN, pass to client */
     if (component->g_source_io_cb) {
       gpointer cdata = component->data;
@@ -3103,7 +3130,7 @@ nice_agent_set_selected_pair (NiceAgent * agent,
       NICE_COMPONENT_STATE_READY);
 
   /* step: set the selected pair */
-  component_update_selected_pair (component, local, remote, priority);
+  component_update_selected_pair (agent, component, local, remote, priority);
   agent_signal_new_selected_pair (agent, stream_id, component_id, local,
       remote);
 

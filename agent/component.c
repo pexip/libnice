@@ -46,12 +46,19 @@
 # include <config.h>
 #endif
 
+#include <glib.h>
+#include <glib/gprintf.h>
+#include <gst/gst.h>
+
 #include <string.h>
 
 #include "debug.h"
 
 #include "component.h"
 #include "agent-priv.h"
+
+GST_DEBUG_CATEGORY_EXTERN (niceagent_debug);
+#define GST_CAT_DEFAULT niceagent_debug
 
 Component *
 component_new (guint id)
@@ -107,6 +114,9 @@ component_free (Component *cmp)
     g_free (icheck->username);
     g_slice_free (IncomingCheck, icheck);
   }
+
+  g_list_free_full (cmp->valid_candidates,
+      (GDestroyNotify) nice_candidate_free);
 
   g_slist_free (cmp->local_candidates);
   g_slist_free (cmp->remote_candidates);
@@ -221,7 +231,7 @@ component_restart (Component *cmp)
  * Changes the selected pair for the component to 'pair'. Does not
  * emit the "selected-pair-changed" signal.
  */
-void component_update_selected_pair (Component *component, NiceCandidate* local, NiceCandidate* remote, guint64 priority)
+void component_update_selected_pair (NiceAgent* agent, Component *component, NiceCandidate* local, NiceCandidate* remote, guint64 priority)
 {
   g_assert (component);
   g_assert (local);
@@ -238,6 +248,9 @@ void component_update_selected_pair (Component *component, NiceCandidate* local,
   component->selected_pair.local = local;
   component->selected_pair.remote = remote;
   component->selected_pair.priority = priority;
+
+  nice_component_add_valid_candidate (agent, component,
+      remote);
 }
 
 /*
@@ -343,6 +356,11 @@ component_set_selected_remote_candidate (NiceAgent *agent, Component *component,
   component->selected_pair.remote = remote;
   component->selected_pair.priority = priority;
 
+  /* Get into fallback mode where packets from any source is accepted once
+   * this has been called. This is the expected behavior of pre-ICE SIP.
+   */
+  component->fallback_mode = TRUE;
+
   return local;
 }
 
@@ -358,4 +376,71 @@ const char* component_state_to_string(NiceComponentState state)
   case NICE_COMPONENT_STATE_LAST: return "LAST";
   }
   return "(invalid)";
+}
+
+void
+nice_component_add_valid_candidate (NiceAgent *agent, Component *component,
+    const NiceCandidate *candidate)
+{
+  guint count = 0;
+  GList *item, *last = NULL;
+
+  for (item = component->valid_candidates; item; item = item->next) {
+    NiceCandidate *cand = item->data;
+    last = item;
+    count++;
+    if (nice_candidate_equal_target (cand, candidate))
+      return;
+  }
+
+  /* New candidate */
+  char address_str[INET6_ADDRSTRLEN];
+  nice_address_to_string (&candidate->addr, address_str);
+  GST_DEBUG_OBJECT (agent, "%u/%u: Adding valid source address %s:%d",
+      candidate->stream_id, candidate->component_id, address_str, nice_address_get_port (&candidate->addr));
+
+  component->valid_candidates = g_list_prepend (
+      component->valid_candidates, nice_candidate_copy (candidate));
+
+  /* Delete the last one to make sure we don't have a list that is too long,
+   * the candidates are not freed on ICE restart as this would be more complex,
+   * we just keep the list not too long.
+   */
+  if (count > NICE_COMPONENT_MAX_VALID_CANDIDATES) {
+    NiceCandidate *cand = last->data;
+    component->valid_candidates = g_list_delete_link (
+        component->valid_candidates, last);
+    nice_candidate_free (cand);
+  }
+}
+
+gboolean
+nice_component_verify_remote_candidate (Component *component,
+    const NiceAddress *address, NiceSocket *nicesock)
+{
+  GList *item;
+  if (component->fallback_mode) {
+    return TRUE;
+  }
+
+  for (item = component->valid_candidates; item; item = item->next) {
+    NiceCandidate *cand = item->data;
+
+    if (nice_address_equal (address, &cand->addr)) {
+
+      /* fast return if it's already the first */
+      if (item == component->valid_candidates)
+        return TRUE;
+
+      /* Put the current candidate at the top so that in the normal use-case,
+       * this function becomes O(1).
+       */
+      component->valid_candidates = g_list_remove_link (
+          component->valid_candidates, item);
+      component->valid_candidates = g_list_concat (item,
+          component->valid_candidates);
+      return TRUE;
+    }
+  }
+  return FALSE;
 }

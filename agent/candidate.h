@@ -127,7 +127,6 @@ typedef enum
  * @NICE_CANDIDATE_TRANSPORT_UDP: UDP transport
  * @NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE: TCP Active transport
  * @NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE: TCP Passive transport
- * @NICE_CANDIDATE_TRANSPORT_TCP_SO: TCP Simultaneous-Open transport
  *
  * An enum representing the type of transport to use
  */
@@ -442,7 +441,22 @@ candidate_type_to_string(NiceCandidateType type);
 NICE_EXPORT const char *
 candidate_transport_to_string(NiceCandidateTransport transport);
 
+/**
+ * nice_candidate_equal_target:
+ * @candidate1: A candidate
+ * @candidate2: A candidate
+ *
+ * Verifies that the candidates point to the same place, meaning they have
+ * the same transport and the same address. It ignores all other aspects.
+ *
+ * Returns: %TRUE if the candidates point to the same place
+ *
+ * Since: 0.1.15
+ */
+gboolean
+nice_candidate_equal_target (const NiceCandidate *candidate1,
+    const NiceCandidate *candidate2);
+
 G_END_DECLS
 
 #endif /* _CANDIDATE_H */
-

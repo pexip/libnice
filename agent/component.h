@@ -107,6 +107,7 @@ struct _Component
   NiceComponentState state;
   GSList *local_candidates;    /**< list of Candidate objs */
   GSList *remote_candidates;   /**< list of Candidate objs */
+  GList *valid_candidates;     /* list of owned remote NiceCandidates that are part of valid pairs */
   GSList *sockets;             /**< list of NiceSocket objs */
   GSList *gsources;            /**< list of GSource objs */
   GSList *incoming_checks;     /**< list of IncomingCheck objs */
@@ -130,6 +131,7 @@ struct _Component
   gboolean enable_tcp_active;
   gboolean writable;
   gboolean peer_gathering_done;
+  gboolean fallback_mode;      /* in this case, accepts packets from all, ignore candidate validation */
 };
 
 Component *
@@ -145,7 +147,7 @@ void
 component_restart (Component *cmp);
 
 void
-component_update_selected_pair (Component *component, NiceCandidate* local, NiceCandidate* remote, guint64 priority);
+component_update_selected_pair (NiceAgent *agent, Component *component, NiceCandidate* local, NiceCandidate* remote, guint64 priority);
 
 NiceCandidate *
 component_find_remote_candidate (const Component *component, const NiceAddress *addr, NiceCandidateTransport transport);
@@ -158,6 +160,14 @@ component_set_selected_remote_candidate (NiceAgent *agent, Component *component,
     NiceCandidate *candidate);
 
 const char *component_state_to_string(NiceComponentState state);
+
+void
+nice_component_add_valid_candidate (NiceAgent *agent, Component *component,
+    const NiceCandidate *candidate);
+
+gboolean
+nice_component_verify_remote_candidate (Component *component,
+    const NiceAddress *address, NiceSocket *nicesock);
 
 G_END_DECLS
 

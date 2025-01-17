@@ -1455,6 +1455,11 @@ void conn_check_remote_candidates_set(NiceAgent *agent, guint stream_id, guint c
                                                            icheck->local_socket,
                                                            remote_candidate);
         if (candidate) {
+          /*
+           * Add new prflx remote candidate to list of valid addresses we can receive data from
+           */
+          nice_component_add_valid_candidate (agent, component, candidate);
+
           if (icheck->use_candidate)
             priv_mark_pair_nominated (agent, stream, component, icheck->local_socket, candidate);
 
@@ -1509,7 +1514,7 @@ conn_check_update_selected_pair (NiceAgent *agent, Component *component, Candida
         pair, pair->foundation,
         component->selected_pair.priority,
         pair->priority);
-    component_update_selected_pair (component, pair->local, pair->remote, pair->priority);
+    component_update_selected_pair (agent, component, pair->local, pair->remote, pair->priority);
 
     priv_conn_keepalive_tick_unlocked (agent);
 
@@ -2756,6 +2761,7 @@ static CandidateCheckPair* priv_process_response_check_for_peer_reflexive(NiceAg
   priv_add_pair_to_valid_list (agent, stream, component, valid_pair, p);
   priv_set_pair_state (agent, p, NICE_CHECK_SUCCEEDED);
   conn_check_unfreeze_related (agent, stream, p);
+  nice_component_add_valid_candidate (agent, component, remote_candidate);
 
   return valid_pair;
 }
@@ -3634,6 +3640,13 @@ gboolean conn_check_handle_inbound_stun (NiceAgent *agent, Stream *stream,
       priv_reply_to_conn_check (agent, stream, component, remote_candidate,
                                 from, socket, rbuf_len, rbuf, use_candidate);
 
+
+      if (remote_candidate) {
+        /*
+         * Add remote candidate to list of valid addresses we can receive data from
+         */
+        nice_component_add_valid_candidate (agent, component, remote_candidate);
+      }
 
       if (component->remote_candidates == NULL) {
         /* case: We've got a valid binding request to a local candidate

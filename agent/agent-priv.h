@@ -75,6 +75,8 @@
  * MTU and estimated typical sizes of ICE STUN packet */
 #define MAX_STUN_DATAGRAM_PAYLOAD    1300
 
+#define NICE_COMPONENT_MAX_VALID_CANDIDATES 50 /* maximum number of validates remote candidates to keep, the number is arbitrary but hopefully large enough */
+
 struct _NiceAgent
 {
   GObject parent;                 /* gobject pointer */
