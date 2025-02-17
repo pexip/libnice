@@ -3289,6 +3289,29 @@ done:
 }
 
 NICE_EXPORT void
+nice_agent_set_component_drop_unknown_address (
+  NiceAgent *agent,
+  guint stream_id,
+  guint component_id,
+  gboolean drop_unknown_address)
+{
+  Stream *stream;
+  Component *component;
+
+  agent_lock (agent);
+  if (agent_find_component (agent, stream_id, component_id, &stream, &component)) {
+    GST_DEBUG_OBJECT (agent, "%u%u: setting drop_unknown_address to %s",
+        stream_id,
+        component_id,
+        drop_unknown_address ? "TRUE" : "FALSE");
+    component->fallback_mode = !drop_unknown_address;
+  }
+
+done:
+  agent_unlock (agent);
+}
+
+NICE_EXPORT void
 nice_agent_end_of_candidates (
   NiceAgent *agent,
   guint stream_id,

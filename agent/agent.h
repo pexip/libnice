@@ -872,6 +872,13 @@ nice_agent_set_stream_trickle_ice (
   gboolean trickle_ice);
 
 NICE_EXPORT void
+nice_agent_set_component_drop_unknown_address (
+  NiceAgent *agent,
+  guint stream_id,
+  guint component_id,
+  gboolean drop_unknown_address);
+
+NICE_EXPORT void
 nice_agent_end_of_candidates (
   NiceAgent *agent,
   guint stream_id,
