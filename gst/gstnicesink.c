@@ -66,6 +66,8 @@ gst_nice_sink_get_property (
 
 static void
 gst_nice_sink_dispose (GObject *object);
+static void
+gst_nice_sink_finalize (GObject *object);
 
 static GstStateChangeReturn
 gst_nice_sink_change_state (
@@ -107,6 +109,7 @@ gst_nice_sink_class_init (GstNiceSinkClass *klass)
   gobject_class->set_property = gst_nice_sink_set_property;
   gobject_class->get_property = gst_nice_sink_get_property;
   gobject_class->dispose = gst_nice_sink_dispose;
+  gobject_class->finalize = gst_nice_sink_finalize;
 
   gstelement_class = (GstElementClass *) klass;
   gstelement_class->change_state = gst_nice_sink_change_state;
@@ -163,7 +166,8 @@ gst_nice_sink_class_init (GstNiceSinkClass *klass)
 static void
 gst_nice_sink_init (GstNiceSink *sink)
 {
-  (void)sink;
+  g_mutex_init (&sink->signal_disconnection_complete_mutex);
+  g_cond_init (&sink->signal_disconnection_complete_cond);
 }
 
 static void
@@ -176,13 +180,23 @@ gst_nice_sink_dispose (GObject *object)
     sink->agent = NULL;
   }
 
-  if (sink->mainloop)
-  {
+  if (sink->mainloop) {
     g_main_loop_unref (sink->mainloop);
+    sink->mainloop = NULL;
   }
-  sink->mainloop = NULL;
 
   G_OBJECT_CLASS (gst_nice_sink_parent_class)->dispose (object);
+}
+
+static void
+gst_nice_sink_finalize (GObject *object)
+{
+  GstNiceSink *sink = GST_NICE_SINK (object);
+
+  g_mutex_clear (&sink->signal_disconnection_complete_mutex);
+  g_cond_clear (&sink->signal_disconnection_complete_cond);
+
+  G_OBJECT_CLASS (gst_nice_sink_parent_class)->finalize (object);
 }
 
 static void
