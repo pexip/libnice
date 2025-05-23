@@ -127,6 +127,9 @@ struct _NiceAgent
   gboolean media_after_tick;       /* Received media after keepalive tick */
   gchar *software_attribute;       /* SOFTWARE attribute */
   gboolean reliable;               /* property: reliable */
+
+  guint relay_priority_adj[3];
+
   /* XXX: add pointer to internal data struct for ABI-safe extensions */
 };
 

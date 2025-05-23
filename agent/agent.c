@@ -250,6 +250,19 @@ priv_agent_candidate_type_preference (NiceAgent * agent, NiceCandidateType type,
   return NICE_CANDIDATE_TYPE_PREF_RELAYED;
 }
 
+guint32 
+agent_candidate_ensure_unique_relay_priority (NiceAgent * agent, guint8 type_preference, guint32 priority){
+  switch (type_preference){
+  case NICE_CANDIDATE_TYPE_PREF_RELAYED:
+    return priority - agent->relay_priority_adj[0]++;
+  case NICE_CANDIDATE_TYPE_PREF_RELAYED_TCP:
+    return priority - agent->relay_priority_adj[1]++;
+  case NICE_CANDIDATE_OC2007R2_TYPE_PREF_RELAYED:
+    return priority - agent->relay_priority_adj[2]++;
+  }
+  return priority;
+}
+
 guint32
 agent_candidate_ice_priority (NiceAgent * agent,
     const NiceCandidate * candidate, NiceCandidateType type)
@@ -295,8 +308,10 @@ agent_candidate_ice_priority (NiceAgent * agent,
   local_preference = (2 << 13) * direction_preference + other_preference;
 
   /* return _candidate_ice_priority (type_preference, 1, candidate->component_id); */
-  return priv_agent_candidate_ice_priority_full (type_preference,
+  guint32 priority =  priv_agent_candidate_ice_priority_full (type_preference,
       local_preference, candidate->component_id);
+
+  return agent_candidate_ensure_unique_relay_priority(agent, type_preference, priority);
 }
 
 StunUsageIceCompatibility
