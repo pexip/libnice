@@ -652,7 +652,7 @@ nice_agent_class_init (NiceAgentClass * klass)
       NULL,
       NULL,
       g_cclosure_marshal_generic,
-      G_TYPE_NONE, 3, G_TYPE_UINT, G_TYPE_UINT, G_TYPE_STRING, G_TYPE_INVALID);
+      G_TYPE_NONE, 1, NICE_TYPE_CANDIDATE);
 
   /**
    * NiceAgent::new-remote-candidate
@@ -1148,8 +1148,7 @@ agent_signal_new_selected_pair (NiceAgent * agent, guint stream_id,
 void
 agent_signal_new_candidate (NiceAgent * agent, NiceCandidate * candidate)
 {
-  g_signal_emit (agent, signals[SIGNAL_NEW_CANDIDATE], 0,
-      candidate->stream_id, candidate->component_id, candidate->foundation);
+  g_signal_emit (agent, signals[SIGNAL_NEW_CANDIDATE], 0, candidate);
 }
 
 void
