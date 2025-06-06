@@ -1184,6 +1184,7 @@ agent_signal_component_state_change (NiceAgent * agent, guint stream_id,
 void
 agent_signal_turn_allocation_failure (NiceAgent * agent, guint stream_id,
     guint component_id, const NiceAddress * relay_addr,
+    const NiceRelayType * relay_type,
     const StunMessage * response, const char *reason)
 {
   char *msgstr = NULL;
@@ -1196,9 +1197,26 @@ agent_signal_turn_allocation_failure (NiceAgent * agent, guint stream_id,
   if (relay_addr)
     nice_address_to_string (relay_addr, addrstr);
 
+  const char * relay_type_s = "unknown";
+  if (relay_type){
+    switch (*relay_type){
+    case NICE_RELAY_TYPE_TURN_UDP:
+      relay_type_s = "udp";
+      break;
+    case NICE_RELAY_TYPE_TURN_TCP:
+      relay_type_s = "tcp";
+      break;
+    case NICE_RELAY_TYPE_TURN_TLS:
+      relay_type_s = "tls";
+      break;
+    default:
+      break;
+    }    
+  }
+
   GST_WARNING_OBJECT (agent,
-      "%u/%u: TURN allocation failed server=%s response=%s reason=%s",
-      stream_id, component_id, addrstr, msgstr ? msgstr : "none",
+      "%u/%u: TURN allocation failed server=%s relay-type:%s response=%s reason=%s",
+      stream_id, component_id, addrstr, relay_type_s, msgstr ? msgstr : "none",
       reason ? reason : "none");
 
   if (msgstr)

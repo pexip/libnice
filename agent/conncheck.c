@@ -1136,6 +1136,7 @@ static gboolean priv_turn_allocate_refresh_retransmissions_tick (gpointer pointe
                                            cand->stream->id,
                                            cand->component->id,
                                            &cand->server,
+                                           cand->turn ? &cand->turn->type : NULL,
                                            NULL,
                                            "Allocate/Refresh timed out");
       refresh_cancel (cand);
@@ -3189,6 +3190,7 @@ static gboolean priv_map_reply_to_relay_request (NiceAgent *agent, StunMessage *
                                                    d->stream->id,
                                                    d->component->id,
                                                    from,
+                                                   NULL,
                                                    resp, "");
               /* case: a real unauthorized error */
               d->stun_message.buffer = NULL;
@@ -3200,6 +3202,7 @@ static gboolean priv_map_reply_to_relay_request (NiceAgent *agent, StunMessage *
                                                  d->stream->id,
                                                  d->component->id,
                                                  from,
+                                                 NULL,
                                                  resp, "");
 
             /* case: STUN error, the check STUN context was freed */
@@ -3290,6 +3293,7 @@ static gboolean priv_map_reply_to_relay_refresh (NiceAgent *agent, StunMessage *
                                                    cand->stream->id,
                                                    cand->component->id,
                                                    from,
+                                                   cand->turn ? &cand->turn->type : NULL,
                                                    resp,
                                                    "");
               /* case: a real unauthorized error */
@@ -3300,6 +3304,7 @@ static gboolean priv_map_reply_to_relay_refresh (NiceAgent *agent, StunMessage *
                                                  cand->stream->id,
                                                  cand->component->id,
                                                  from,
+                                                 cand->turn ? &cand->turn->type : NULL,
                                                  resp,
                                                  "");
             /* case: STUN error, the check STUN context was freed */
