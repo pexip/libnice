@@ -164,6 +164,7 @@ void agent_signal_turn_allocation_failure (
   guint stream_id,
   guint component_id,
   const NiceAddress* relay_addr,
+  const NiceRelayType* relay_type,
   const StunMessage* response,
   const char *reason);
 

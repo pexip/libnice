@@ -992,6 +992,7 @@ static gboolean priv_discovery_tick_unlocked (gpointer pointer)
                                                    cand->stream->id,
                                                    cand->component->id,
                                                    &cand->server,
+                                                   cand->turn ? &cand->turn->type : NULL,
                                                    NULL,
                                                    "Discovery timed out, aborting.");
               GST_DEBUG_OBJECT (agent, "%u/%u : bind discovery timed out, aborting discovery item.",
