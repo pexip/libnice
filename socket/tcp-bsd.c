@@ -261,11 +261,15 @@ socket_send (NiceSocket *sock, const NiceAddress *to,
 
   /* First try to send the data, don't send it later if it can be sent now
      this way we avoid allocating memory on every send */
+  /* Add G_IO_ERROR_NOT_CONNECTED to the acceptable error codes, since we
+     do non-blocking connects, and we end up attempting to send data before
+     connect() has succeeded */
   if (g_queue_is_empty (&priv->send_queue)) {
     ret = g_socket_send (sock->fileno, buf, len, NULL, &gerr);
     if (ret < 0) {
       if(g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK)
-         || g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_FAILED)) {
+         || g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_FAILED)
+         || g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_NOT_CONNECTED)) {
         add_to_be_sent (sock, buf, len, FALSE);
         g_error_free (gerr);
         return len;
@@ -345,7 +349,8 @@ socket_send_more (
 
     if (ret < 0) {
       if(gerr != NULL &&
-          g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK)) {
+          g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK)
+          || g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_NOT_CONNECTED)) {
         add_to_be_sent (sock, tbs->buf, tbs->length, TRUE);
         g_free (tbs->buf);
         g_slice_free (struct to_be_sent, tbs);
