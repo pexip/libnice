@@ -305,6 +305,8 @@ static gboolean priv_add_local_candidate_pruned (NiceAgent *agent, guint stream_
 
         GST_DEBUG_OBJECT (agent, "%u/%u: Pruning duplicate relay reflexive candidate for relay address %s (%s %s) turn-type:%d",
             stream_id, component->id, addrstr, candidate->foundation, c->foundation, c->turn->type);
+        GST_ERROR ("%u/%u: Pruning duplicate relay reflexive candidate for relay address %s (%s %s) turn-type:%d",
+            stream_id, component->id, addrstr, candidate->foundation, c->foundation, c->turn->type);
         return FALSE;          
       }
     }
