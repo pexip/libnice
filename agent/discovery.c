@@ -386,11 +386,23 @@ static void priv_assign_foundation (NiceAgent *agent, NiceCandidate *candidate)
          * later and avoids a race when STUN/TURN results are returned in a different
          * order for different components
          */
+        gboolean is_srv_reflx_unique = (candidate->type == NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE && 
+                                        !nice_address_equal_full (&candidate->addr, &n->addr, FALSE));
+        /*
+         * For relay candidates only assign the same foundation if they have
+         * the same apparent address and turn_type. This is OK because we will be pruning one of them
+         * later and avoids a race when STUN/TURN results are returned in a different
+         * order for different components
+         */
+        gboolean is_relay_unique = (candidate->type == NICE_CANDIDATE_TYPE_RELAYED &&
+                                    candidate->turn != NULL && n->turn != NULL &&
+                                    (candidate->turn->type != n->turn->type || 
+                                    !nice_address_equal_full (&candidate->addr, &n->addr, FALSE)));
+
         if (candidate->type == n->type &&
             candidate->transport == n->transport &&
             nice_address_equal (&candidate->base_addr, &temp) &&
-            (candidate->type != NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE ||
-             nice_address_equal_full (&candidate->addr, &n->addr, FALSE))) {
+            is_srv_reflx_unique == FALSE && is_relay_unique == FALSE) {
           candidate->local_foundation = n->local_foundation;
           g_strlcpy (candidate->foundation, n->foundation,
                      NICE_CANDIDATE_MAX_FOUNDATION);
