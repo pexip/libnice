@@ -190,9 +190,40 @@ priv_agent_candidate_ice_priority_full (
 }
 
 static guint
+priv_agent_relay_type_preference (NiceAgent * agent, NiceCandidateType type,
+    NiceRelayType relay_type)
+{
+  g_assert(type == NICE_CANDIDATE_TYPE_RELAYED);
+
+  switch (agent->compatibility) {
+  case NICE_COMPATIBILITY_OC2007R2:
+    switch (relay_type){
+    case NICE_RELAY_TYPE_TURN_UDP:
+      return NICE_CANDIDATE_OC2007R2_TYPE_PREF_RELAYED;
+    case NICE_RELAY_TYPE_TURN_TCP:
+    case NICE_RELAY_TYPE_TURN_TLS:
+      return NICE_CANDIDATE_OC2007R2_TYPE_PREF_RELAYED_TCP;
+    }
+  default:
+    switch (relay_type){
+    case NICE_RELAY_TYPE_TURN_UDP:
+      return NICE_CANDIDATE_TYPE_PREF_RELAYED;
+    case NICE_RELAY_TYPE_TURN_TCP:
+    case NICE_RELAY_TYPE_TURN_TLS:
+      return NICE_CANDIDATE_TYPE_PREF_RELAYED_TCP;
+    }
+  }
+
+  /* Not reached */
+  return NICE_CANDIDATE_OC2007R2_TYPE_PREF_RELAYED_TCP;
+}
+
+static guint
 priv_agent_candidate_type_preference (NiceAgent * agent, NiceCandidateType type,
     NiceCandidateTransport transport)
 {
+  g_assert(type != NICE_CANDIDATE_TYPE_RELAYED);
+
   switch (agent->compatibility) {
     case NICE_COMPATIBILITY_OC2007R2:
       if (transport == NICE_CANDIDATE_TRANSPORT_UDP) {
@@ -204,7 +235,7 @@ priv_agent_candidate_type_preference (NiceAgent * agent, NiceCandidateType type,
           case NICE_CANDIDATE_TYPE_PEER_REFLEXIVE:
             return NICE_CANDIDATE_OC2007R2_TYPE_PREF_PEER_REFLEXIVE;
           case NICE_CANDIDATE_TYPE_RELAYED:
-            return NICE_CANDIDATE_OC2007R2_TYPE_PREF_RELAYED;
+            g_assert_not_reached();
         }
       } else {
         switch (type) {
@@ -215,7 +246,7 @@ priv_agent_candidate_type_preference (NiceAgent * agent, NiceCandidateType type,
           case NICE_CANDIDATE_TYPE_PEER_REFLEXIVE:
             return NICE_CANDIDATE_OC2007R2_TYPE_PREF_PEER_REFLEXIVE_TCP;
           case NICE_CANDIDATE_TYPE_RELAYED:
-            return NICE_CANDIDATE_OC2007R2_TYPE_PREF_RELAYED_TCP;
+            g_assert_not_reached();
         }
       }
       break;
@@ -230,7 +261,7 @@ priv_agent_candidate_type_preference (NiceAgent * agent, NiceCandidateType type,
           case NICE_CANDIDATE_TYPE_PEER_REFLEXIVE:
             return NICE_CANDIDATE_TYPE_PREF_PEER_REFLEXIVE;
           case NICE_CANDIDATE_TYPE_RELAYED:
-            return NICE_CANDIDATE_TYPE_PREF_RELAYED;
+            g_assert_not_reached();
         }
       } else {
         switch (type) {
@@ -241,7 +272,7 @@ priv_agent_candidate_type_preference (NiceAgent * agent, NiceCandidateType type,
           case NICE_CANDIDATE_TYPE_PEER_REFLEXIVE:
             return NICE_CANDIDATE_TYPE_PREF_PEER_REFLEXIVE_TCP;
           case NICE_CANDIDATE_TYPE_RELAYED:
-            return NICE_CANDIDATE_TYPE_PREF_RELAYED_TCP;
+            g_assert_not_reached();
         }
       }
   }
@@ -265,8 +296,13 @@ agent_candidate_ice_priority (NiceAgent * agent,
     other_preference = (1 << 10) | candidate->local_foundation;
   }
 
-  type_preference =
-      priv_agent_candidate_type_preference (agent, type, candidate->transport);
+  type_preference = 0;
+  if (type == NICE_CANDIDATE_TYPE_RELAYED){
+    NiceRelayType relay_type = (candidate->turn) ? candidate->turn->type : NICE_RELAY_TYPE_TURN_TCP;
+    type_preference = priv_agent_relay_type_preference (agent, type, relay_type);
+  } else {
+    type_preference = priv_agent_candidate_type_preference (agent, type, candidate->transport);
+  }
 
   switch (candidate->transport) {
     case NICE_CANDIDATE_TRANSPORT_UDP:
