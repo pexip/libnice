@@ -459,4 +459,7 @@ nice_candidate_equal_target (const NiceCandidate *candidate1,
 
 G_END_DECLS
 
+gchar *
+nice_candidate_to_string(const NiceCandidate * candidate);
+
 #endif /* _CANDIDATE_H */

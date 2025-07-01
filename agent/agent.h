@@ -113,6 +113,7 @@ typedef struct _NiceAgent NiceAgent;
 #include "candidate.h"
 #include "debug.h"
 
+#define AGENT_EXTENDED_TURN_CANDIDATE_LOGGING 0
 
 G_BEGIN_DECLS
 
