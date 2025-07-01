@@ -296,7 +296,6 @@ static gboolean priv_add_local_candidate_pruned (NiceAgent *agent, guint stream_
 
       if (c->type == NICE_CANDIDATE_TYPE_RELAYED &&
           candidate->type == NICE_CANDIDATE_TYPE_RELAYED &&
-          nice_address_equal_full (&c->base_addr, &candidate->base_addr, FALSE) &&
           nice_address_equal_full (&c->addr, &candidate->addr, FALSE) &&
           c->turn && candidate->turn && c->turn->type == candidate->turn->type) {
 
