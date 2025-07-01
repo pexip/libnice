@@ -306,3 +306,42 @@ nice_candidate_equal_target (const NiceCandidate *candidate1,
   return (candidate1->transport == candidate2->transport &&
       nice_address_equal (&candidate1->addr, &candidate2->addr));
 }
+
+static const gchar *
+_candidate_relay_type_to_string(NiceRelayType relay_type)
+{
+  switch (relay_type) {
+  case NICE_RELAY_TYPE_TURN_UDP: return "udp";
+  case NICE_RELAY_TYPE_TURN_TCP: return "tcp";
+  case NICE_RELAY_TYPE_TURN_TLS: return "tls";
+  }
+  return "(invalid)";
+}
+
+gchar *
+nice_candidate_to_string(const NiceCandidate * candidate)
+{
+  if (candidate == NULL)
+    return NULL;
+
+  gchar buf[1024];
+  GString * s = g_string_new("candidate");
+  g_string_append_printf(s, " foundation:%s", candidate->foundation);
+  if (candidate->priority)
+    g_string_append_printf(s, " priority:%u", candidate->priority);
+  g_string_append_printf(s, " transport:%s", candidate_transport_to_string(candidate->transport));
+  g_string_append_printf(s, " type:%s", candidate_type_to_string(candidate->type));
+
+  if (candidate->type == NICE_CANDIDATE_TYPE_RELAYED){
+    g_string_append_printf(s, " relay_type:%s", _candidate_relay_type_to_string(candidate->turn->type));
+    nice_address_to_string(&candidate->turn->server, buf);
+    g_string_append_printf(s, " relay_addr:'%s:%d'", buf, nice_address_get_port(&candidate->turn->server));
+  }
+
+  nice_address_to_string(&candidate->addr, buf);
+  g_string_append_printf(s, " addr:'%s:%d'", buf, nice_address_get_port(&candidate->addr));
+  nice_address_to_string(&candidate->base_addr, buf);
+  g_string_append_printf(s, " base_addr:'%s:%d'", buf, nice_address_get_port(&candidate->base_addr));
+
+  return g_string_free(s, FALSE);
+}

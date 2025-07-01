@@ -290,6 +290,19 @@ agent_candidate_ice_priority (NiceAgent * agent,
   guint direction_preference = 0;
   guint local_preference = 0;
 
+#if AGENT_EXTENDED_TURN_CANDIDATE_LOGGING
+  if (type == NICE_CANDIDATE_TYPE_RELAYED){
+    if (candidate->turn){
+      gchar * candidate_s = nice_candidate_to_string(candidate);
+      GST_ERROR("TURN-PRIORITY-CALC: %s", candidate_s);
+      g_free(candidate_s);
+    } else {
+      GST_ERROR("No turn server info available for relay candidate!?!?");
+      g_assert_not_reached();
+    }
+  }
+#endif
+
   if (nice_address_is_ipv6 (&candidate->base_addr)) {
     other_preference = candidate->local_foundation;
   } else {
