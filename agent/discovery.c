@@ -611,7 +611,7 @@ discovery_add_server_reflexive_candidate (
   priv_set_candidate_priority (agent, component, candidate);
   result = priv_add_local_candidate_pruned (agent, stream_id, component, candidate, TRUE);
   if (result) {
-    agent_signal_new_candidate (agent, candidate);
+    agent_signal_new_candidate (agent, stream, component, candidate);
   }
   else {
     /* error: duplicate candidate */
@@ -672,7 +672,7 @@ discovery_add_relay_candidate (
     goto errors;
 
   component->sockets = g_slist_append (component->sockets, relay_socket);
-  agent_signal_new_candidate (agent, candidate);
+  agent_signal_new_candidate (agent, stream, component, candidate);
 
   return candidate;
 

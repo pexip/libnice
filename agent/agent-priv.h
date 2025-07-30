@@ -170,6 +170,8 @@ void agent_signal_turn_allocation_failure (
 
 void agent_signal_new_candidate (
   NiceAgent *agent,
+  Stream * stream,
+  Component * component,
   NiceCandidate *candidate);
 
 void agent_signal_new_remote_candidate (NiceAgent *agent, NiceCandidate *candidate);

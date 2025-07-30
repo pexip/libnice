@@ -1195,9 +1195,19 @@ agent_signal_new_selected_pair (NiceAgent * agent, guint stream_id,
 }
 
 void
-agent_signal_new_candidate (NiceAgent * agent, NiceCandidate * candidate)
+agent_signal_new_candidate (NiceAgent * agent, Stream * stream,
+    Component * component, NiceCandidate * candidate)
 {
-  g_signal_emit (agent, signals[SIGNAL_NEW_CANDIDATE], 0, candidate);
+  NiceCandidate *copy = nice_candidate_copy (candidate);
+
+  if (copy->transport == NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE) {
+    nice_address_set_port (&copy->addr, component->min_port);
+    nice_address_set_port (&copy->base_addr, component->min_port);
+  }
+
+  g_signal_emit (agent, signals[SIGNAL_NEW_CANDIDATE], 0, copy);
+
+  nice_candidate_free (copy);
 }
 
 void
@@ -1784,7 +1794,7 @@ nice_agent_gather_candidates (NiceAgent * agent, guint stream_id)
     Component *component = stream_find_component_by_id (stream, n + 1);
     for (i = component->local_candidates; i; i = i->next) {
       NiceCandidate *candidate = i->data;
-      agent_signal_new_candidate (agent, candidate);
+      agent_signal_new_candidate (agent, stream, component, candidate);
     }
   }
 
