@@ -1578,10 +1578,40 @@ nice_agent_gather_candidates (NiceAgent * agent, guint stream_id)
     }
   }
 
-  /*
-   * TODO: Prune any local candidates created on interfaces that no longer
-   * exist
-   */
+  /* Prune any local candidates created on interfaces that no longer exists */
+  for (n = 0; n < stream->n_components; n++) {
+    Component *component = stream_find_component_by_id (stream, n + 1);
+    if (component == NULL)
+      continue;
+
+    GSList * c_iter = NULL;
+    for (c_iter = component->local_candidates; c_iter; ) {
+      NiceCandidate *candidate = c_iter->data;
+      GSList * c_iter_next = c_iter->next;
+
+      gboolean valid_address = FALSE;
+      GSList * a_iter = NULL;
+      for (a_iter = local_addresses; a_iter; a_iter = a_iter->next) {
+        NiceAddress *addr = a_iter->data;
+        if (nice_address_equal_full(addr, &candidate->base_addr, FALSE)){
+          valid_address = TRUE;
+          break;
+        }
+      }
+      if (valid_address == FALSE){
+        gchar * candidate_s = nice_candidate_to_string (candidate);
+        GST_DEBUG_OBJECT (agent, "Releasing component_id:%u %p '%s', because it's not a local address any longer.", component->id, candidate, candidate_s);
+        conn_check_prune_local_candidate(agent, stream, candidate);
+        discovery_prune_local_candidate (agent, candidate);
+        refresh_prune_local_candidate (agent, candidate);
+
+        component->local_candidates = g_slist_remove (component->local_candidates, candidate);
+        nice_candidate_free (candidate);
+        g_free (candidate_s);
+      }
+      c_iter = c_iter_next;
+    }
+  }
 
   /* generate a local host candidate for each local address */
   for (i = local_addresses; i; i = i->next) {
