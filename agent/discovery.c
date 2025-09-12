@@ -819,6 +819,7 @@ discovery_add_peer_reflexive_candidate (
         candidate_type_to_string(candidate->type),
         candidate_transport_to_string(candidate->transport),
         candidate->foundation);
+    agent_signal_new_candidate (agent, stream, component, candidate);
   }
 
   return candidate;
