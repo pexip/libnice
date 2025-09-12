@@ -2066,6 +2066,33 @@ void conn_check_add_for_local_candidate (NiceAgent *agent, guint stream_id, Comp
   }
 }
 
+void conn_check_prune_local_candidate (NiceAgent *agent, Stream *stream, NiceCandidate *local)
+{
+  GSList *i;
+  GSList *to_delete = NULL;
+
+  /* All check pairs are allocated into conncheck_heap; collect all matching
+   * pairs first, then route deletion through priv_delete_conncheck() so they
+   * are removed from conncheck_list/valid_list/conncheck_heap before being
+   * freed. Iterating and freeing while the same pairs are still referenced
+   * from the other lists would cause use-after-free reads later on. */
+  for (i = stream->conncheck_heap; i; i = i->next) {
+    CandidateCheckPair *pair = i->data;
+    if (pair->local == local)
+      to_delete = g_slist_prepend (to_delete, pair);
+  }
+
+  for (i = to_delete; i; i = i->next) {
+    CandidateCheckPair *pair = i->data;
+    gchar *candidate_s = nice_candidate_to_string (local);
+    GST_LOG_OBJECT (agent, "Pruning check pair for local candidate: %s", candidate_s);
+    g_free (candidate_s);
+    priv_delete_conncheck (stream, pair);
+  }
+
+  g_slist_free (to_delete);
+}
+
 /*
  * Frees the CandidateCheckPair structure pointer to
  * by 'user data'. Compatible with g_slist_foreach().

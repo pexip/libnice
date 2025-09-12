@@ -128,6 +128,35 @@ void discovery_prune_stream (NiceAgent *agent, guint stream_id)
   }
 }
 
+void discovery_prune_local_candidate (NiceAgent *agent, NiceCandidate * candidate)
+{
+
+  GSList *i;
+
+  for (i = agent->discovery_list; i ; ) {
+    CandidateDiscovery *cand = i->data;
+    GSList *next = i->next;
+
+    /* Match either the discovery socket or the conncheck socket. */
+    if (cand->stream->id == candidate->stream_id &&
+        cand->component->id == candidate->component_id &&
+        (cand->nicesock == candidate->sockptr ||
+         cand->conncheck_nicesock == candidate->sockptr)) {
+      if (!cand->pending && agent->discovery_unsched_items > 0)
+        --agent->discovery_unsched_items;
+      agent->discovery_list = g_slist_remove (agent->discovery_list, cand);
+      discovery_free_item (cand, NULL);
+    }
+    i = next;
+  }
+
+  if (agent->discovery_list == NULL) {
+    /* no one using the timer anymore, clean it up */
+    discovery_free (agent);
+  }
+}
+
+
 
 /*
  * Frees the CandidateDiscovery structure pointed to
@@ -252,7 +281,25 @@ void refresh_prune_stream (NiceAgent *agent, guint stream_id)
 
     i = next;
   }
+}
 
+void refresh_prune_local_candidate(NiceAgent *agent, NiceCandidate * candidate){
+  GSList *i;
+
+  for (i = agent->refresh_list; i ;) {
+    CandidateRefresh *cand = i->data;
+    GSList *next = i->next;
+
+    /* Match either the direct socket or the relay socket for relayed candidates. */
+    if (cand->stream->id == candidate->stream_id &&
+        cand->component->id == candidate->component_id &&
+        (cand->nicesock == candidate->sockptr ||
+         cand->relay_socket == candidate->sockptr)) {
+      agent->refresh_list = g_slist_remove (agent->refresh_list, cand);
+      refresh_free_item (cand, NULL);
+    }
+    i = next;
+  }
 }
 
 void refresh_cancel (CandidateRefresh *refresh)

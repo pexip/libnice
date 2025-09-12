@@ -99,5 +99,6 @@ void conn_check_recalculate_pair_priorities (NiceAgent *agent);
 void conn_check_update_check_list_state_for_ready (NiceAgent *agent, Stream *stream, Component *component);
 gboolean conn_check_update_selected_pair (NiceAgent *agent, Component *component, CandidateCheckPair *pair);
 void conn_check_unfreeze_related (NiceAgent *agent, Stream *stream, CandidateCheckPair *ok_check);
+void conn_check_prune_local_candidate (NiceAgent *agent, Stream *stream, NiceCandidate *local);
 
 #endif /*_NICE_CONNCHECK_H */
