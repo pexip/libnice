@@ -436,38 +436,42 @@ static void priv_assign_foundation (NiceAgent *agent, NiceCandidate *candidate)
       Component *component = j->data;
       for (k = component->local_candidates; k; k = k->next) {
         NiceCandidate *n = k->data;
-        NiceAddress temp = n->base_addr;
 
         /* note: candidate must not on the local candidate list */
         g_assert (candidate != n);
 
-        /* note: ports are not to be compared */
-        nice_address_set_port (&temp,
-                               nice_address_get_port (&candidate->base_addr));
-
         /*
-         * For server reflexive candidates only assign the same foundation if they have
-         * the same apparent address. This is OK because we will be pruning one of them
-         * later and avoids a race when STUN/TURN results are returned in a different
-         * order for different components
-         */
-        gboolean is_srv_reflx_unique = (candidate->type == NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE && 
-                                        !nice_address_equal_full (&candidate->addr, &n->addr, FALSE));
-        /*
+         * For peer and server reflexive candidates only assign the same foundation if 
+         * they have the same apparent address. This is OK because we will be pruning one
+         * of them later and avoids a race when STUN/TURN results are returned in a 
+         * different order for different components
+         *
          * For relay candidates only assign the same foundation if they have
          * the same apparent address and turn_type. This is OK because we will be pruning one of them
          * later and avoids a race when STUN/TURN results are returned in a different
          * order for different components
          */
-        gboolean is_relay_unique = (candidate->type == NICE_CANDIDATE_TYPE_RELAYED &&
-                                    candidate->turn != NULL && n->turn != NULL &&
-                                    (candidate->turn->type != n->turn->type || 
-                                    !nice_address_equal_full (&candidate->addr, &n->addr, FALSE)));
 
-        if (candidate->type == n->type &&
-            candidate->transport == n->transport &&
-            nice_address_equal (&candidate->base_addr, &temp) &&
-            is_srv_reflx_unique == FALSE && is_relay_unique == FALSE) {
+        gboolean copy_foundation = FALSE;
+        if (candidate->type == n->type && candidate->transport == n->transport && nice_address_equal_full (&candidate->base_addr, &n->base_addr, FALSE)){
+          switch (candidate->type) {
+            case NICE_CANDIDATE_TYPE_HOST:
+              copy_foundation = TRUE;
+            break;
+            case NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE:
+              copy_foundation = nice_address_equal_full (&candidate->addr, &n->addr, FALSE);
+            break;
+            case NICE_CANDIDATE_TYPE_PEER_REFLEXIVE:
+              copy_foundation = nice_address_equal_full (&candidate->addr, &n->addr, FALSE);
+            break;
+            case NICE_CANDIDATE_TYPE_RELAYED:
+              if (candidate->turn != NULL && n->turn != NULL && candidate->turn->type == n->turn->type && nice_address_equal_full (&candidate->addr, &n->addr, FALSE))
+                copy_foundation = TRUE;
+            break;
+          }
+        }
+
+        if (copy_foundation) {
           candidate->local_foundation = n->local_foundation;
           g_strlcpy (candidate->foundation, n->foundation,
                      NICE_CANDIDATE_MAX_FOUNDATION);
@@ -479,7 +483,7 @@ static void priv_assign_foundation (NiceAgent *agent, NiceCandidate *candidate)
             g_free (candidate->password);
             candidate->password = g_strdup (n->password);
           }
-          return;
+          return;          
         }
       }
     }
