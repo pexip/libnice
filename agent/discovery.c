@@ -453,6 +453,12 @@ static void priv_assign_foundation (NiceAgent *agent, NiceCandidate *candidate)
          */
         gboolean is_srv_reflx_unique = (candidate->type == NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE && 
                                         !nice_address_equal_full (&candidate->addr, &n->addr, FALSE));
+
+        /*
+        * Never try to give two peer reflexive candidates the same foundation, this only leads to priority collisions.
+        */
+        gboolean is_peer_reflx_unique = (candidate->type == NICE_CANDIDATE_TYPE_PEER_REFLEXIVE);
+
         /*
          * For relay candidates only assign the same foundation if they have
          * the same apparent address and turn_type. This is OK because we will be pruning one of them
@@ -467,7 +473,9 @@ static void priv_assign_foundation (NiceAgent *agent, NiceCandidate *candidate)
         if (candidate->type == n->type &&
             candidate->transport == n->transport &&
             nice_address_equal (&candidate->base_addr, &temp) &&
-            is_srv_reflx_unique == FALSE && is_relay_unique == FALSE) {
+            is_srv_reflx_unique == FALSE && 
+            is_peer_reflx_unique == FALSE && 
+            is_relay_unique == FALSE) {
           candidate->local_foundation = n->local_foundation;
           g_strlcpy (candidate->foundation, n->foundation,
                      NICE_CANDIDATE_MAX_FOUNDATION);
