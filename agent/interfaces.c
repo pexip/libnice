@@ -188,6 +188,15 @@ nice_interfaces_is_private_ip (const struct sockaddr *sa)
 
 #ifdef HAVE_IFADDRS_H
 
+# ifndef IN6_IS_ADDR_DOCUMENTATION
+/* Documentation prefix 2001:db8::/32 (RFC 3849). Compared byte-wise to avoid
+ * relying on strict-aliasing/alignment of (uint32_t *) casts of struct in6_addr. */
+static const uint8_t nice_in6_documentation_prefix[4] = { 0x20, 0x01, 0x0d, 0xb8 };
+#  define IN6_IS_ADDR_DOCUMENTATION(a) \
+  (memcmp (((const struct in6_addr *) (a))->s6_addr, \
+      nice_in6_documentation_prefix, 4) == 0)
+# endif
+
 GList *
 nice_interfaces_get_local_ips (gboolean include_loopback)
 {
@@ -214,6 +223,12 @@ nice_interfaces_get_local_ips (gboolean include_loopback)
       continue;
     }
 
+    /* Skip point-to-point interfaces */
+    if ((ifa->ifa_flags & IFF_POINTOPOINT) != 0) {
+      GST_DEBUG("Skip point-to-point interface %s", ifa->ifa_name);
+      continue;
+    }
+
     if (ifa->ifa_addr == NULL) {
       continue;
     } else if (ifa->ifa_addr->sa_family == AF_INET) {
@@ -232,6 +247,12 @@ nice_interfaces_get_local_ips (gboolean include_loopback)
       if (inet_ntop (AF_INET6, &sa6->sin6_addr, addr_as_string,
               INET6_ADDRSTRLEN) == NULL)
         continue;
+
+      if (IN6_IS_ADDR_DOCUMENTATION(&sa6->sin6_addr)){
+        GST_INFO ("Skipping documentation-prefix IPv6 address: %s",
+            addr_as_string);
+        continue;
+      }
     } else
       continue;
 
