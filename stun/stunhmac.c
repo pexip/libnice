@@ -123,5 +123,6 @@ void stun_hash_creds (const uint8_t *realm, size_t realm_len,
 
 void stun_make_transid (StunTransactionId id)
 {
-  RAND_bytes (id, 16);
+  for (guint i = 0; i < 16; i++)
+    id[i] = g_random_int_range (0, 255);
 }
