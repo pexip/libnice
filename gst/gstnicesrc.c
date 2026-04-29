@@ -247,14 +247,29 @@ gst_nice_src_address_hash (gconstpointer key)
 {
   const NiceAddress *from = (NiceAddress *)key;
 
+  /* Only hash well-defined fields. Hashing the whole struct sockaddr_in /
+   * sockaddr_in6 is unsafe because BSD-derived kernels (including darwin)
+   * do not zero padding bytes such as sin_zero on the recvfrom path, which
+   * would cause two packets from the same peer to produce different hashes
+   * and result in cache misses. */
   guint hash = gst_nice_src_data_hash((gpointer)&from->s.addr.sa_family, sizeof(from->s.addr.sa_family), 0);
 
   switch (from->s.addr.sa_family) {
     case AF_INET:
-      hash = gst_nice_src_data_hash((gpointer)&from->s.ip4, sizeof (from->s.ip4), hash);
+      hash = gst_nice_src_data_hash((gpointer)&from->s.ip4.sin_port,
+          sizeof (from->s.ip4.sin_port), hash);
+      hash = gst_nice_src_data_hash((gpointer)&from->s.ip4.sin_addr.s_addr,
+          sizeof (from->s.ip4.sin_addr.s_addr), hash);
       break;
     case AF_INET6:
-      hash = gst_nice_src_data_hash((gpointer)&from->s.ip6, sizeof (from->s.ip6), hash);
+      hash = gst_nice_src_data_hash((gpointer)&from->s.ip6.sin6_port,
+          sizeof (from->s.ip6.sin6_port), hash);
+      hash = gst_nice_src_data_hash((gpointer)&from->s.ip6.sin6_flowinfo,
+          sizeof (from->s.ip6.sin6_flowinfo), hash);
+      hash = gst_nice_src_data_hash((gpointer)&from->s.ip6.sin6_addr,
+          sizeof (from->s.ip6.sin6_addr), hash);
+      hash = gst_nice_src_data_hash((gpointer)&from->s.ip6.sin6_scope_id,
+          sizeof (from->s.ip6.sin6_scope_id), hash);
       break;
     default:
       GST_ERROR_OBJECT (from, "Unknown address family");
@@ -305,19 +320,10 @@ gst_nice_src_gsocket_addr_create_or_retrieve (GstNiceSrc *src,
 static gboolean
 gst_nice_src_nice_address_compare (gconstpointer a, gconstpointer b)
 {
-    const NiceAddress *a_addr = (const NiceAddress*)a;
-    const NiceAddress *b_addr = (const NiceAddress*)b;
-
-    if ((a_addr->s.addr.sa_family == b_addr->s.addr.sa_family))
-    {
-      switch (a_addr->s.addr.sa_family) {
-        case AF_INET:
-          return memcmp(&a_addr->s.ip4, &b_addr->s.ip4, sizeof (a_addr->s.ip4)) == 0;
-        case AF_INET6:
-          return memcmp(&a_addr->s.ip6, &b_addr->s.ip6, sizeof (a_addr->s.ip6)) == 0;
-      }
-    }
-    return FALSE;
+    /* Delegate to nice_address_equal which compares only well-defined fields,
+     * avoiding spurious mismatches caused by uninitialised padding bytes
+     * (e.g. sin_zero on darwin). */
+    return nice_address_equal ((const NiceAddress *) a, (const NiceAddress *) b);
 }
 
 static void
