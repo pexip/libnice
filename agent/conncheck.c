@@ -3563,7 +3563,7 @@ static gboolean priv_map_reply_to_relay_refresh (NiceAgent *agent, StunMessage *
                * responses rather than just one. coturn with a short
                * stale-nonce can rotate the nonce again between our
                * retry leaving and arriving. The counter is incremented
-               * above first, so MAX of 5 means we send refresh
+               * above first, so MAX of 4 means we send refresh
                * transactions 1..MAX (the original + MAX-1 retries) and
                * tear down once the MAX-th transaction has also been
                * answered with 438/401, before scheduling another. This

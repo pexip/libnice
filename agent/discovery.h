@@ -116,12 +116,17 @@ typedef struct
   gboolean tolerate_one_timeout;
 } CandidateRefresh;
 
-/* How many consecutive 438 (Stale Nonce) / 401 (realm changed) responses
- * we will silently retry before declaring the allocation dead. RFC 5389
- * only mandates one retry, but real-world TURN servers (notably coturn
- * with short stale-nonce values) can rotate the nonce again between our
- * retry being sent and reaching them, so be more lenient. */
-#define NICE_TURN_MAX_CONSECUTIVE_STALE_NONCE 5
+/* How many Refresh transactions in total we will send on a single
+ * candidate while the server keeps returning 438 (Stale Nonce) /
+ * 401 (realm changed). RFC 5389 only mandates one retry, but real-world
+ * TURN servers (notably coturn with short stale-nonce values) can
+ * rotate the nonce again between our retry being sent and reaching
+ * them, so be a little more lenient — but not so lenient that a
+ * misbehaving server can keep us looping for a long time. With siblings
+ * (e.g. an RTP+RTCP pair sharing one TURN server) the total Refresh
+ * traffic generated for one component is bounded by
+ * NICE_TURN_MAX_CONSECUTIVE_STALE_NONCE * <number of sibling refreshes>. */
+#define NICE_TURN_MAX_CONSECUTIVE_STALE_NONCE 4
 
 void refresh_free_item (gpointer data, gpointer user_data);
 void refresh_free (NiceAgent *agent);
