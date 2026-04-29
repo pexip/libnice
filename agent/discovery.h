@@ -93,7 +93,7 @@ typedef struct
    *
    * - allocation_start_us: monotonic timestamp captured when the refresh
    *   object was created (i.e. when the Allocate succeeded). Used purely
-   *   for logging "allocation age" so that disconnect-after-Nmin patterns
+   *   for logging "allocation age" so that disconnect-after-N-min patterns
    *   are easy to spot.
    * - refresh_count: how many Refresh requests we have sent on this
    *   allocation (including resends after 438).

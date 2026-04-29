@@ -3434,22 +3434,28 @@ static gboolean priv_map_reply_to_relay_refresh (NiceAgent *agent, StunMessage *
           recv_realm = (uint8_t *) stun_message_find (resp,
                                                       STUN_ATTRIBUTE_REALM, &recv_realm_len);
 
-          stun_message_find_error (resp, &code);
-
+          /* Diagnostic log: include the parsed error code so that a
+           * field engineer can see what the server actually returned. */
           {
             gint64 age_s = (g_get_monotonic_time () -
                 cand->allocation_start_us) / G_USEC_PER_SEC;
+            int log_code = -1;
+            (void) stun_message_find_error (resp, &log_code);
             GST_WARNING_OBJECT (cand->agent,
                 "%u/%u: TURN Refresh #%u ERROR code=%d (allocation age %"
                 G_GINT64_FORMAT " s, consecutive_stale_nonce=%u)",
                 cand->stream->id, cand->component->id, cand->refresh_count,
-                code, age_s, cand->consecutive_stale_nonce);
+                log_code, age_s, cand->consecutive_stale_nonce);
           }
 
-          /* check for unauthorized error response */
+          /* check for unauthorized error response. We re-call
+           * stun_message_find_error here (rather than reusing the
+           * value from the diagnostic log above) so that the original
+           * "did the parse succeed?" predicate is preserved exactly. */
           if (cand->agent->turn_compatibility == NICE_COMPATIBILITY_RFC5245 &&
               stun_message_get_class (resp) == STUN_ERROR &&
-              code != -1 &&
+              stun_message_find_error (resp, &code) ==
+              STUN_MESSAGE_RETURN_SUCCESS &&
               recv_realm != NULL && recv_realm_len > 0) {
 
             if (code == 438 ||
