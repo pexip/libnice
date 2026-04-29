@@ -722,9 +722,7 @@ priv_permission_timeout (gpointer data)
   TurnPriv *priv = (TurnPriv *) data;
   NiceAgent *agent = priv->nice_agent;
 
-  GST_DEBUG ("TURN-REFRESH: priv_permission_timeout fired (priv=%p), "
-      "clearing permissions; next socket_send will trigger CreatePermission",
-      priv);
+  GST_DEBUG ("Permission is about to timeout, schedule renewal");
 
   agent_lock (agent);
   /* remove all permissions for this agent (the permission for the peer
@@ -743,8 +741,7 @@ priv_binding_expired_timeout (gpointer data)
   GList *i;
   GSource *source = NULL;
 
-  GST_DEBUG ("TURN-REFRESH: priv_binding_expired_timeout fired (priv=%p) -- "
-      "channel-bind refresh actually FAILED to complete in time", priv);
+  GST_DEBUG ("Permission expired, refresh failed");
 
   agent_lock (agent);
 
@@ -802,11 +799,8 @@ priv_binding_timeout (gpointer data)
   NiceAgent *agent = priv->nice_agent;
   GList *i;
   GSource *source = NULL;
-  gboolean found = FALSE;
 
-  GST_DEBUG ("TURN-REFRESH: priv_binding_timeout fired (priv=%p), "
-      "STUN_BINDING_TIMEOUT=%d s elapsed; sending channel-bind renewal",
-      priv, STUN_BINDING_TIMEOUT);
+  GST_DEBUG ("Permission is about to timeout, sending binding renewal");
 
   agent_lock (agent);
 
@@ -822,38 +816,18 @@ priv_binding_timeout (gpointer data)
   for (i = priv->channels ; i; i = i->next) {
     ChannelBinding *b = i->data;
     if (b->timeout_source == g_source_get_id (source)) {
-      gchar addrstring[INET6_ADDRSTRLEN] = "?";
-      gboolean sent = FALSE;
-      nice_address_to_string (&b->peer, addrstring);
-      found = TRUE;
       b->renew = TRUE;
       /* Install timer to expire the permission. Must be attached to
        * priv->ctx -- not the thread-default context -- so it actually
        * fires when armed from a TURN response worker thread. */
       b->timeout_source = priv_timeout_add_seconds_with_context (priv,
           STUN_EXPIRE_TIMEOUT, priv_binding_expired_timeout, priv);
-      GST_DEBUG ("TURN-REFRESH: armed expired-fallback timer (%d s) for "
-          "channel 0x%04x peer %s:%u source-id=%u",
-          STUN_EXPIRE_TIMEOUT, b->channel, addrstring,
-          nice_address_get_port (&b->peer), b->timeout_source);
       /* Send renewal */
-      if (!priv->current_binding_msg) {
-        sent = priv_send_channel_bind (priv, NULL, b->channel, &b->peer);
-        GST_DEBUG ("TURN-REFRESH: sent renewal channel-bind for channel 0x%04x "
-            "peer %s:%u -> %s", b->channel, addrstring,
-            nice_address_get_port (&b->peer), sent ? "OK" : "FAILED");
-      } else {
-        GST_DEBUG ("TURN-REFRESH: NOT sending renewal: a binding request is "
-            "already in flight (current_binding_msg set)");
-      }
+      if (!priv->current_binding_msg)
+        priv_send_channel_bind (priv, NULL, b->channel, &b->peer);
       break;
     }
   }
-
-  if (!found)
-    GST_DEBUG ("TURN-REFRESH: priv_binding_timeout: no matching binding in "
-        "priv->channels for source-id=%u (channels-len=%u)",
-        g_source_get_id (source), g_list_length (priv->channels));
 
   agent_unlock (agent);
 
@@ -951,11 +925,6 @@ nice_turn_socket_parse_recv (NiceSocket *sock, NiceSocket **from_sock,
         StunTransactionId request_id;
         StunTransactionId response_id;
 
-        GST_DEBUG ("TURN-REFRESH: rx CHANNELBIND response, class=%d "
-            "current_binding_msg=%p current_binding=%p",
-            stun_message_get_class (&msg),
-            priv->current_binding_msg, priv->current_binding);
-
         if (priv->current_binding_msg) {
           stun_message_id (&msg, response_id);
           stun_message_id (&priv->current_binding_msg->message, request_id);
@@ -965,8 +934,6 @@ nice_turn_socket_parse_recv (NiceSocket *sock, NiceSocket **from_sock,
             if (priv->current_binding) {
               /* New channel binding */
               binding = priv->current_binding;
-              GST_DEBUG ("TURN-REFRESH: CHANNELBIND response matches new "
-                  "binding (channel 0x%04x)", binding->channel);
             } else {
               /* Existing binding refresh */
               GList *i;
@@ -988,9 +955,6 @@ nice_turn_socket_parse_recv (NiceSocket *sock, NiceSocket **from_sock,
                   break;
                 }
               }
-              GST_DEBUG ("TURN-REFRESH: CHANNELBIND response is a refresh; "
-                  "binding-lookup-by-peer %s",
-                  binding ? "FOUND" : "NOT FOUND (timer will not be re-armed!)");
             }
 
             if (stun_message_get_class (&msg) == STUN_ERROR) {
@@ -1019,19 +983,12 @@ nice_turn_socket_parse_recv (NiceSocket *sock, NiceSocket **from_sock,
                           memcmp (sent_realm, recv_realm,
                               sent_realm_len) == 0)))) {
 
-                GST_DEBUG ("TURN-REFRESH: CHANNELBIND error code=%d "
-                    "(unauthorized/stale-nonce); resending with new "
-                    "realm/nonce, current_binding kept=%s",
-                    code, priv->current_binding ? "yes" : "no");
                 g_free (priv->current_binding_msg);
                 priv->current_binding_msg = NULL;
                 if (binding)
                   priv_send_channel_bind (priv, &msg, binding->channel,
                       &binding->peer);
               } else {
-                GST_DEBUG ("TURN-REFRESH: CHANNELBIND error code=%d "
-                    "(non-recoverable); dropping current_binding, NO TIMER "
-                    "WILL BE ARMED for this binding", code);
                 g_free (priv->current_binding);
                 priv->current_binding = NULL;
                 g_free (priv->current_binding_msg);
@@ -1049,8 +1006,6 @@ nice_turn_socket_parse_recv (NiceSocket *sock, NiceSocket **from_sock,
               priv->current_binding = NULL;
 
               if (binding) {
-                gchar addrstring[INET6_ADDRSTRLEN] = "?";
-                nice_address_to_string (&binding->peer, addrstring);
                 binding->renew = FALSE;
 
                 /* Remove any existing timer */
@@ -1063,37 +1018,15 @@ nice_turn_socket_parse_recv (NiceSocket *sock, NiceSocket **from_sock,
                 binding->timeout_source =
                     priv_timeout_add_seconds_with_context (priv,
                         STUN_BINDING_TIMEOUT, priv_binding_timeout, priv);
-                GST_DEBUG ("TURN-REFRESH: CHANNELBIND success -- ARMED refresh "
-                    "timer (%d s) for channel 0x%04x peer %s:%u source-id=%u "
-                    "(channels-len=%u)",
-                    STUN_BINDING_TIMEOUT, binding->channel, addrstring,
-                    nice_address_get_port (&binding->peer),
-                    binding->timeout_source,
-                    g_list_length (priv->channels));
-              } else {
-                GST_DEBUG ("TURN-REFRESH: CHANNELBIND success but binding=NULL "
-                    "-- NO REFRESH TIMER ARMED (this is the bug)");
               }
               priv_process_pending_bindings (priv);
             }
-          } else {
-            GST_DEBUG ("TURN-REFRESH: CHANNELBIND response transaction-id "
-                "does not match current_binding_msg -- ignored");
           }
-        } else {
-          GST_DEBUG ("TURN-REFRESH: CHANNELBIND response but "
-              "current_binding_msg=NULL -- ignored");
         }
         return 0;
       } else if (stun_message_get_method (&msg) == STUN_CREATEPERMISSION) {
         StunTransactionId request_id;
         StunTransactionId response_id;
-
-        GST_DEBUG ("TURN-REFRESH: rx CREATEPERMISSION response, class=%d "
-            "current_create_permission_msg=%p permission_timeout_source=%u",
-            stun_message_get_class (&msg),
-            priv->current_create_permission_msg,
-            priv->permission_timeout_source);
 
         if (priv->current_create_permission_msg) {
           stun_message_id (&msg, response_id);
@@ -1163,17 +1096,6 @@ nice_turn_socket_parse_recv (NiceSocket *sock, NiceSocket **from_sock,
                   priv_timeout_add_seconds_with_context (priv,
                       STUN_PERMISSION_TIMEOUT,
                       priv_permission_timeout, priv);
-              GST_DEBUG ("TURN-REFRESH: CREATEPERMISSION success -- ARMED "
-                  "permission refresh timer (%d s) source-id=%u",
-                  STUN_PERMISSION_TIMEOUT, priv->permission_timeout_source);
-            } else if (stun_message_get_class (&msg) == STUN_RESPONSE) {
-              GST_DEBUG ("TURN-REFRESH: CREATEPERMISSION success but "
-                  "permission_timeout_source already set (%u) -- not re-arming",
-                  priv->permission_timeout_source);
-            } else {
-              GST_DEBUG ("TURN-REFRESH: CREATEPERMISSION non-success class=%d "
-                  "-- permission timer NOT armed",
-                  stun_message_get_class (&msg));
             }
 
             /* send enqued data */
@@ -1532,13 +1454,6 @@ priv_send_create_permission(TurnPriv *priv, StunMessage *resp,
   uint16_t realm_len = 0;
   uint8_t *nonce = NULL;
   uint16_t nonce_len = 0;
-  gchar addrstring[INET6_ADDRSTRLEN] = "?";
-
-  nice_address_to_string (peer, addrstring);
-  GST_DEBUG ("TURN-REFRESH: priv_send_create_permission peer=%s:%u "
-      "has-resp=%s (realm/nonce will be %s)", addrstring,
-      nice_address_get_port (peer), resp ? "yes" : "no",
-      resp ? "attached" : "absent");
 
   if (resp) {
     realm = (uint8_t *) stun_message_find (resp,
@@ -1600,12 +1515,6 @@ priv_send_channel_bind (TurnPriv *priv,  StunMessage *resp,
   size_t stun_len;
   struct sockaddr_storage sa;
   TURNMessage *msg = g_new0 (TURNMessage, 1);
-  gchar addrstring[INET6_ADDRSTRLEN] = "?";
-
-  nice_address_to_string (peer, addrstring);
-  GST_DEBUG ("TURN-REFRESH: priv_send_channel_bind channel=0x%04x peer=%s:%u "
-      "has-resp=%s", channel, addrstring, nice_address_get_port (peer),
-      resp ? "yes (realm/nonce attached)" : "no (no realm/nonce)");
 
   nice_address_copy_to_sockaddr (peer, (struct sockaddr *)&sa);
 

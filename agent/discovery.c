@@ -148,21 +148,15 @@ void refresh_free_item (gpointer data, gpointer user_data)
 
   g_assert (user_data == NULL);
 
-  {
-    gint64 age_s = (g_get_monotonic_time () -
-        cand->allocation_start_us) / G_USEC_PER_SEC;
-    GST_INFO_OBJECT (agent,
-        "%u/%u: Freeing TURN refresh candidate %p "
-        "(allocation age %" G_GINT64_FORMAT " s, "
-        "refresh_count=%u, last_lifetime=%u s, "
-        "consecutive_stale_nonce=%u, last_result=%s); sending "
-        "REFRESH lifetime=0 to release the allocation",
-        cand->stream ? cand->stream->id : 0,
-        cand->component ? cand->component->id : 0,
-        cand, age_s, cand->refresh_count,
-        cand->last_lifetime_s, cand->consecutive_stale_nonce,
-        cand->last_refresh_result ? cand->last_refresh_result : "(none)");
-  }
+  GST_INFO_OBJECT (agent,
+      "%u/%u: Freeing TURN refresh candidate %p "
+      "(refresh_count=%u, last_lifetime=%u s, "
+      "consecutive_stale_nonce=%u); sending REFRESH lifetime=0 to "
+      "release the allocation",
+      cand->stream ? cand->stream->id : 0,
+      cand->component ? cand->component->id : 0,
+      cand, cand->refresh_count,
+      cand->last_lifetime_s, cand->consecutive_stale_nonce);
 
   if (cand->timer_source != NULL) {
     g_source_destroy (cand->timer_source);
@@ -174,15 +168,6 @@ void refresh_free_item (gpointer data, gpointer user_data)
     g_source_unref (cand->tick_source);
     cand->tick_source = NULL;
   }
-  /* Speculative-fix #11: tear down the heartbeat timer alongside the
-   * refresh candidate it is logging. */
-  if (cand->heartbeat_source != NULL) {
-    g_source_destroy (cand->heartbeat_source);
-    g_source_unref (cand->heartbeat_source);
-    cand->heartbeat_source = NULL;
-  }
-  g_free (cand->last_refresh_result);
-  cand->last_refresh_result = NULL;
 
   username = (uint8_t *)cand->turn->username;
   username_len = (size_t) strlen (cand->turn->username);
@@ -214,18 +199,16 @@ void refresh_free_item (gpointer data, gpointer user_data)
     nice_address_copy_to_sockaddr(&cand->server, (struct sockaddr *)&server_address);
     stun_message_log(&cand->stun_message, TRUE, (struct sockaddr *)&server_address);
 
-    /* Speculative-fix #13: send the release REFRESH (lifetime=0) exactly
-     * once. Historically this was sent twice on unreliable sockets as a
-     * poor-man's retransmission, but the release is purely advisory: we
-     * forgot the transaction above, the server keeps its own
-     * allocation-expiry timer (last granted lifetime, max 600 s) as a
-     * backstop, and TURN servers process the duplicate as a separate
-     * request — yielding a second STUN response that we can no longer
-     * match (logged as "*** ERROR *** unmatched stun response …") and,
-     * when the allocation has just been removed by the first request,
-     * a spurious 437 Allocation Mismatch on the duplicate. Field
-     * captures show this is a direct contributor to the "refresh then
-     * cancel twice" pattern that confuses both ends. */
+    /* RFC 5766 §7: the release REFRESH (lifetime=0) is purely
+     * advisory. We have already forgotten the transaction above and
+     * the server keeps its own allocation-expiry timer (last granted
+     * lifetime, max 600 s) as a backstop. Sending it twice -- which
+     * the original code did as a poor-man's retransmission -- causes
+     * TURN servers to process the duplicate as a separate request,
+     * yielding either a second STUN response that we can no longer
+     * match (logged as "*** ERROR *** unmatched stun response …") or
+     * a spurious 437 Allocation Mismatch on the duplicate when the
+     * first request has just succeeded. Send exactly once. */
     nice_socket_send (cand->nicesock, &cand->server,
         buffer_len, (gchar *)cand->stun_buffer);
 
@@ -963,10 +946,8 @@ static gboolean priv_discovery_tick_unlocked (gpointer pointer)
               &cand->stun_message,  cand->stun_buffer, sizeof(cand->stun_buffer),
               cand->stun_resp_msg.buffer == NULL ? NULL : &cand->stun_resp_msg,
               STUN_USAGE_TURN_REQUEST_PORT_NORMAL,
-              /* Speculative-fix #1: ask explicitly for a lifetime
-               * rather than relying on the server's default (which on
-               * some coturn deployments is much shorter than the
-               * 600 s libnice's refresh logic implicitly assumes). */
+              /* RFC 5766 §6.1: explicitly request LIFETIME=600 s
+               * rather than relying on the server's default. */
               -1, 600,
               username, username_len,
               password, password_len,
