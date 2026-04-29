@@ -102,17 +102,29 @@ typedef struct
    *   zero on any RELAY_SUCCESS response.
    * - last_lifetime_s: lifetime (seconds) granted by the most recent
    *   successful Allocate / Refresh response.
+   * - last_refresh_result: human-readable status string describing what
+   *   happened to the most recent refresh attempt ("pending", "ok",
+   *   "438-retry", "437-mismatch", "timeout", ...). Owned by the cand
+   *   and freed on teardown.
+   * - last_event_us: monotonic timestamp of the last refresh-related
+   *   event (sent / response / timeout). Used by the heartbeat log.
    * - tolerate_one_timeout: when TRUE, the next retransmission timeout
    *   in priv_turn_allocate_refresh_retransmissions_tick will trigger one
    *   extra refresh attempt rather than tearing down the allocation. Set
    *   automatically after every successful refresh so that a single lost
    *   refresh does not kill the allocation.
+   * - heartbeat_source: periodic timer that logs this candidate's state
+   *   so that "what is libnice doing right now?" can be answered from
+   *   the log alone.
    */
   gint64 allocation_start_us;
   guint refresh_count;
   guint consecutive_stale_nonce;
   guint32 last_lifetime_s;
+  gchar *last_refresh_result;
+  gint64 last_event_us;
   gboolean tolerate_one_timeout;
+  GSource *heartbeat_source;
 } CandidateRefresh;
 
 /* How many consecutive 438 (Stale Nonce) / 401 (realm changed) responses
@@ -121,6 +133,12 @@ typedef struct
  * with short stale-nonce values) can rotate the nonce again between our
  * retry being sent and reaching them, so be more lenient. */
 #define NICE_TURN_MAX_CONSECUTIVE_STALE_NONCE 5
+
+/* Heartbeat interval (milliseconds) — every active CandidateRefresh
+ * dumps its current state into the log this often. Set short enough
+ * that the log around a failure point shows several heartbeats, but
+ * not so short it floods the log of a healthy long-running call. */
+#define NICE_TURN_REFRESH_HEARTBEAT_MS 30000
 
 void refresh_free_item (gpointer data, gpointer user_data);
 void refresh_free (NiceAgent *agent);

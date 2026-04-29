@@ -155,12 +155,13 @@ void refresh_free_item (gpointer data, gpointer user_data)
         "%u/%u: Freeing TURN refresh candidate %p "
         "(allocation age %" G_GINT64_FORMAT " s, "
         "refresh_count=%u, last_lifetime=%u s, "
-        "consecutive_stale_nonce=%u); sending REFRESH lifetime=0 to "
-        "release the allocation",
+        "consecutive_stale_nonce=%u, last_result=%s); sending "
+        "REFRESH lifetime=0 to release the allocation",
         cand->stream ? cand->stream->id : 0,
         cand->component ? cand->component->id : 0,
         cand, age_s, cand->refresh_count,
-        cand->last_lifetime_s, cand->consecutive_stale_nonce);
+        cand->last_lifetime_s, cand->consecutive_stale_nonce,
+        cand->last_refresh_result ? cand->last_refresh_result : "(none)");
   }
 
   if (cand->timer_source != NULL) {
@@ -173,6 +174,15 @@ void refresh_free_item (gpointer data, gpointer user_data)
     g_source_unref (cand->tick_source);
     cand->tick_source = NULL;
   }
+  /* Speculative-fix #11: tear down the heartbeat timer alongside the
+   * refresh candidate it is logging. */
+  if (cand->heartbeat_source != NULL) {
+    g_source_destroy (cand->heartbeat_source);
+    g_source_unref (cand->heartbeat_source);
+    cand->heartbeat_source = NULL;
+  }
+  g_free (cand->last_refresh_result);
+  cand->last_refresh_result = NULL;
 
   username = (uint8_t *)cand->turn->username;
   username_len = (size_t) strlen (cand->turn->username);
