@@ -348,9 +348,9 @@ socket_send_more (
     }
 
     if (ret < 0) {
-      if(gerr != NULL &&
-          g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK)
-          || g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_NOT_CONNECTED)) {
+      if (gerr != NULL &&
+          (g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK) ||
+           g_error_matches (gerr, G_IO_ERROR, G_IO_ERROR_NOT_CONNECTED))) {
         add_to_be_sent (sock, tbs->buf, tbs->length, TRUE);
         g_free (tbs->buf);
         g_slice_free (struct to_be_sent, tbs);

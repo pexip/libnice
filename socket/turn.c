@@ -161,6 +161,7 @@ static void priv_process_pending_bindings (TurnPriv *priv);
 static gboolean priv_retransmissions_tick_unlocked (TurnPriv *priv);
 static gboolean priv_retransmissions_tick (gpointer pointer);
 static void priv_schedule_tick (TurnPriv *priv);
+static void priv_source_remove_with_context (TurnPriv *priv, guint id);
 static void priv_send_turn_message (TurnPriv *priv, TURNMessage *msg);
 static gboolean priv_send_create_permission (TurnPriv *priv,  StunMessage *resp,
     const NiceAddress *peer);
@@ -352,7 +353,7 @@ socket_close (NiceSocket *sock)
   for (i = priv->channels; i; i = i->next) {
     ChannelBinding *b = i->data;
     if (b->timeout_source)
-      g_source_remove (b->timeout_source);
+      priv_source_remove_with_context (priv, b->timeout_source);
     g_free (b);
   }
   g_list_free (priv->channels);
@@ -393,7 +394,7 @@ socket_close (NiceSocket *sock)
   g_hash_table_destroy (priv->send_data_queues);
 
   if (priv->permission_timeout_source)
-    g_source_remove (priv->permission_timeout_source);
+    priv_source_remove_with_context (priv, priv->permission_timeout_source);
 
   if (priv->ctx)
     g_main_context_unref (priv->ctx);
@@ -466,6 +467,26 @@ priv_timeout_add_seconds_with_context (TurnPriv *priv, guint interval_seconds,
   g_source_unref (source);
 
   return id;
+}
+
+/* Counterpart to priv_timeout_add_seconds_with_context(): destroy a source
+ * by id while looking it up in priv->ctx. g_source_remove() only searches
+ * the thread-default context, so it cannot remove sources attached to an
+ * arbitrary GMainContext and would emit
+ * "GLib-CRITICAL: Source ID N was not found". */
+static void
+priv_source_remove_with_context (TurnPriv *priv, guint id)
+{
+  GMainContext *ctx;
+  GSource *source;
+
+  if (id == 0)
+    return;
+
+  ctx = priv->ctx ? priv->ctx : g_main_context_default ();
+  source = g_main_context_find_source_by_id (ctx, id);
+  if (source != NULL)
+    g_source_destroy (source);
 }
 
 static StunMessageReturn
@@ -1103,7 +1124,7 @@ nice_turn_socket_parse_recv (NiceSocket *sock, NiceSocket **from_sock,
 
                 /* Remove any existing timer */
                 if (binding->timeout_source)
-                  g_source_remove (binding->timeout_source);
+                  priv_source_remove_with_context (priv, binding->timeout_source);
                 /* Install timer to schedule refresh of the channel binding.
                  * Must be attached to priv->ctx -- not the thread-default
                  * context -- so it actually fires when armed from a TURN
