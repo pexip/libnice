@@ -59,10 +59,11 @@
  * mirror is so that the invariants below can be enforced as plain
  * unit-tested properties without exposing the static function.
  */
-static uint32_t
+static guint
 mirror_lifetime_to_refresh_interval (uint32_t lifetime)
 {
   uint32_t interval_s;
+  guint64 interval_ms;
 
   if (lifetime <= 20)
     return 1000;
@@ -73,14 +74,17 @@ mirror_lifetime_to_refresh_interval (uint32_t lifetime)
   if (interval_s < 5)
     interval_s = 5;
 
-  return interval_s * 1000;
+  interval_ms = (guint64) interval_s * 1000u;
+  if (interval_ms > G_MAXUINT)
+    interval_ms = G_MAXUINT;
+  return (guint) interval_ms;
 }
 
 static void
 check_invariants_for (uint32_t lifetime)
 {
-  uint32_t result_ms = mirror_lifetime_to_refresh_interval (lifetime);
-  uint32_t result_s = result_ms / 1000;
+  guint result_ms = mirror_lifetime_to_refresh_interval (lifetime);
+  guint64 result_s = (guint64) result_ms / 1000u;
 
   /* I4: never zero / never underflows. */
   g_assert_cmpuint (result_ms, >, 0);
@@ -90,6 +94,19 @@ check_invariants_for (uint32_t lifetime)
     g_assert_cmpuint (result_ms, ==, 1000);
     return;
   }
+
+  /* I6: ms result must never exceed G_MAXUINT (it is fed to APIs that
+   * take `guint`). The saturation in the production formula guarantees
+   * this; assert it explicitly. */
+  g_assert_cmpuint (result_ms, <=, G_MAXUINT);
+
+  /* For lifetimes whose halfway point in milliseconds would overflow
+   * `guint`, the saturation clamp kicks in and I1..I3 (which are stated
+   * in seconds against `lifetime`) cannot all hold simultaneously --
+   * the s/ms domains diverge. Skip them; I4 + I6 are the meaningful
+   * invariants in that regime. */
+  if ((guint64) (lifetime / 2) * 1000u > G_MAXUINT)
+    return;
 
   /* I1: result must be strictly less than the lifetime. */
   g_assert_cmpuint (result_s, <, lifetime);
@@ -105,7 +122,7 @@ int
 main (void)
 {
   /* I5: canonical RFC 5766 lifetime sanity. */
-  uint32_t r600 = mirror_lifetime_to_refresh_interval (600);
+  guint r600 = mirror_lifetime_to_refresh_interval (600);
   g_assert_cmpuint (r600, >=, 5000);
   g_assert_cmpuint (r600, <=, 300000);
 

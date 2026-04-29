@@ -213,11 +213,15 @@ static CandidateCheckPair* priv_alloc_check_pair (NiceAgent* agent, Stream* stre
  * processing and possibly a 438 round trip). We now refresh much more
  * conservatively: at most halfway through the lifetime, and at least
  * 10 s before expiry. `lifetime` is uint32_t and may, in degenerate
- * inputs, be very small or zero; guard against underflow.
+ * inputs, be very small or zero; guard against underflow. The seconds
+ * -> milliseconds conversion is done in 64-bit and saturated to
+ * G_MAXUINT to avoid wrapping when a server reports a pathologically
+ * large lifetime (the timeout APIs we feed only accept `guint`).
  */
-static uint32_t priv_turn_lifetime_to_refresh_interval(uint32_t lifetime)
+static guint priv_turn_lifetime_to_refresh_interval(uint32_t lifetime)
 {
   uint32_t interval_s;
+  guint64 interval_ms;
 
   if (lifetime <= 20) {
     /* Pathological: refresh almost immediately and let the server tell
@@ -233,7 +237,10 @@ static uint32_t priv_turn_lifetime_to_refresh_interval(uint32_t lifetime)
   if (interval_s < 5)
     interval_s = 5;
 
-  return interval_s * 1000;
+  interval_ms = (guint64) interval_s * 1000u;
+  if (interval_ms > G_MAXUINT)
+    interval_ms = G_MAXUINT;
+  return (guint) interval_ms;
 }
 
 /*
