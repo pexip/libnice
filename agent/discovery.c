@@ -65,11 +65,9 @@
 GST_DEBUG_CATEGORY_EXTERN (niceagent_debug);
 #define GST_CAT_DEFAULT niceagent_debug
 
-static inline int priv_timer_expired (GTimeVal *timer, GTimeVal *now)
+static inline int priv_timer_expired (gint64 timer, gint64 now)
 {
-  return (now->tv_sec == timer->tv_sec) ?
-    now->tv_usec >= timer->tv_usec :
-    now->tv_sec >= timer->tv_sec;
+  return now >= timer;
 }
 
 /*
@@ -983,7 +981,7 @@ static gboolean priv_discovery_tick_unlocked (gpointer pointer)
               buffer_len, (gchar *)cand->stun_buffer);
 
 	  /* case: success, start waiting for the result */
-	  g_get_current_time (&cand->next_tick);
+	  cand->next_tick = g_get_real_time ();
 
 	} else {
 	  /* case: error in starting discovery, start the next discovery */
@@ -1001,16 +999,16 @@ static gboolean priv_discovery_tick_unlocked (gpointer pointer)
     }
 
     if (cand->done != TRUE) {
-      GTimeVal now;
+      gint64 now;
 
-      g_get_current_time (&now);
+      now = g_get_real_time ();
 
       if (cand->stun_message.buffer == NULL) {
 	GST_DEBUG_OBJECT (agent, "%u/%u: STUN discovery was cancelled, marking discovery done.",
             cand->stream->id, cand->component->id);
 	cand->done = TRUE;
       }
-      else if (priv_timer_expired (&cand->next_tick, &now)) {
+      else if (priv_timer_expired (cand->next_tick, now)) {
         switch (stun_timer_refresh (&cand->timer)) {
           case STUN_USAGE_TIMER_RETURN_TIMEOUT:
             {
@@ -1048,9 +1046,8 @@ static gboolean priv_discovery_tick_unlocked (gpointer pointer)
                   stun_message_length (&cand->stun_message),
                   (gchar *)cand->stun_buffer);
 
-              /* note: convert from milli to microseconds for g_time_val_add() */
-              cand->next_tick = now;
-              g_time_val_add (&cand->next_tick, timeout * 1000);
+              /* note: convert from milli to microseconds */
+              cand->next_tick = now + (gint64) timeout * 1000;
 
               ++not_done; /* note: retry later */
               break;
@@ -1059,8 +1056,7 @@ static gboolean priv_discovery_tick_unlocked (gpointer pointer)
             {
               unsigned int timeout = stun_timer_remainder (&cand->timer);
 
-              cand->next_tick = now;
-              g_time_val_add (&cand->next_tick, timeout * 1000);
+              cand->next_tick = now + (gint64) timeout * 1000;
 
               ++not_done; /* note: retry later */
               break;

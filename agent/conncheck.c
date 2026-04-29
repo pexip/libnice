@@ -163,11 +163,9 @@ static void priv_print_stream_diagnostics (NiceAgent* agent, Stream* stream)
   priv_print_check_list (agent, stream, stream->valid_list, "Valid list");
 }
 
-static int priv_timer_expired (GTimeVal *timer, GTimeVal *now)
+static int priv_timer_expired (gint64 timer, gint64 now)
 {
-  return (now->tv_sec == timer->tv_sec) ?
-    now->tv_usec >= timer->tv_usec :
-    now->tv_sec >= timer->tv_sec;
+  return now >= timer;
 }
 
 static void priv_set_pair_state (NiceAgent* agent, CandidateCheckPair* pair, NiceCheckState new_state)
@@ -396,8 +394,7 @@ static gboolean priv_conn_check_initiate (NiceAgent *agent, CandidateCheckPair *
    * immediately, but be put into the "triggered queue",
    * see  "7.2.1.4 Triggered Checks"
    */
-  g_get_current_time (&pair->next_tick);
-  g_time_val_add (&pair->next_tick, agent->timer_ta * 1000);
+  pair->next_tick = g_get_real_time () + (gint64) agent->timer_ta * 1000;
   priv_set_pair_state (agent, pair, NICE_CHECK_IN_PROGRESS);
   conn_check_send (agent, pair);
   return TRUE;
@@ -706,14 +703,14 @@ void conn_check_unfreeze_related (NiceAgent *agent, Stream *stream, CandidateChe
   }
 }
 
-static void priv_tick_in_progress_check (NiceAgent* agent, Stream* stream, CandidateCheckPair* p, GTimeVal *now)
+static void priv_tick_in_progress_check (NiceAgent* agent, Stream* stream, CandidateCheckPair* p, gint64 now)
 {
   if (p->stun_message.buffer == NULL) {
     GST_DEBUG_OBJECT (agent, "%u/%u: STUN connectivity check was cancelled for pair %p(%s), marking as done.",
         p->stream_id, p->component_id,
         p, p->foundation);
     priv_set_pair_state (agent, p, NICE_CHECK_FAILED);
-  } else if (priv_timer_expired (&p->next_tick, now)) {
+  } else if (priv_timer_expired (p->next_tick, now)) {
     switch (stun_timer_refresh (&p->timer)) {
     case STUN_USAGE_TIMER_RETURN_TIMEOUT:
       {
@@ -747,17 +744,15 @@ static void priv_tick_in_progress_check (NiceAgent* agent, Stream* stream, Candi
               (gchar *)p->stun_buffer);
         }
 
-        /* note: convert from milli to microseconds for g_time_val_add() */
-        p->next_tick = *now;
-        g_time_val_add (&p->next_tick, timeout * 1000);
+        /* note: convert from milli to microseconds */
+        p->next_tick = now + (gint64) timeout * 1000;
         break;
       }
     case STUN_USAGE_TIMER_RETURN_SUCCESS:
       {
         unsigned int timeout = stun_timer_remainder (&p->timer);
-        /* note: convert from milli to microseconds for g_time_val_add() */
-        p->next_tick = *now;
-        g_time_val_add (&p->next_tick, timeout * 1000);
+        /* note: convert from milli to microseconds */
+        p->next_tick = now + (gint64) timeout * 1000;
         break;
       }
     }
@@ -896,7 +891,7 @@ static void priv_nominate_highest_priority_successful_pair (NiceAgent* agent, St
   }
 }
 
-static gboolean priv_check_for_regular_nomination (NiceAgent* agent, Stream *stream, GTimeVal *now)
+static gboolean priv_check_for_regular_nomination (NiceAgent* agent, Stream *stream, gint64 now)
 {
   guint   succeeded = 0, nominated = 0;
   GSList  *i;
@@ -953,7 +948,7 @@ static gboolean priv_check_for_regular_nomination (NiceAgent* agent, Stream *str
  *
  * @return will return FALSE when no more pending timers.
  */
-static gboolean priv_conn_check_tick_stream (Stream *stream, NiceAgent *agent, GTimeVal *now)
+static gboolean priv_conn_check_tick_stream (Stream *stream, NiceAgent *agent, gint64 now)
 {
   gboolean keep_timer_going = FALSE;
   GSList *i;
@@ -1005,10 +1000,10 @@ static gboolean priv_conn_check_tick_unlocked (gpointer pointer)
   NiceAgent *agent = pointer;
   gboolean keep_timer_going = FALSE;
   GSList *i, *j;
-  GTimeVal now;
+  gint64 now;
 
   /* step: process ongoing STUN transactions */
-  g_get_current_time (&now);
+  now = g_get_real_time ();
 
   /* step: find the highest priority waiting check and send it */
   for (i = agent->streams; i ; i = i->next) {
@@ -1029,7 +1024,7 @@ static gboolean priv_conn_check_tick_unlocked (gpointer pointer)
   for (j = agent->streams; j; j = j->next) {
     Stream *stream = j->data;
     gboolean res =
-      priv_conn_check_tick_stream (stream, agent, &now);
+      priv_conn_check_tick_stream (stream, agent, now);
     if (res)
       keep_timer_going = res;
   }
@@ -2300,9 +2295,8 @@ int conn_check_send (NiceAgent *agent, CandidateCheckPair *pair)
       }
 
       timeout = stun_timer_remainder (&pair->timer);
-      /* note: convert from milli to microseconds for g_time_val_add() */
-      g_get_current_time (&pair->next_tick);
-      g_time_val_add (&pair->next_tick, timeout * 1000);
+      /* note: convert from milli to microseconds */
+      pair->next_tick = g_get_real_time () + (gint64) timeout * 1000;
     } else {
       GST_DEBUG_OBJECT (agent, "buffer is empty, cancelling conncheck");
       pair->stun_message.buffer = NULL;
@@ -3657,7 +3651,7 @@ static bool conncheck_stun_validater (StunAgent *agent,
 
       if (cand->password)
         pass = cand->password;
-      else if(data->stream->local_password)
+      else if (data->stream->local_password[0] != '\0')
         pass = data->stream->local_password;
 
       if (pass) {

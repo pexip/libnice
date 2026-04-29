@@ -50,7 +50,7 @@ typedef struct
   NiceCandidateType type;   /**< candidate type STUN or TURN */
   NiceSocket *nicesock;  /**< XXX: should be taken from local cand: existing socket to use */
   NiceAddress server;       /**< STUN/TURN server address */
-  GTimeVal next_tick;       /**< next tick timestamp */
+  gint64 next_tick;         /**< next tick timestamp, wall-clock microseconds (g_get_real_time) */
   gboolean pending;         /**< is discovery in progress? */
   gboolean done;            /**< is discovery complete? */
   Stream *stream;
