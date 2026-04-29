@@ -216,10 +216,47 @@ static CandidateCheckPair* priv_alloc_check_pair (NiceAgent* agent, Stream* stre
  * G_MAXUINT to avoid wrapping when a server reports a pathologically
  * large lifetime (the timeout APIs we feed only accept `guint`).
  */
+/*
+ * Test-only knob, mirroring the pattern used in socket/turn.c for
+ * NICE_TURN_BINDING_TIMEOUT and NICE_TURN_PERMISSION_TIMEOUT. When this
+ * environment variable is set to a positive integer (in seconds) at the
+ * time the first TURN allocation is refreshed, it overrides the
+ * RFC-derived schedule computed below so the allocation Refresh code
+ * path can be exercised quickly in unit tests instead of waiting
+ * minutes per cycle. Read once and cached for the lifetime of the
+ * process. NOT part of the public API and NOT for production use.
+ */
+#define ENV_NICE_TURN_EXPIRE_TIMEOUT "NICE_TURN_EXPIRE_TIMEOUT"
+
+static guint
+priv_turn_expire_timeout_override_secs (void)
+{
+  static gsize initialized = 0;
+  static guint cached_secs = 0;
+
+  if (g_once_init_enter (&initialized)) {
+    const gchar *v = g_getenv (ENV_NICE_TURN_EXPIRE_TIMEOUT);
+    guint secs = 0;
+
+    if (v != NULL && *v != '\0') {
+      gchar *end = NULL;
+      guint64 parsed = g_ascii_strtoull (v, &end, 10);
+      if (end != v && *end == '\0' && parsed > 0 && parsed <= G_MAXUINT)
+        secs = (guint) parsed;
+    }
+
+    cached_secs = secs;
+    g_once_init_leave (&initialized, 1);
+  }
+
+  return cached_secs;
+}
+
 static guint priv_turn_lifetime_to_refresh_interval(uint32_t lifetime)
 {
   uint32_t interval_s;
   guint64 interval_ms;
+  guint override_s;
 
   if (lifetime <= 20) {
     /* Pathological: refresh almost immediately and let the server tell
@@ -234,6 +271,15 @@ static guint priv_turn_lifetime_to_refresh_interval(uint32_t lifetime)
     interval_s = lifetime - 10;
   if (interval_s < 5)
     interval_s = 5;
+
+  /* Test-only override: if NICE_TURN_EXPIRE_TIMEOUT=N (seconds) was set
+   * at process start, clamp the refresh interval to N seconds so the
+   * Refresh path fires on a 1-2 s cadence in unit tests instead of the
+   * normal multi-minute schedule. Mirrors the BINDING / PERMISSION
+   * knobs handled in socket/turn.c. */
+  override_s = priv_turn_expire_timeout_override_secs ();
+  if (override_s > 0 && override_s < interval_s)
+    interval_s = override_s;
 
   interval_ms = (guint64) interval_s * 1000u;
   if (interval_ms > G_MAXUINT)
