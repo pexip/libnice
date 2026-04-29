@@ -90,5 +90,5 @@ subdir('agent')
 subdir('nice')
 subdir('gst')
 
-#subdir('tests')
+subdir('tests')
 #subdir('python')
