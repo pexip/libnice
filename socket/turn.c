@@ -485,8 +485,14 @@ priv_source_remove_with_context (TurnPriv *priv, guint id)
 
   ctx = priv->ctx ? priv->ctx : g_main_context_default ();
   source = g_main_context_find_source_by_id (ctx, id);
-  if (source != NULL)
+  if (source != NULL) {
     g_source_destroy (source);
+  } else {
+    /* The source has already been destroyed (e.g. its callback returned
+     * FALSE or the context was iterated to completion). Nothing to do. */
+    GST_DEBUG ("turn: source id %u not found in ctx %p; already destroyed",
+        id, ctx);
+  }
 }
 
 static StunMessageReturn
