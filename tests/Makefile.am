@@ -33,7 +33,9 @@ check_PROGRAMS = \
 	test-fallback \
 	test-thread \
 	test-dribble \
-        test-new-dribble
+        test-new-dribble \
+	test-mainctx-cross-thread \
+	test-turn-refresh-interval
 
 dist_check_SCRIPTS = \
 	check-test-fullmode-with-stun.sh
@@ -65,6 +67,15 @@ test_fallback_LDADD = $(COMMON_LDADD)
 test_dribble_LDADD = $(COMMON_LDADD)
 
 test_new_dribble_LDADD = $(COMMON_LDADD)
+
+# Regression test for the GMainContext-routing bug fixed in
+# socket/turn.c. Pure GLib test, only needs glib.
+test_mainctx_cross_thread_LDADD = $(GLIB_LIBS)
+
+# Unit test for the TURN refresh-interval invariants in
+# agent/conncheck.c::priv_turn_lifetime_to_refresh_interval. Pure
+# computation test, only needs glib.
+test_turn_refresh_interval_LDADD = $(GLIB_LIBS)
 
 all-local:
 	chmod a+x $(srcdir)/check-test-fullmode-with-stun.sh
