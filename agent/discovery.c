@@ -214,13 +214,20 @@ void refresh_free_item (gpointer data, gpointer user_data)
     nice_address_copy_to_sockaddr(&cand->server, (struct sockaddr *)&server_address);
     stun_message_log(&cand->stun_message, TRUE, (struct sockaddr *)&server_address);
 
-    /* send the refresh twice since we won't do retransmissions */
+    /* Speculative-fix #13: send the release REFRESH (lifetime=0) exactly
+     * once. Historically this was sent twice on unreliable sockets as a
+     * poor-man's retransmission, but the release is purely advisory: we
+     * forgot the transaction above, the server keeps its own
+     * allocation-expiry timer (last granted lifetime, max 600 s) as a
+     * backstop, and TURN servers process the duplicate as a separate
+     * request — yielding a second STUN response that we can no longer
+     * match (logged as "*** ERROR *** unmatched stun response …") and,
+     * when the allocation has just been removed by the first request,
+     * a spurious 437 Allocation Mismatch on the duplicate. Field
+     * captures show this is a direct contributor to the "refresh then
+     * cancel twice" pattern that confuses both ends. */
     nice_socket_send (cand->nicesock, &cand->server,
         buffer_len, (gchar *)cand->stun_buffer);
-    if (!nice_socket_is_reliable (cand->nicesock)) {
-      nice_socket_send (cand->nicesock, &cand->server,
-          buffer_len, (gchar *)cand->stun_buffer);
-    }
 
   }
 
