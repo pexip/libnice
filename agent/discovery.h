@@ -87,7 +87,40 @@ typedef struct
   StunMessage stun_message;
   uint8_t stun_resp_buffer[STUN_MAX_MESSAGE_SIZE];
   StunMessage stun_resp_msg;
+
+  /*
+   * Diagnostic / robustness counters used by the TURN refresh code.
+   *
+   * - allocation_start_us: monotonic timestamp captured when the refresh
+   *   object was created (i.e. when the Allocate succeeded). Used purely
+   *   for logging "allocation age" so that disconnect-after-Nmin patterns
+   *   are easy to spot.
+   * - refresh_count: how many Refresh requests we have sent on this
+   *   allocation (including resends after 438).
+   * - consecutive_stale_nonce: how many 438/401-realm-changed responses
+   *   we have received in a row without an intervening success. Reset to
+   *   zero on any RELAY_SUCCESS response.
+   * - last_lifetime_s: lifetime (seconds) granted by the most recent
+   *   successful Allocate / Refresh response.
+   * - tolerate_one_timeout: when TRUE, the next retransmission timeout
+   *   in priv_turn_allocate_refresh_retransmissions_tick will trigger one
+   *   extra refresh attempt rather than tearing down the allocation. Set
+   *   automatically after every successful refresh so that a single lost
+   *   refresh does not kill the allocation.
+   */
+  gint64 allocation_start_us;
+  guint refresh_count;
+  guint consecutive_stale_nonce;
+  guint32 last_lifetime_s;
+  gboolean tolerate_one_timeout;
 } CandidateRefresh;
+
+/* How many consecutive 438 (Stale Nonce) / 401 (realm changed) responses
+ * we will silently retry before declaring the allocation dead. RFC 5389
+ * only mandates one retry, but real-world TURN servers (notably coturn
+ * with short stale-nonce values) can rotate the nonce again between our
+ * retry being sent and reaching them, so be more lenient. */
+#define NICE_TURN_MAX_CONSECUTIVE_STALE_NONCE 5
 
 void refresh_free_item (gpointer data, gpointer user_data);
 void refresh_free (NiceAgent *agent);

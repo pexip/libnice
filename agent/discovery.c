@@ -148,6 +148,21 @@ void refresh_free_item (gpointer data, gpointer user_data)
 
   g_assert (user_data == NULL);
 
+  {
+    gint64 age_s = (g_get_monotonic_time () -
+        cand->allocation_start_us) / G_USEC_PER_SEC;
+    GST_INFO_OBJECT (agent,
+        "%u/%u: Freeing TURN refresh candidate %p "
+        "(allocation age %" G_GINT64_FORMAT " s, "
+        "refresh_count=%u, last_lifetime=%u s, "
+        "consecutive_stale_nonce=%u); sending REFRESH lifetime=0 to "
+        "release the allocation",
+        cand->stream ? cand->stream->id : 0,
+        cand->component ? cand->component->id : 0,
+        cand, age_s, cand->refresh_count,
+        cand->last_lifetime_s, cand->consecutive_stale_nonce);
+  }
+
   if (cand->timer_source != NULL) {
     g_source_destroy (cand->timer_source);
     g_source_unref (cand->timer_source);
@@ -931,7 +946,11 @@ static gboolean priv_discovery_tick_unlocked (gpointer pointer)
               &cand->stun_message,  cand->stun_buffer, sizeof(cand->stun_buffer),
               cand->stun_resp_msg.buffer == NULL ? NULL : &cand->stun_resp_msg,
               STUN_USAGE_TURN_REQUEST_PORT_NORMAL,
-              -1, -1,
+              /* Speculative-fix #1: ask explicitly for a lifetime
+               * rather than relying on the server's default (which on
+               * some coturn deployments is much shorter than the
+               * 600 s libnice's refresh logic implicitly assumes). */
+              -1, 600,
               username, username_len,
               password, password_len,
               turn_compat);
