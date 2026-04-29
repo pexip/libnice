@@ -3563,9 +3563,13 @@ static gboolean priv_map_reply_to_relay_refresh (NiceAgent *agent, StunMessage *
                * responses rather than just one. coturn with a short
                * stale-nonce can rotate the nonce again between our
                * retry leaving and arriving. The counter is incremented
-               * above first, so MAX of 5 means we tolerate retries
-               * 1..5 inclusive and tear down on retry 6. */
-              if (cand->consecutive_stale_nonce >
+               * above first, so MAX of 5 means we send refresh
+               * transactions 1..MAX (the original + MAX-1 retries) and
+               * tear down once the MAX-th transaction has also been
+               * answered with 438/401, before scheduling another. This
+               * bounds the total Refresh transactions sent on this
+               * allocation to NICE_TURN_MAX_CONSECUTIVE_STALE_NONCE. */
+              if (cand->consecutive_stale_nonce >=
                   NICE_TURN_MAX_CONSECUTIVE_STALE_NONCE) {
                 GST_WARNING_OBJECT (cand->agent,
                     "%u/%u: TURN Refresh on cand=%p: %u consecutive 438/401 "
