@@ -126,7 +126,7 @@ typedef struct
  * (e.g. an RTP+RTCP pair sharing one TURN server) the total Refresh
  * traffic generated for one component is bounded by
  * NICE_TURN_MAX_CONSECUTIVE_STALE_NONCE * <number of sibling refreshes>. */
-#define NICE_TURN_MAX_CONSECUTIVE_STALE_NONCE 4
+#define NICE_TURN_MAX_CONSECUTIVE_STALE_NONCE 5
 
 void refresh_free_item (gpointer data, gpointer user_data);
 void refresh_free (NiceAgent *agent);
