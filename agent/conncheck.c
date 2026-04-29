@@ -386,18 +386,33 @@ static gboolean priv_turn_refresh_heartbeat_tick (gpointer pointer)
   siblings = priv_count_sibling_refreshes (agent, cand);
   priv_refresh_id_str (cand, idbuf, sizeof(idbuf));
 
-  GST_INFO_OBJECT (agent,
-      "%u/%u: TURN refresh HEARTBEAT %s age=%" G_GINT64_FORMAT
-      "s last_event=%" G_GINT64_FORMAT "s ago refresh_count=%u "
-      "last_lifetime=%us consecutive_stale_nonce=%u "
-      "tolerate_one_timeout=%d siblings=%u last_result=%s",
-      cand->stream->id, cand->component->id, idbuf,
-      age_s, since_event_s,
-      cand->refresh_count, cand->last_lifetime_s,
-      cand->consecutive_stale_nonce,
-      (int) cand->tolerate_one_timeout,
-      siblings,
-      cand->last_refresh_result ? cand->last_refresh_result : "(none)");
+  if (since_event_s < 0) {
+    GST_INFO_OBJECT (agent,
+        "%u/%u: TURN refresh HEARTBEAT %s age=%" G_GINT64_FORMAT
+        "s last_event=never refresh_count=%u "
+        "last_lifetime=%us consecutive_stale_nonce=%u "
+        "tolerate_one_timeout=%d siblings=%u last_result=%s",
+        cand->stream->id, cand->component->id, idbuf,
+        age_s,
+        cand->refresh_count, cand->last_lifetime_s,
+        cand->consecutive_stale_nonce,
+        (int) cand->tolerate_one_timeout,
+        siblings,
+        cand->last_refresh_result ? cand->last_refresh_result : "(none)");
+  } else {
+    GST_INFO_OBJECT (agent,
+        "%u/%u: TURN refresh HEARTBEAT %s age=%" G_GINT64_FORMAT
+        "s last_event=%" G_GINT64_FORMAT "s ago refresh_count=%u "
+        "last_lifetime=%us consecutive_stale_nonce=%u "
+        "tolerate_one_timeout=%d siblings=%u last_result=%s",
+        cand->stream->id, cand->component->id, idbuf,
+        age_s, since_event_s,
+        cand->refresh_count, cand->last_lifetime_s,
+        cand->consecutive_stale_nonce,
+        (int) cand->tolerate_one_timeout,
+        siblings,
+        cand->last_refresh_result ? cand->last_refresh_result : "(none)");
+  }
 
   agent_unlock (agent);
   return TRUE;
@@ -3685,7 +3700,11 @@ static gboolean priv_map_reply_to_relay_refresh (NiceAgent *agent, StunMessage *
               /* Speculative-fix #6: tolerate several consecutive
                * 438/401-realm-changed responses rather than just one.
                * coturn with a short stale-nonce can rotate the nonce
-               * again between our retry leaving and arriving. */
+               * again between our retry leaving and arriving.
+               *
+               * Note: counter is incremented above first, so a
+               * MAX of 5 means we tolerate retries 1..5 inclusive
+               * and tear down on retry 6. */
               if (cand->consecutive_stale_nonce >
                   NICE_TURN_MAX_CONSECUTIVE_STALE_NONCE) {
                 GST_WARNING_OBJECT (cand->agent,
