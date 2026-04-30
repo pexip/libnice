@@ -163,11 +163,9 @@ static void priv_print_stream_diagnostics (NiceAgent* agent, Stream* stream)
   priv_print_check_list (agent, stream, stream->valid_list, "Valid list");
 }
 
-static int priv_timer_expired (GTimeVal *timer, GTimeVal *now)
+static int priv_timer_expired (gint64 timer, gint64 now)
 {
-  return (now->tv_sec == timer->tv_sec) ?
-    now->tv_usec >= timer->tv_usec :
-    now->tv_sec >= timer->tv_sec;
+  return now >= timer;
 }
 
 static void priv_set_pair_state (NiceAgent* agent, CandidateCheckPair* pair, NiceCheckState new_state)
@@ -201,13 +199,163 @@ static CandidateCheckPair* priv_alloc_check_pair (NiceAgent* agent, Stream* stre
 }
 
 /*
- * Convert TURN lifetime into a refresh interval IN MILLISECONDS. Refresh 30 seconds before
- * expiry, turn message parsing has already checked against a minimum supported lifetime of
- * 60 seconds
+ * Convert a TURN allocation lifetime (seconds, as returned by the server)
+ * into the time we should wait before sending the next Refresh
+ * (milliseconds).
+ *
+ * History: this function previously returned `(lifetime - 30) * 1000`,
+ * i.e. it scheduled the refresh 30 s before expiry, despite the comment
+ * promising "1 minute before expiry". On a lossy path, 30 s is not
+ * enough to absorb a single retransmission cycle (default STUN timer is
+ * 600 ms doubling, with 3 retransmissions => up to 9 s, plus server
+ * processing and possibly a 438 round trip). We now refresh much more
+ * conservatively: at most halfway through the lifetime, and at least
+ * 10 s before expiry. `lifetime` is uint32_t and may, in degenerate
+ * inputs, be very small or zero; guard against underflow. The seconds
+ * -> milliseconds conversion is done in 64-bit and saturated to
+ * G_MAXUINT to avoid wrapping when a server reports a pathologically
+ * large lifetime (the timeout APIs we feed only accept `guint`).
  */
-static uint32_t priv_turn_lifetime_to_refresh_interval(uint32_t lifetime)
+/*
+ * Test-only knob, mirroring the pattern used in socket/turn.c for
+ * NICE_TURN_BINDING_TIMEOUT and NICE_TURN_PERMISSION_TIMEOUT. When this
+ * environment variable is set to a positive integer (in seconds), it
+ * overrides the RFC-derived schedule computed below so the allocation
+ * Refresh code path can be exercised quickly in unit tests instead of
+ * waiting minutes per cycle. Re-read on every refresh-interval
+ * computation so that a test that sets the variable before
+ * nice_agent_gather_candidates() is honoured even if some earlier
+ * code path in the same process already evaluated this helper before
+ * the variable was set. NOT part of the public API and NOT for
+ * production use.
+ */
+#define ENV_NICE_TURN_EXPIRE_TIMEOUT "NICE_TURN_EXPIRE_TIMEOUT"
+
+static guint
+priv_turn_expire_timeout_override_secs (void)
 {
-  return (lifetime - 30) * 1000;
+  const gchar *v = g_getenv (ENV_NICE_TURN_EXPIRE_TIMEOUT);
+  gchar *end = NULL;
+  guint64 parsed;
+
+  if (v == NULL || *v == '\0')
+    return 0;
+
+  parsed = g_ascii_strtoull (v, &end, 10);
+  if (end == v || *end != '\0' || parsed == 0 || parsed > G_MAXUINT)
+    return 0;
+
+  return (guint) parsed;
+}
+
+static guint priv_turn_lifetime_to_refresh_interval(uint32_t lifetime)
+{
+  uint32_t interval_s;
+  guint64 interval_ms;
+  guint override_s;
+
+  if (lifetime <= 20) {
+    /* Pathological: refresh almost immediately and let the server tell
+     * us off if anything is wrong. We still want at least one tick. */
+    return 1000;
+  }
+
+  /* Refresh after at most half the lifetime, and at least 10 s before
+   * expiry, whichever is sooner. */
+  interval_s = lifetime / 2;
+  if (interval_s + 10 > lifetime)
+    interval_s = lifetime - 10;
+  if (interval_s < 5)
+    interval_s = 5;
+
+  /* Test-only override: if NICE_TURN_EXPIRE_TIMEOUT=N (seconds) was set
+   * at process start, clamp the refresh interval to N seconds so the
+   * Refresh path fires on a 1-2 s cadence in unit tests instead of the
+   * normal multi-minute schedule. Mirrors the BINDING / PERMISSION
+   * knobs handled in socket/turn.c. */
+  override_s = priv_turn_expire_timeout_override_secs ();
+  if (override_s > 0 && override_s < interval_s)
+    interval_s = override_s;
+
+  interval_ms = (guint64) interval_s * 1000u;
+  if (interval_ms > G_MAXUINT)
+    interval_ms = G_MAXUINT;
+  return (guint) interval_ms;
+}
+
+/*
+ * The LIFETIME (seconds) we explicitly request in TURN Allocate and
+ * Refresh requests. RFC 5766 §6.1 recommends 600 s and that is what
+ * most servers default to. Sending it explicitly avoids surprises when
+ * a server is configured with a much shorter default.
+ */
+#define NICE_TURN_REQUESTED_LIFETIME 600
+
+/*
+ * Count the number of OTHER refresh candidates currently alive for the
+ * same (stream, component) tuple. Used to decide whether a refresh
+ * failure should be propagated to the application as
+ * agent_signal_turn_allocation_failure -- if siblings remain, the
+ * component still has working relay paths and the application should
+ * not tear the call down.
+ *
+ * Walks agent->refresh_list. The caller must hold the agent lock.
+ */
+static guint
+priv_count_sibling_refreshes (NiceAgent *agent, CandidateRefresh *self)
+{
+  GSList *i;
+  guint n = 0;
+
+  for (i = agent->refresh_list; i; i = i->next) {
+    CandidateRefresh *other = i->data;
+
+    if (other == self)
+      continue;
+    if (other->stream != self->stream)
+      continue;
+    if (other->component != self->component)
+      continue;
+    n++;
+  }
+  return n;
+}
+
+/*
+ * Wrapper around agent_signal_turn_allocation_failure that suppresses
+ * the upper-layer fatal signal when at least one sibling refresh
+ * candidate for the same (stream, component) is still alive. In the
+ * field a single relay path can hit 437 / exhausted-438-retry while
+ * other relay paths for the same component continue refreshing fine;
+ * raising a fatal signal in that case caused the call to be torn down
+ * even though the component still had working relay paths.
+ */
+static void
+priv_refresh_signal_failure (CandidateRefresh *cand,
+    const NiceAddress *from, StunMessage *resp, const char *reason)
+{
+  guint siblings = priv_count_sibling_refreshes (cand->agent, cand);
+
+  if (siblings > 0) {
+    GST_WARNING_OBJECT (cand->agent,
+        "%u/%u: TURN refresh failure on cand=%p reason=%s — suppressing "
+        "fatal signal because %u sibling refresh candidate(s) for this "
+        "component are still alive",
+        cand->stream->id, cand->component->id, cand,
+        reason ? reason : "?", siblings);
+    return;
+  }
+
+  GST_WARNING_OBJECT (cand->agent,
+      "%u/%u: TURN refresh failure on cand=%p reason=%s — no sibling "
+      "refresh candidates, signalling fatal failure to application",
+      cand->stream->id, cand->component->id, cand,
+      reason ? reason : "?");
+
+  agent_signal_turn_allocation_failure (cand->agent,
+      cand->stream->id, cand->component->id, from,
+      cand->turn ? &cand->turn->type : NULL, resp,
+      reason ? reason : "");
 }
 
 /*
@@ -288,8 +436,7 @@ static gboolean priv_conn_check_initiate (NiceAgent *agent, CandidateCheckPair *
    * immediately, but be put into the "triggered queue",
    * see  "7.2.1.4 Triggered Checks"
    */
-  g_get_current_time (&pair->next_tick);
-  g_time_val_add (&pair->next_tick, agent->timer_ta * 1000);
+  pair->next_tick = g_get_real_time () + (gint64) agent->timer_ta * 1000;
   priv_set_pair_state (agent, pair, NICE_CHECK_IN_PROGRESS);
   conn_check_send (agent, pair);
   return TRUE;
@@ -598,14 +745,14 @@ void conn_check_unfreeze_related (NiceAgent *agent, Stream *stream, CandidateChe
   }
 }
 
-static void priv_tick_in_progress_check (NiceAgent* agent, Stream* stream, CandidateCheckPair* p, GTimeVal *now)
+static void priv_tick_in_progress_check (NiceAgent* agent, Stream* stream, CandidateCheckPair* p, gint64 now)
 {
   if (p->stun_message.buffer == NULL) {
     GST_DEBUG_OBJECT (agent, "%u/%u: STUN connectivity check was cancelled for pair %p(%s), marking as done.",
         p->stream_id, p->component_id,
         p, p->foundation);
     priv_set_pair_state (agent, p, NICE_CHECK_FAILED);
-  } else if (priv_timer_expired (&p->next_tick, now)) {
+  } else if (priv_timer_expired (p->next_tick, now)) {
     switch (stun_timer_refresh (&p->timer)) {
     case STUN_USAGE_TIMER_RETURN_TIMEOUT:
       {
@@ -639,17 +786,15 @@ static void priv_tick_in_progress_check (NiceAgent* agent, Stream* stream, Candi
               (gchar *)p->stun_buffer);
         }
 
-        /* note: convert from milli to microseconds for g_time_val_add() */
-        p->next_tick = *now;
-        g_time_val_add (&p->next_tick, timeout * 1000);
+        /* note: convert from milli to microseconds */
+        p->next_tick = now + (gint64) timeout * 1000;
         break;
       }
     case STUN_USAGE_TIMER_RETURN_SUCCESS:
       {
         unsigned int timeout = stun_timer_remainder (&p->timer);
-        /* note: convert from milli to microseconds for g_time_val_add() */
-        p->next_tick = *now;
-        g_time_val_add (&p->next_tick, timeout * 1000);
+        /* note: convert from milli to microseconds */
+        p->next_tick = now + (gint64) timeout * 1000;
         break;
       }
     }
@@ -788,7 +933,7 @@ static void priv_nominate_highest_priority_successful_pair (NiceAgent* agent, St
   }
 }
 
-static gboolean priv_check_for_regular_nomination (NiceAgent* agent, Stream *stream, GTimeVal *now)
+static gboolean priv_check_for_regular_nomination (NiceAgent* agent, Stream *stream, gint64 now)
 {
   guint   succeeded = 0, nominated = 0;
   GSList  *i;
@@ -845,7 +990,7 @@ static gboolean priv_check_for_regular_nomination (NiceAgent* agent, Stream *str
  *
  * @return will return FALSE when no more pending timers.
  */
-static gboolean priv_conn_check_tick_stream (Stream *stream, NiceAgent *agent, GTimeVal *now)
+static gboolean priv_conn_check_tick_stream (Stream *stream, NiceAgent *agent, gint64 now)
 {
   gboolean keep_timer_going = FALSE;
   GSList *i;
@@ -897,10 +1042,10 @@ static gboolean priv_conn_check_tick_unlocked (gpointer pointer)
   NiceAgent *agent = pointer;
   gboolean keep_timer_going = FALSE;
   GSList *i, *j;
-  GTimeVal now;
+  gint64 now;
 
   /* step: process ongoing STUN transactions */
-  g_get_current_time (&now);
+  now = g_get_real_time ();
 
   /* step: find the highest priority waiting check and send it */
   for (i = agent->streams; i ; i = i->next) {
@@ -921,7 +1066,7 @@ static gboolean priv_conn_check_tick_unlocked (gpointer pointer)
   for (j = agent->streams; j; j = j->next) {
     Stream *stream = j->data;
     gboolean res =
-      priv_conn_check_tick_stream (stream, agent, &now);
+      priv_conn_check_tick_stream (stream, agent, now);
     if (res)
       keep_timer_going = res;
   }
@@ -1102,6 +1247,9 @@ static gboolean priv_conn_keepalive_tick (gpointer pointer)
 }
 
 
+static gboolean priv_turn_allocate_refresh_retransmissions_tick (gpointer pointer);
+static void priv_turn_allocate_refresh_tick_unlocked (CandidateRefresh *cand);
+
 static gboolean priv_turn_allocate_refresh_retransmissions_tick (gpointer pointer)
 {
   CandidateRefresh *cand = (CandidateRefresh *) pointer;
@@ -1132,18 +1280,43 @@ static gboolean priv_turn_allocate_refresh_retransmissions_tick (gpointer pointe
       stun_message_id (&cand->stun_message, id);
       stun_agent_forget_transaction (&cand->stun_agent, id);
 
-      agent_signal_turn_allocation_failure(cand->agent,
-                                           cand->stream->id,
-                                           cand->component->id,
-                                           &cand->server,
-                                           cand->turn ? &cand->turn->type : NULL,
-                                           NULL,
-                                           "Allocate/Refresh timed out");
+      /* A single retransmission timeout very often just means we lost
+       * a packet on the wire. Rather than tearing down the entire
+       * allocation immediately (which would manifest as "media stops
+       * after ~10 minutes" if the very first refresh happened to be
+       * lost), give it one more shot. The flag is re-armed after every
+       * successful refresh. */
+      if (cand->tolerate_one_timeout) {
+        GST_WARNING_OBJECT (agent,
+            "%u/%u: TURN refresh #%u on cand=%p timed out after %u "
+            "retransmissions; trying one more refresh before giving up",
+            cand->stream->id, cand->component->id,
+            cand->refresh_count, cand,
+            cand->timer.max_retransmissions);
+        cand->tolerate_one_timeout = FALSE;
+        priv_turn_allocate_refresh_tick_unlocked (cand);
+        agent_unlock (agent);
+        return FALSE;
+      }
+
+      GST_WARNING_OBJECT (agent,
+          "%u/%u: TURN refresh #%u on cand=%p timed out after %u "
+          "retransmissions (last lifetime %u s); tearing down allocation",
+          cand->stream->id, cand->component->id,
+          cand->refresh_count, cand,
+          cand->timer.max_retransmissions, cand->last_lifetime_s);
+
+      priv_refresh_signal_failure (cand, &cand->server, NULL,
+          "Allocate/Refresh timed out");
       refresh_cancel (cand);
       break;
     }
   case STUN_USAGE_TIMER_RETURN_RETRANSMIT:
     /* Retransmit */
+    GST_DEBUG_OBJECT (agent,
+        "%u/%u: TURN refresh #%u on cand=%p retransmit (attempt %u/%u)",
+        cand->stream->id, cand->component->id, cand->refresh_count, cand,
+        cand->timer.retransmissions, cand->timer.max_retransmissions);
     nice_socket_send (cand->nicesock, &cand->server,
                       stun_message_length (&cand->stun_message), (gchar *)cand->stun_buffer);
 
@@ -1186,7 +1359,10 @@ static void priv_turn_allocate_refresh_tick_unlocked (CandidateRefresh *cand)
 
   buffer_len = stun_usage_turn_create_refresh (&cand->stun_agent,
                                                &cand->stun_message,  cand->stun_buffer, sizeof(cand->stun_buffer),
-                                               cand->stun_resp_msg.buffer == NULL ? NULL : &cand->stun_resp_msg, -1,
+                                               cand->stun_resp_msg.buffer == NULL ? NULL : &cand->stun_resp_msg,
+                                               /* Speculative-fix #1: ask explicitly for the lifetime we want
+                                                * rather than letting the server choose. */
+                                               NICE_TURN_REQUESTED_LIFETIME,
                                                username, username_len,
                                                password, password_len,
                                                turn_compat);
@@ -1199,8 +1375,13 @@ static void priv_turn_allocate_refresh_tick_unlocked (CandidateRefresh *cand)
     cand->msn_turn_password = password;
   }
 
-  GST_DEBUG_OBJECT (cand->agent, "%u/%u: Sending allocate Refresh %u",
-      cand->stream->id, cand->component->id, buffer_len);
+  cand->refresh_count++;
+  GST_DEBUG_OBJECT (cand->agent,
+      "%u/%u: Sending TURN Refresh #%u on cand=%p (%u bytes), "
+      "last lifetime %u s, requested lifetime %u s",
+      cand->stream->id, cand->component->id,
+      cand->refresh_count, cand, (guint) buffer_len,
+      cand->last_lifetime_s, (guint) NICE_TURN_REQUESTED_LIFETIME);
 
   if (cand->tick_source != NULL) {
     g_source_destroy (cand->tick_source);
@@ -2156,9 +2337,8 @@ int conn_check_send (NiceAgent *agent, CandidateCheckPair *pair)
       }
 
       timeout = stun_timer_remainder (&pair->timer);
-      /* note: convert from milli to microseconds for g_time_val_add() */
-      g_get_current_time (&pair->next_tick);
-      g_time_val_add (&pair->next_tick, timeout * 1000);
+      /* note: convert from milli to microseconds */
+      pair->next_tick = g_get_real_time () + (gint64) timeout * 1000;
     } else {
       GST_DEBUG_OBJECT (agent, "buffer is empty, cancelling conncheck");
       pair->stun_message.buffer = NULL;
@@ -3018,11 +3198,23 @@ priv_add_new_turn_refresh (CandidateDiscovery *cdisco, NiceCandidate *relay_cand
     cand->stun_resp_msg.key = NULL;
   }
 
-  GST_DEBUG_OBJECT (agent, "%u/%u: Adding new refresh candidate %p with timeout %d",
-      cand->stream->id, cand->component->id, cand, priv_turn_lifetime_to_refresh_interval(lifetime));
+  /* Initialise robustness counters. The "tolerate one timeout" flag is
+   * enabled from the start so that a single lost Refresh request does
+   * not kill the allocation outright. */
+  cand->refresh_count = 0;
+  cand->consecutive_stale_nonce = 0;
+  cand->last_lifetime_s = lifetime;
+  cand->tolerate_one_timeout = TRUE;
+
+  GST_INFO_OBJECT (agent,
+      "%u/%u: TURN allocation succeeded on cand=%p, granted lifetime %u s, "
+      "scheduling first Refresh in %u ms, sibling refresh candidates for "
+      "this component: %u",
+      cand->stream->id, cand->component->id, cand, lifetime,
+      priv_turn_lifetime_to_refresh_interval(lifetime),
+      priv_count_sibling_refreshes (agent, cand));
 
   /* step: also start the refresh timer */
-  /* refresh should be sent 1 minute before it expires */
   cand->timer_source =
     agent_timeout_add_with_context (agent, priv_turn_lifetime_to_refresh_interval(lifetime),
                                     priv_turn_allocate_refresh_tick, cand);
@@ -3084,6 +3276,26 @@ static gboolean priv_map_reply_to_relay_request (NiceAgent *agent, StunMessage *
           /* case: successful allocate, create a new local candidate */
           NiceAddress niceaddr;
           NiceCandidate *relay_cand;
+          uint16_t resp_nonce_len = 0;
+
+          /* Cache the 200 OK Allocate response so that the freshly
+           * created refresh candidate can extract the most recent
+           * NONCE / REALM from it for its very first Refresh. The
+           * original code only stored stun_resp_msg in the 401/438
+           * error path above, which means d->stun_resp_msg still held
+           * the long-since-superseded NONCE from the unauthenticated
+           * round trip. priv_add_new_turn_refresh() copies that buffer
+           * into the new CandidateRefresh, so without this update the
+           * first Refresh would echo the stale challenge nonce rather
+           * than the one the server issued in this success response. */
+          if (stun_message_find (resp, STUN_ATTRIBUTE_NONCE, &resp_nonce_len)
+              != NULL) {
+            d->stun_resp_msg = *resp;
+            memcpy (d->stun_resp_buffer, resp->buffer,
+                    stun_message_length (resp));
+            d->stun_resp_msg.buffer = d->stun_resp_buffer;
+            d->stun_resp_msg.buffer_len = sizeof (d->stun_resp_buffer);
+          }
 
           /* Server reflexive candidates are only valid for UDP sockets */
           if (res == STUN_USAGE_TURN_RETURN_MAPPED_SUCCESS &&
@@ -3148,6 +3360,18 @@ static gboolean priv_map_reply_to_relay_request (NiceAgent *agent, StunMessage *
               nice_turn_socket_set_ms_realm(relay_cand->sockptr, &d->stun_message);
               nice_turn_socket_set_ms_connection_id(relay_cand->sockptr, resp);
             }
+          } else {
+            /* No relay candidate was created (e.g. discovery_add_relay_candidate
+             * deduplicated against an existing one or failed). In that case
+             * priv_add_new_turn_refresh() is *not* called and no allocation
+             * Refresh GSource is ever armed for this discovery, so the server
+             * will see no REFRESH traffic for the lifetime of this allocation.
+             * Log loudly so this asymmetric behaviour is visible in CI. */
+            GST_WARNING_OBJECT (agent,
+                "%u/%u: TURN allocation succeeded but no relay candidate was "
+                "created (granted lifetime %u s); skipping Refresh scheduling "
+                "for discovery=%p", d->stream->id, d->component->id,
+                lifetime, d);
           }
 
           d->stun_message.buffer = NULL;
@@ -3250,14 +3474,83 @@ static gboolean priv_map_reply_to_relay_refresh (NiceAgent *agent, StunMessage *
         stun_message_log(resp, FALSE, (struct sockaddr *)&server_address);
 
         if (res == STUN_USAGE_TURN_RETURN_RELAY_SUCCESS) {
-          /* refresh should be sent 1 minute before it expires */
+          guint32 next_ms = priv_turn_lifetime_to_refresh_interval(lifetime);
+          uint16_t old_nonce_len = 0, new_nonce_len = 0;
+          uint8_t *old_nonce = NULL, *new_nonce = NULL;
+          gboolean nonce_changed = FALSE;
+
+          /* Cache the latest successful response so that the next
+           * Refresh uses the most recent NONCE / REALM. The original
+           * code only updated stun_resp_msg in the 438 Stale Nonce error
+           * path, which means every refresh after the server rotates its
+           * nonce costs an extra 438 round trip. Worse, if anything
+           * goes wrong on that retry, the allocation is torn down. */
+          if (cand->stun_resp_msg.buffer != NULL) {
+            old_nonce = (uint8_t *) stun_message_find (&cand->stun_resp_msg,
+                STUN_ATTRIBUTE_NONCE, &old_nonce_len);
+          }
+          new_nonce = (uint8_t *) stun_message_find (resp,
+              STUN_ATTRIBUTE_NONCE, &new_nonce_len);
+          if (new_nonce != NULL) {
+            nonce_changed = (old_nonce == NULL ||
+                old_nonce_len != new_nonce_len ||
+                memcmp (old_nonce, new_nonce, new_nonce_len) != 0);
+            cand->stun_resp_msg = *resp;
+            memcpy (cand->stun_resp_buffer, resp->buffer,
+                    stun_message_length (resp));
+            cand->stun_resp_msg.buffer = cand->stun_resp_buffer;
+            cand->stun_resp_msg.buffer_len = sizeof(cand->stun_resp_buffer);
+
+            /* Push the (possibly rotated) NONCE/REALM down into the
+             * TURN socket's credential cache so that the next
+             * CHANNELBIND / CreatePermission renewal authenticates with
+             * the freshly issued NONCE instead of the previous one.
+             * Without this, the socket-level cache only updates from
+             * CHANNELBIND/CreatePermission responses and lags behind
+             * the Refresh path, causing every renewal after a Refresh
+             * to incur an avoidable 438 Stale Nonce round trip. */
+            if (cand->relay_socket != NULL)
+              nice_turn_socket_cache_realm_nonce (cand->relay_socket,
+                  &cand->stun_resp_msg);
+          }
+
+          GST_INFO_OBJECT (cand->agent,
+              "%u/%u: TURN Refresh #%u SUCCESS on cand=%p "
+              "(granted lifetime %u s, next refresh in %u ms, "
+              "nonce_changed=%d, consecutive_stale_nonce=%u)",
+              cand->stream->id, cand->component->id, cand->refresh_count,
+              cand, lifetime, next_ms,
+              nonce_changed, cand->consecutive_stale_nonce);
+
+          cand->last_lifetime_s = lifetime;
+          cand->consecutive_stale_nonce = 0;
+          /* Arm the "one free timeout" again, since we have just
+           * successfully refreshed. */
+          cand->tolerate_one_timeout = TRUE;
+
+          /* Cancel any existing long-lifetime timer before scheduling a
+           * new one. The original code overwrote cand->timer_source
+           * without destroying the previous GSource, leaking it (and,
+           * if this branch is reached twice for the same response,
+           * leaving two timers racing). */
+          if (cand->timer_source != NULL) {
+            g_source_destroy (cand->timer_source);
+            g_source_unref (cand->timer_source);
+            cand->timer_source = NULL;
+          }
           cand->timer_source =
-            agent_timeout_add_with_context (cand->agent, priv_turn_lifetime_to_refresh_interval(lifetime),
+            agent_timeout_add_with_context (cand->agent, next_ms,
                                             priv_turn_allocate_refresh_tick, cand);
 
-          g_source_destroy (cand->tick_source);
-          g_source_unref (cand->tick_source);
-          cand->tick_source = NULL;
+          if (cand->tick_source != NULL) {
+            g_source_destroy (cand->tick_source);
+            g_source_unref (cand->tick_source);
+            cand->tick_source = NULL;
+          }
+
+          /* Mark the transaction as found so that the response is not
+           * subsequently fed to the keepalive matcher. */
+          trans_found = TRUE;
         } else if (res == STUN_USAGE_TURN_RETURN_ERROR) {
           int code = -1;
           uint8_t *sent_realm = NULL;
@@ -3270,7 +3563,28 @@ static gboolean priv_map_reply_to_relay_refresh (NiceAgent *agent, StunMessage *
           recv_realm = (uint8_t *) stun_message_find (resp,
                                                       STUN_ATTRIBUTE_REALM, &recv_realm_len);
 
-          /* check for unauthorized error response */
+          /* Diagnostic log: include the parsed error code so that a
+           * field engineer can see what the server actually returned.
+           * 437 Allocation Mismatch is called out specifically because
+           * it is a common coturn failure mode (server's view of the
+           * 5-tuple's allocation has drifted from ours). */
+          {
+            int log_code = -1;
+            (void) stun_message_find_error (resp, &log_code);
+            GST_WARNING_OBJECT (cand->agent,
+                "%u/%u: TURN Refresh #%u ERROR code=%d on cand=%p "
+                "(consecutive_stale_nonce=%u, siblings=%u)%s",
+                cand->stream->id, cand->component->id, cand->refresh_count,
+                log_code, cand, cand->consecutive_stale_nonce,
+                priv_count_sibling_refreshes (cand->agent, cand),
+                log_code == 437 ?
+                " — server believes our allocation no longer exists" : "");
+          }
+
+          /* check for unauthorized error response. We re-call
+           * stun_message_find_error here (rather than reusing the
+           * value from the diagnostic log above) so that the original
+           * "did the parse succeed?" predicate is preserved exactly. */
           if (cand->agent->turn_compatibility == NICE_COMPATIBILITY_RFC5245 &&
               stun_message_get_class (resp) == STUN_ERROR &&
               stun_message_find_error (resp, &code) ==
@@ -3282,32 +3596,115 @@ static gboolean priv_map_reply_to_relay_refresh (NiceAgent *agent, StunMessage *
                  !(recv_realm_len == sent_realm_len &&
                    sent_realm != NULL &&
                    memcmp (sent_realm, recv_realm, sent_realm_len) == 0))) {
+
+              cand->consecutive_stale_nonce++;
+
+              /* Tolerate several consecutive 438/401-realm-changed
+               * responses rather than just one. coturn with a short
+               * stale-nonce can rotate the nonce again between our
+               * retry leaving and arriving. The counter is incremented
+               * above first, so when it reaches
+               * NICE_TURN_MAX_CONSECUTIVE_STALE_NONCE we have already
+               * sent that many Refresh transactions back-to-back; at
+               * that point we stop the immediate retry burst and fall
+               * back to the normal periodic Refresh cadence (handled
+               * below) so a transient stale-nonce storm cannot turn
+               * into either an unbounded retry loop *or* a silent
+               * abandonment of an otherwise live allocation. */
+              if (cand->consecutive_stale_nonce >=
+                  NICE_TURN_MAX_CONSECUTIVE_STALE_NONCE) {
+                /* The server has answered the most recent burst of
+                 * Refresh transactions with 438/401 a sustained number
+                 * of times in a row. Rather than tearing down the
+                 * refresh candidate (which would leave the allocation
+                 * un-refreshed for the rest of its lifetime and
+                 * silently abandon it), reset the consecutive counter
+                 * and re-arm a normal periodic Refresh based on the
+                 * last known lifetime. This bounds the *immediate*
+                 * retry burst to NICE_TURN_MAX_CONSECUTIVE_STALE_NONCE
+                 * transactions while still letting the agent keep
+                 * trying to refresh the allocation on the regular
+                 * cadence -- so that a transient "stale nonce storm"
+                 * (e.g. a server-side glitch or a clock/nonce re-key
+                 * race) does not permanently kill an otherwise
+                 * recoverable allocation. */
+                guint32 next_ms = priv_turn_lifetime_to_refresh_interval (
+                    cand->last_lifetime_s);
+                GST_WARNING_OBJECT (cand->agent,
+                    "%u/%u: TURN Refresh on cand=%p: %u consecutive 438/401 "
+                    "responses, backing off to periodic refresh "
+                    "(next attempt in %u ms, last_lifetime=%u s)",
+                    cand->stream->id, cand->component->id, cand,
+                    cand->consecutive_stale_nonce, next_ms,
+                    cand->last_lifetime_s);
+
+                cand->consecutive_stale_nonce = 0;
+
+                /* Cancel any in-flight retransmission tick before
+                 * re-arming the periodic timer, so we don't end up
+                 * with two timers racing for the same allocation. */
+                if (cand->tick_source != NULL) {
+                  g_source_destroy (cand->tick_source);
+                  g_source_unref (cand->tick_source);
+                  cand->tick_source = NULL;
+                }
+
+                if (cand->timer_source != NULL) {
+                  g_source_destroy (cand->timer_source);
+                  g_source_unref (cand->timer_source);
+                  cand->timer_source = NULL;
+                }
+                cand->timer_source =
+                  agent_timeout_add_with_context (cand->agent, next_ms,
+                                                  priv_turn_allocate_refresh_tick,
+                                                  cand);
+
+                trans_found = TRUE;
+                break;
+              }
+
+              GST_DEBUG_OBJECT (cand->agent,
+                  "%u/%u: TURN Refresh on cand=%p: server rotated nonce "
+                  "(code=%d), retrying with new nonce (attempt %u/%u)",
+                  cand->stream->id, cand->component->id, cand, code,
+                  cand->consecutive_stale_nonce,
+                  (guint) NICE_TURN_MAX_CONSECUTIVE_STALE_NONCE);
+
               cand->stun_resp_msg = *resp;
               memcpy (cand->stun_resp_buffer, resp->buffer,
                       stun_message_length (resp));
               cand->stun_resp_msg.buffer = cand->stun_resp_buffer;
               cand->stun_resp_msg.buffer_len = sizeof(cand->stun_resp_buffer);
+
+              /* Cancel any outstanding retransmission timer before
+               * issuing the resend, so we don't end up with two
+               * retransmission cycles racing against each other for the
+               * same allocation. The tick_source is normally cleared
+               * at the start of the retransmissions tick, but we may
+               * be reaching this branch from the inbound STUN path
+               * while a tick_source is still scheduled. */
+              if (cand->tick_source != NULL) {
+                g_source_destroy (cand->tick_source);
+                g_source_unref (cand->tick_source);
+                cand->tick_source = NULL;
+              }
+
               priv_turn_allocate_refresh_tick_unlocked (cand);
             } else {
-              agent_signal_turn_allocation_failure(cand->agent,
-                                                   cand->stream->id,
-                                                   cand->component->id,
-                                                   from,
-                                                   cand->turn ? &cand->turn->type : NULL,
-                                                   resp,
-                                                   "");
-              /* case: a real unauthorized error */
+              /* case: a real unauthorized error (or 437 Allocation
+               * Mismatch, or any non-recoverable error code with a
+               * realm). Only signal fatal failure to the application
+               * if no sibling refresh candidates for the same
+               * (stream, component) are still alive. */
+              priv_refresh_signal_failure (cand, from, resp,
+                  code == 437 ? "437 Allocation Mismatch"
+                              : "Unauthorized refresh");
               refresh_cancel (cand);
             }
           } else {
-            agent_signal_turn_allocation_failure(cand->agent,
-                                                 cand->stream->id,
-                                                 cand->component->id,
-                                                 from,
-                                                 cand->turn ? &cand->turn->type : NULL,
-                                                 resp,
-                                                 "");
-            /* case: STUN error, the check STUN context was freed */
+            /* case: STUN error, the check STUN context was freed. */
+            priv_refresh_signal_failure (cand, from, resp,
+                "Unhandled STUN refresh error");
             refresh_cancel (cand);
           }
           trans_found = TRUE;
@@ -3384,7 +3781,7 @@ static bool conncheck_stun_validater (StunAgent *agent,
 
       if (cand->password)
         pass = cand->password;
-      else if(data->stream->local_password)
+      else if (data->stream->local_password[0] != '\0')
         pass = data->stream->local_password;
 
       if (pass) {
@@ -3451,11 +3848,11 @@ static StunAgent* priv_find_stunagent_for_message (NiceAgent *agent, Stream *str
         }
       }
 
-      GST_DEBUG_OBJECT (agent, "%u/%u: *** ERROR *** unmatched stun response from [%s]:%u (%u octets):",
+      GST_WARNING_OBJECT (agent, "%u/%u: *** ERROR *** unmatched stun response from [%s]:%u (%u octets):",
           stream->id, component->id,
           fromstr, nice_address_get_port (from), len);
     } else {
-      GST_DEBUG_OBJECT (agent, "%u/%u: *** ERROR *** no transaction ID in stun response from [%s]:%u (%u octets):",
+      GST_WARNING_OBJECT (agent, "%u/%u: *** ERROR *** no transaction ID in stun response from [%s]:%u (%u octets):",
           stream->id, component->id,
           fromstr, nice_address_get_port (from), len);
     }

@@ -50,7 +50,7 @@ typedef struct
   NiceCandidateType type;   /**< candidate type STUN or TURN */
   NiceSocket *nicesock;  /**< XXX: should be taken from local cand: existing socket to use */
   NiceAddress server;       /**< STUN/TURN server address */
-  GTimeVal next_tick;       /**< next tick timestamp */
+  gint64 next_tick;         /**< next tick timestamp, wall-clock microseconds (g_get_real_time) */
   gboolean pending;         /**< is discovery in progress? */
   gboolean done;            /**< is discovery complete? */
   Stream *stream;
@@ -87,7 +87,46 @@ typedef struct
   StunMessage stun_message;
   uint8_t stun_resp_buffer[STUN_MAX_MESSAGE_SIZE];
   StunMessage stun_resp_msg;
+
+  /*
+   * Robustness counters used by the TURN refresh code.
+   *
+   * - refresh_count: how many Refresh requests we have sent on this
+   *   allocation (including resends after 438). Used in log lines so
+   *   that "is this the first refresh, or is it stuck in a retry
+   *   loop?" can be answered from the log.
+   * - consecutive_stale_nonce: how many 438/401-realm-changed responses
+   *   we have received in a row without an intervening success. Reset
+   *   to zero on any RELAY_SUCCESS response. Compared against
+   *   NICE_TURN_MAX_CONSECUTIVE_STALE_NONCE: when the counter reaches
+   *   the limit, the refresh logic backs off and re-arms the periodic
+   *   refresh instead of immediately failing the allocation.
+   * - last_lifetime_s: lifetime (seconds) granted by the most recent
+   *   successful Allocate / Refresh response. Used both for log lines
+   *   and for the release REFRESH at teardown.
+   * - tolerate_one_timeout: when TRUE, the next retransmission timeout
+   *   in priv_turn_allocate_refresh_retransmissions_tick will trigger
+   *   one extra refresh attempt rather than tearing down the
+   *   allocation. Set automatically after every successful refresh so
+   *   that a single lost refresh does not kill the allocation.
+   */
+  guint refresh_count;
+  guint consecutive_stale_nonce;
+  guint32 last_lifetime_s;
+  gboolean tolerate_one_timeout;
 } CandidateRefresh;
+
+/* How many Refresh transactions in total we will send on a single
+ * candidate while the server keeps returning 438 (Stale Nonce) /
+ * 401 (realm changed). RFC 5389 only mandates one retry, but real-world
+ * TURN servers (notably coturn with short stale-nonce values) can
+ * rotate the nonce again between our retry being sent and reaching
+ * them, so be a little more lenient — but not so lenient that a
+ * misbehaving server can keep us looping for a long time. With siblings
+ * (e.g. an RTP+RTCP pair sharing one TURN server) the total Refresh
+ * traffic generated for one component is bounded by
+ * NICE_TURN_MAX_CONSECUTIVE_STALE_NONCE * <number of sibling refreshes>. */
+#define NICE_TURN_MAX_CONSECUTIVE_STALE_NONCE 5
 
 void refresh_free_item (gpointer data, gpointer user_data);
 void refresh_free (NiceAgent *agent);

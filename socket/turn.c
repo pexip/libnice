@@ -60,7 +60,22 @@ GST_DEBUG_CATEGORY_EXTERN (niceagent_debug);
 #define STUN_MAX_MS_REALM_LEN 128 // as defined in [MS-TURN]
 #define STUN_EXPIRE_TIMEOUT 60 /* Time we refresh before expiration  */
 #define STUN_PERMISSION_TIMEOUT (300 - STUN_EXPIRE_TIMEOUT) /* 240 s */
-#define STUN_BINDING_TIMEOUT (600 - STUN_EXPIRE_TIMEOUT) /* 540 s */
+/* Refresh ChannelBind every 240 s during the 600 s lifetime, matching
+ * Chrome/WebRTC. This gives ~360 s of safety margin (vs. 60 s with the
+ * old 540 s value) for a refresh+retry to succeed before the binding
+ * actually expires server-side. */
+#define STUN_BINDING_TIMEOUT 240
+
+/* Test-only knobs. When these environment variables are set to a positive
+ * integer (in seconds) at the time the TURN socket is constructed, they
+ * override the corresponding RFC-recommended refresh/expire schedules so
+ * that the refresh code paths can be exercised quickly in unit tests
+ * (instead of waiting several minutes per cycle). NOT part of the public
+ * API and NOT for production use; values are read once at construction
+ * and cached on the TurnPriv. */
+#define ENV_NICE_TURN_BINDING_TIMEOUT     "NICE_TURN_BINDING_TIMEOUT"
+#define ENV_NICE_TURN_PERMISSION_TIMEOUT  "NICE_TURN_PERMISSION_TIMEOUT"
+#define ENV_NICE_TURN_EXPIRE_TIMEOUT      "NICE_TURN_EXPIRE_TIMEOUT"
 
 typedef struct {
   StunMessage message;
@@ -104,6 +119,22 @@ typedef struct {
   GHashTable *send_data_queues; /* stores a send data queue for per peer */
   guint permission_timeout_source;      /* timer used to invalidate
                                            permissions */
+  /* Cached long-term-credential REALM/NONCE learned from a previous
+   * authenticated TURN response. Reused on subsequent ChannelBind /
+   * CreatePermission refreshes so they go out already-authenticated
+   * instead of always doing the unauthenticated -> 401 -> authenticated
+   * round-trip. Refreshed whenever a server response carries a (possibly
+   * rotated) NONCE. */
+  uint8_t *cached_realm;
+  uint16_t cached_realm_len;
+  uint8_t *cached_nonce;
+  uint16_t cached_nonce_len;
+  /* Test-only refresh/expire timers, in seconds. Defaults match the
+   * STUN_* constants above; overridden via NICE_TURN_*_TIMEOUT env vars
+   * read once in nice_turn_socket_new(). */
+  guint binding_timeout;
+  guint permission_timeout;
+  guint expire_timeout;
 } TurnPriv;
 
 
@@ -130,6 +161,7 @@ static void priv_process_pending_bindings (TurnPriv *priv);
 static gboolean priv_retransmissions_tick_unlocked (TurnPriv *priv);
 static gboolean priv_retransmissions_tick (gpointer pointer);
 static void priv_schedule_tick (TurnPriv *priv);
+static void priv_source_remove_with_context (TurnPriv *priv, guint id);
 static void priv_send_turn_message (TurnPriv *priv, TURNMessage *msg);
 static gboolean priv_send_create_permission (TurnPriv *priv,  StunMessage *resp,
     const NiceAddress *peer);
@@ -140,6 +172,54 @@ static gboolean priv_add_channel_binding (TurnPriv *priv,
     const NiceAddress *peer);
 static gboolean priv_forget_send_request (gpointer pointer);
 static void priv_clear_permissions (TurnPriv *priv);
+
+/* Read a non-negative integer from the environment, falling back to
+ * `default_secs` if the variable is unset, empty, non-numeric, or zero.
+ * Used only for test-only refresh/expire knobs (see ENV_NICE_TURN_*). */
+static guint
+priv_env_timeout_secs (const gchar *name, guint default_secs)
+{
+  const gchar *v = g_getenv (name);
+  gchar *end = NULL;
+  guint64 parsed;
+
+  if (v == NULL || *v == '\0')
+    return default_secs;
+
+  parsed = g_ascii_strtoull (v, &end, 10);
+  if (end == v || *end != '\0' || parsed == 0 || parsed > G_MAXUINT)
+    return default_secs;
+
+  return (guint) parsed;
+}
+
+/* Cache long-term-credential REALM/NONCE attributes from a TURN response
+ * (a successful CB/CP response or a 401/438 challenge) so that subsequent
+ * refresh sends can be authenticated up-front. The cache is replaced
+ * whenever the server hands us a (possibly rotated) NONCE. */
+static void
+priv_cache_credentials (TurnPriv *priv, StunMessage *msg)
+{
+  uint16_t len = 0;
+  uint8_t *attr;
+
+  if (msg == NULL)
+    return;
+
+  attr = (uint8_t *) stun_message_find (msg, STUN_ATTRIBUTE_REALM, &len);
+  if (attr != NULL && len > 0) {
+    g_free (priv->cached_realm);
+    priv->cached_realm = g_memdup2 (attr, len);
+    priv->cached_realm_len = len;
+  }
+
+  attr = (uint8_t *) stun_message_find (msg, STUN_ATTRIBUTE_NONCE, &len);
+  if (attr != NULL && len > 0) {
+    g_free (priv->cached_nonce);
+    priv->cached_nonce = g_memdup2 (attr, len);
+    priv->cached_nonce_len = len;
+  }
+}
 
 static guint
 priv_nice_address_hash (gconstpointer data)
@@ -232,6 +312,16 @@ nice_turn_socket_new (GMainContext *ctx,
   priv->compatibility = compatibility;
   priv->send_requests = g_queue_new ();
 
+  priv->binding_timeout =
+      priv_env_timeout_secs (ENV_NICE_TURN_BINDING_TIMEOUT,
+          STUN_BINDING_TIMEOUT);
+  priv->permission_timeout =
+      priv_env_timeout_secs (ENV_NICE_TURN_PERMISSION_TIMEOUT,
+          STUN_PERMISSION_TIMEOUT);
+  priv->expire_timeout =
+      priv_env_timeout_secs (ENV_NICE_TURN_EXPIRE_TIMEOUT,
+          STUN_EXPIRE_TIMEOUT);
+
   priv->send_data_queues =
       g_hash_table_new_full (priv_nice_address_hash,
           (GEqualFunc) nice_address_equal,
@@ -263,7 +353,7 @@ socket_close (NiceSocket *sock)
   for (i = priv->channels; i; i = i->next) {
     ChannelBinding *b = i->data;
     if (b->timeout_source)
-      g_source_remove (b->timeout_source);
+      priv_source_remove_with_context (priv, b->timeout_source);
     g_free (b);
   }
   g_list_free (priv->channels);
@@ -304,7 +394,7 @@ socket_close (NiceSocket *sock)
   g_hash_table_destroy (priv->send_data_queues);
 
   if (priv->permission_timeout_source)
-    g_source_remove (priv->permission_timeout_source);
+    priv_source_remove_with_context (priv, priv->permission_timeout_source);
 
   if (priv->ctx)
     g_main_context_unref (priv->ctx);
@@ -312,6 +402,8 @@ socket_close (NiceSocket *sock)
   g_free (priv->current_binding);
   g_free (priv->current_binding_msg);
   g_free (priv->current_create_permission_msg);
+  g_free (priv->cached_realm);
+  g_free (priv->cached_nonce);
   g_free (priv->username);
   g_free (priv->password);
   g_free (priv);
@@ -351,6 +443,56 @@ priv_timeout_add_with_context (TurnPriv *priv, guint interval,
   g_source_attach (source, priv->ctx);
 
   return source;
+}
+
+/* Mirror of g_timeout_add_seconds(), but attaches the source to priv->ctx
+ * (the agent's main context) instead of the calling thread's
+ * thread-default main context. This matters because TURN response handling
+ * may run on a worker thread whose default context is never iterated --
+ * timers attached there would never fire. Returns the source ID so it can
+ * be stored alongside existing g_source_remove() callers and matched in
+ * the callback via g_source_get_id(g_main_current_source()). */
+static guint
+priv_timeout_add_seconds_with_context (TurnPriv *priv, guint interval_seconds,
+    GSourceFunc function, gpointer data)
+{
+  GSource *source;
+  guint id;
+
+  g_return_val_if_fail (function != NULL, 0);
+
+  source = g_timeout_source_new_seconds (interval_seconds);
+  g_source_set_callback (source, function, data, NULL);
+  id = g_source_attach (source, priv->ctx);
+  g_source_unref (source);
+
+  return id;
+}
+
+/* Counterpart to priv_timeout_add_seconds_with_context(): destroy a source
+ * by id while looking it up in priv->ctx. g_source_remove() only searches
+ * the thread-default context, so it cannot remove sources attached to an
+ * arbitrary GMainContext and would emit
+ * "GLib-CRITICAL: Source ID N was not found". */
+static void
+priv_source_remove_with_context (TurnPriv *priv, guint id)
+{
+  GMainContext *ctx;
+  GSource *source;
+
+  if (id == 0)
+    return;
+
+  ctx = priv->ctx ? priv->ctx : g_main_context_default ();
+  source = g_main_context_find_source_by_id (ctx, id);
+  if (source != NULL) {
+    g_source_destroy (source);
+  } else {
+    /* The source has already been destroyed (e.g. its callback returned
+     * FALSE or the context was iterated to completion). Nothing to do. */
+    GST_DEBUG ("turn: source id %u not found in ctx %p; already destroyed",
+        id, ctx);
+  }
 }
 
 static StunMessageReturn
@@ -789,9 +931,11 @@ priv_binding_timeout (gpointer data)
     ChannelBinding *b = i->data;
     if (b->timeout_source == g_source_get_id (source)) {
       b->renew = TRUE;
-      /* Install timer to expire the permission */
-      b->timeout_source = g_timeout_add_seconds (STUN_EXPIRE_TIMEOUT,
-              priv_binding_expired_timeout, priv);
+      /* Install timer to expire the permission. Must be attached to
+       * priv->ctx -- not the thread-default context -- so it actually
+       * fires when armed from a TURN response worker thread. */
+      b->timeout_source = priv_timeout_add_seconds_with_context (priv,
+          priv->expire_timeout, priv_binding_expired_timeout, priv);
       /* Send renewal */
       if (!priv->current_binding_msg)
         priv_send_channel_bind (priv, NULL, b->channel, &b->peer);
@@ -953,6 +1097,9 @@ nice_turn_socket_parse_recv (NiceSocket *sock, NiceSocket **from_sock,
                           memcmp (sent_realm, recv_realm,
                               sent_realm_len) == 0)))) {
 
+                /* Stash REALM/NONCE so the next refresh can be
+                 * authenticated up front and skip the 401 round-trip. */
+                priv_cache_credentials (priv, &msg);
                 g_free (priv->current_binding_msg);
                 priv->current_binding_msg = NULL;
                 if (binding)
@@ -966,6 +1113,9 @@ nice_turn_socket_parse_recv (NiceSocket *sock, NiceSocket **from_sock,
                 priv_process_pending_bindings (priv);
               }
             } else if (stun_message_get_class (&msg) == STUN_RESPONSE) {
+              /* Refresh cached credentials in case the server rotated
+               * the NONCE in this success response. */
+              priv_cache_credentials (priv, &msg);
               g_free (priv->current_binding_msg);
               priv->current_binding_msg = NULL;
 
@@ -980,11 +1130,14 @@ nice_turn_socket_parse_recv (NiceSocket *sock, NiceSocket **from_sock,
 
                 /* Remove any existing timer */
                 if (binding->timeout_source)
-                  g_source_remove (binding->timeout_source);
-                /* Install timer to schedule refresh of the permission */
+                  priv_source_remove_with_context (priv, binding->timeout_source);
+                /* Install timer to schedule refresh of the channel binding.
+                 * Must be attached to priv->ctx -- not the thread-default
+                 * context -- so it actually fires when armed from a TURN
+                 * response worker thread. */
                 binding->timeout_source =
-                    g_timeout_add_seconds (STUN_BINDING_TIMEOUT,
-                        priv_binding_timeout, priv);
+                    priv_timeout_add_seconds_with_context (priv,
+                        priv->binding_timeout, priv_binding_timeout, priv);
               }
               priv_process_pending_bindings (priv);
             }
@@ -1038,6 +1191,9 @@ nice_turn_socket_parse_recv (NiceSocket *sock, NiceSocket **from_sock,
                           sent_realm != NULL &&
                           memcmp (sent_realm, recv_realm,
                               sent_realm_len) == 0)))) {
+                /* Stash REALM/NONCE so the next refresh can be
+                 * authenticated up front and skip the 401 round-trip. */
+                priv_cache_credentials (priv, &msg);
                 g_free (priv->current_create_permission_msg);
                 priv->current_create_permission_msg = NULL;
                 /* resend CreatePermission */
@@ -1054,10 +1210,17 @@ nice_turn_socket_parse_recv (NiceSocket *sock, NiceSocket **from_sock,
 
             /* install timer to schedule refresh of the permission */
             /* (will not schedule refresh if we got an error) */
+            /* Must be attached to priv->ctx -- not the thread-default
+             * context -- so it actually fires when armed from a TURN
+             * response worker thread. */
             if (stun_message_get_class (&msg) == STUN_RESPONSE &&
                 !priv->permission_timeout_source) {
+              /* Refresh cached credentials in case the server rotated
+               * the NONCE in this success response. */
+              priv_cache_credentials (priv, &msg);
               priv->permission_timeout_source =
-                  g_timeout_add_seconds (STUN_PERMISSION_TIMEOUT,
+                  priv_timeout_add_seconds_with_context (priv,
+                      priv->permission_timeout,
                       priv_permission_timeout, priv);
             }
 
@@ -1424,6 +1587,19 @@ priv_send_create_permission(TurnPriv *priv, StunMessage *resp,
     nonce = (uint8_t *) stun_message_find (resp,
         STUN_ATTRIBUTE_NONCE, &nonce_len);
   }
+  /* If the response did not carry credentials (e.g. this is a refresh
+   * driven by our own timer rather than a 401/438), reuse the credentials
+   * cached from a previous authenticated exchange so the request goes out
+   * already-authenticated and avoids the unauthenticated -> 401 ->
+   * authenticated round-trip. */
+  if (realm == NULL && priv->cached_realm != NULL) {
+    realm = priv->cached_realm;
+    realm_len = priv->cached_realm_len;
+  }
+  if (nonce == NULL && priv->cached_nonce != NULL) {
+    nonce = priv->cached_nonce;
+    nonce_len = priv->cached_nonce_len;
+  }
 
   /* register this peer as being pening a permission (if not already pending) */
   if (!priv_has_sent_permission_for_peer (priv, peer)) {
@@ -1511,24 +1687,46 @@ priv_send_channel_bind (TurnPriv *priv,  StunMessage *resp,
     }
   }
 
-  if (resp) {
-    uint8_t *realm;
-    uint8_t *nonce;
+  /* Resolve REALM/NONCE: prefer the values from `resp` (a 401/438
+   * challenge or a server response) so we honour rotated nonces; fall
+   * back to the cached values learned from a prior authenticated
+   * exchange so refresh sends driven by our own timer can be
+   * authenticated up front and skip the unauthenticated -> 401 ->
+   * authenticated round-trip. */
+  {
+    uint8_t *realm = NULL;
+    uint8_t *nonce = NULL;
+    uint16_t realm_len = 0;
+    uint16_t nonce_len = 0;
     uint16_t len;
 
-    realm = (uint8_t *) stun_message_find (resp, STUN_ATTRIBUTE_REALM, &len);
+    if (resp) {
+      uint8_t *p;
+      p = (uint8_t *) stun_message_find (resp, STUN_ATTRIBUTE_REALM, &len);
+      if (p) { realm = p; realm_len = len; }
+      p = (uint8_t *) stun_message_find (resp, STUN_ATTRIBUTE_NONCE, &len);
+      if (p) { nonce = p; nonce_len = len; }
+    }
+    if (realm == NULL && priv->cached_realm != NULL) {
+      realm = priv->cached_realm;
+      realm_len = priv->cached_realm_len;
+    }
+    if (nonce == NULL && priv->cached_nonce != NULL) {
+      nonce = priv->cached_nonce;
+      nonce_len = priv->cached_nonce_len;
+    }
+
     if (realm != NULL) {
       if (stun_message_append_bytes (&msg->message, STUN_ATTRIBUTE_REALM,
-              realm, len)
+              realm, realm_len)
           != STUN_MESSAGE_RETURN_SUCCESS) {
         g_free (msg);
         return 0;
       }
     }
-    nonce = (uint8_t *) stun_message_find (resp, STUN_ATTRIBUTE_NONCE, &len);
     if (nonce != NULL) {
       if (stun_message_append_bytes (&msg->message, STUN_ATTRIBUTE_NONCE,
-              nonce, len)
+              nonce, nonce_len)
           != STUN_MESSAGE_RETURN_SUCCESS) {
         g_free (msg);
         return 0;
@@ -1678,4 +1876,16 @@ nice_turn_socket_set_ms_connection_id (NiceSocket *sock, StunMessage *msg)
     priv->ms_sequence_num = ntohl((uint32_t)*(ms_seq_num + 20));
     priv->ms_connection_id_valid = TRUE;
   }
+}
+
+void
+nice_turn_socket_cache_realm_nonce (NiceSocket *sock, StunMessage *msg)
+{
+  TurnPriv *priv;
+
+  if (sock == NULL || sock->priv == NULL || msg == NULL)
+    return;
+
+  priv = (TurnPriv *) sock->priv;
+  priv_cache_credentials (priv, msg);
 }

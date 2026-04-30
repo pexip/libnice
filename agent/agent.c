@@ -3281,13 +3281,13 @@ _priv_set_socket_tos (NiceAgent * agent, NiceSocket * sock, gint tos)
   if (sock->fileno &&
       setsockopt (g_socket_get_fd (sock->fileno), IPPROTO_IP,
           IP_TOS, (const char *) &tos, sizeof (tos)) < 0) {
-    GST_WARNING_OBJECT (agent, "Could not set socket ToS", g_strerror (errno));
+    GST_WARNING_OBJECT (agent, "Could not set socket ToS: %s", g_strerror (errno));
   }
 #ifdef IPV6_TCLASS
   if (sock->fileno &&
       setsockopt (g_socket_get_fd (sock->fileno), IPPROTO_IPV6,
           IPV6_TCLASS, (const char *) &tos, sizeof (tos)) < 0) {
-    GST_DEBUG_OBJECT (agent, "Could not set IPV6 socket ToS",
+    GST_DEBUG_OBJECT (agent, "Could not set IPV6 socket ToS: %s",
         g_strerror (errno));
   }
 #endif

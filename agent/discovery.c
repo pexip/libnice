@@ -65,11 +65,9 @@
 GST_DEBUG_CATEGORY_EXTERN (niceagent_debug);
 #define GST_CAT_DEFAULT niceagent_debug
 
-static inline int priv_timer_expired (GTimeVal *timer, GTimeVal *now)
+static inline int priv_timer_expired (gint64 timer, gint64 now)
 {
-  return (now->tv_sec == timer->tv_sec) ?
-    now->tv_usec >= timer->tv_usec :
-    now->tv_sec >= timer->tv_sec;
+  return now >= timer;
 }
 
 /*
@@ -148,6 +146,16 @@ void refresh_free_item (gpointer data, gpointer user_data)
 
   g_assert (user_data == NULL);
 
+  GST_INFO_OBJECT (agent,
+      "%u/%u: Freeing TURN refresh candidate %p "
+      "(refresh_count=%u, last_lifetime=%u s, "
+      "consecutive_stale_nonce=%u); sending REFRESH lifetime=0 to "
+      "release the allocation",
+      cand->stream ? cand->stream->id : 0,
+      cand->component ? cand->component->id : 0,
+      cand, cand->refresh_count,
+      cand->last_lifetime_s, cand->consecutive_stale_nonce);
+
   if (cand->timer_source != NULL) {
     g_source_destroy (cand->timer_source);
     g_source_unref (cand->timer_source);
@@ -189,13 +197,18 @@ void refresh_free_item (gpointer data, gpointer user_data)
     nice_address_copy_to_sockaddr(&cand->server, (struct sockaddr *)&server_address);
     stun_message_log(&cand->stun_message, TRUE, (struct sockaddr *)&server_address);
 
-    /* send the refresh twice since we won't do retransmissions */
+    /* RFC 5766 §7: the release REFRESH (lifetime=0) is purely
+     * advisory. We have already forgotten the transaction above and
+     * the server keeps its own allocation-expiry timer (last granted
+     * lifetime, max 600 s) as a backstop. Sending it twice -- which
+     * the original code did as a poor-man's retransmission -- causes
+     * TURN servers to process the duplicate as a separate request,
+     * yielding either a second STUN response that we can no longer
+     * match (logged as "*** ERROR *** unmatched stun response …") or
+     * a spurious 437 Allocation Mismatch on the duplicate when the
+     * first request has just succeeded. Send exactly once. */
     nice_socket_send (cand->nicesock, &cand->server,
         buffer_len, (gchar *)cand->stun_buffer);
-    if (!nice_socket_is_reliable (cand->nicesock)) {
-      nice_socket_send (cand->nicesock, &cand->server,
-          buffer_len, (gchar *)cand->stun_buffer);
-    }
 
   }
 
@@ -931,7 +944,9 @@ static gboolean priv_discovery_tick_unlocked (gpointer pointer)
               &cand->stun_message,  cand->stun_buffer, sizeof(cand->stun_buffer),
               cand->stun_resp_msg.buffer == NULL ? NULL : &cand->stun_resp_msg,
               STUN_USAGE_TURN_REQUEST_PORT_NORMAL,
-              -1, -1,
+              /* RFC 5766 §6.1: explicitly request LIFETIME=600 s
+               * rather than relying on the server's default. */
+              -1, 600,
               username, username_len,
               password, password_len,
               turn_compat);
@@ -966,7 +981,7 @@ static gboolean priv_discovery_tick_unlocked (gpointer pointer)
               buffer_len, (gchar *)cand->stun_buffer);
 
 	  /* case: success, start waiting for the result */
-	  g_get_current_time (&cand->next_tick);
+	  cand->next_tick = g_get_real_time ();
 
 	} else {
 	  /* case: error in starting discovery, start the next discovery */
@@ -984,16 +999,16 @@ static gboolean priv_discovery_tick_unlocked (gpointer pointer)
     }
 
     if (cand->done != TRUE) {
-      GTimeVal now;
+      gint64 now;
 
-      g_get_current_time (&now);
+      now = g_get_real_time ();
 
       if (cand->stun_message.buffer == NULL) {
 	GST_DEBUG_OBJECT (agent, "%u/%u: STUN discovery was cancelled, marking discovery done.",
             cand->stream->id, cand->component->id);
 	cand->done = TRUE;
       }
-      else if (priv_timer_expired (&cand->next_tick, &now)) {
+      else if (priv_timer_expired (cand->next_tick, now)) {
         switch (stun_timer_refresh (&cand->timer)) {
           case STUN_USAGE_TIMER_RETURN_TIMEOUT:
             {
@@ -1031,9 +1046,8 @@ static gboolean priv_discovery_tick_unlocked (gpointer pointer)
                   stun_message_length (&cand->stun_message),
                   (gchar *)cand->stun_buffer);
 
-              /* note: convert from milli to microseconds for g_time_val_add() */
-              cand->next_tick = now;
-              g_time_val_add (&cand->next_tick, timeout * 1000);
+              /* note: convert from milli to microseconds */
+              cand->next_tick = now + (gint64) timeout * 1000;
 
               ++not_done; /* note: retry later */
               break;
@@ -1042,8 +1056,7 @@ static gboolean priv_discovery_tick_unlocked (gpointer pointer)
             {
               unsigned int timeout = stun_timer_remainder (&cand->timer);
 
-              cand->next_tick = now;
-              g_time_val_add (&cand->next_tick, timeout * 1000);
+              cand->next_tick = now + (gint64) timeout * 1000;
 
               ++not_done; /* note: retry later */
               break;
