@@ -219,37 +219,33 @@ static CandidateCheckPair* priv_alloc_check_pair (NiceAgent* agent, Stream* stre
 /*
  * Test-only knob, mirroring the pattern used in socket/turn.c for
  * NICE_TURN_BINDING_TIMEOUT and NICE_TURN_PERMISSION_TIMEOUT. When this
- * environment variable is set to a positive integer (in seconds) at the
- * time the first TURN allocation is refreshed, it overrides the
- * RFC-derived schedule computed below so the allocation Refresh code
- * path can be exercised quickly in unit tests instead of waiting
- * minutes per cycle. Read once and cached for the lifetime of the
- * process. NOT part of the public API and NOT for production use.
+ * environment variable is set to a positive integer (in seconds), it
+ * overrides the RFC-derived schedule computed below so the allocation
+ * Refresh code path can be exercised quickly in unit tests instead of
+ * waiting minutes per cycle. Re-read on every refresh-interval
+ * computation so that a test that sets the variable before
+ * nice_agent_gather_candidates() is honoured even if some earlier
+ * code path in the same process already evaluated this helper before
+ * the variable was set. NOT part of the public API and NOT for
+ * production use.
  */
 #define ENV_NICE_TURN_EXPIRE_TIMEOUT "NICE_TURN_EXPIRE_TIMEOUT"
 
 static guint
 priv_turn_expire_timeout_override_secs (void)
 {
-  static gsize initialized = 0;
-  static guint cached_secs = 0;
+  const gchar *v = g_getenv (ENV_NICE_TURN_EXPIRE_TIMEOUT);
+  gchar *end = NULL;
+  guint64 parsed;
 
-  if (g_once_init_enter (&initialized)) {
-    const gchar *v = g_getenv (ENV_NICE_TURN_EXPIRE_TIMEOUT);
-    guint secs = 0;
+  if (v == NULL || *v == '\0')
+    return 0;
 
-    if (v != NULL && *v != '\0') {
-      gchar *end = NULL;
-      guint64 parsed = g_ascii_strtoull (v, &end, 10);
-      if (end != v && *end == '\0' && parsed > 0 && parsed <= G_MAXUINT)
-        secs = (guint) parsed;
-    }
+  parsed = g_ascii_strtoull (v, &end, 10);
+  if (end == v || *end != '\0' || parsed == 0 || parsed > G_MAXUINT)
+    return 0;
 
-    cached_secs = secs;
-    g_once_init_leave (&initialized, 1);
-  }
-
-  return cached_secs;
+  return (guint) parsed;
 }
 
 static guint priv_turn_lifetime_to_refresh_interval(uint32_t lifetime)
@@ -3364,6 +3360,18 @@ static gboolean priv_map_reply_to_relay_request (NiceAgent *agent, StunMessage *
               nice_turn_socket_set_ms_realm(relay_cand->sockptr, &d->stun_message);
               nice_turn_socket_set_ms_connection_id(relay_cand->sockptr, resp);
             }
+          } else {
+            /* No relay candidate was created (e.g. discovery_add_relay_candidate
+             * deduplicated against an existing one or failed). In that case
+             * priv_add_new_turn_refresh() is *not* called and no allocation
+             * Refresh GSource is ever armed for this discovery, so the server
+             * will see no REFRESH traffic for the lifetime of this allocation.
+             * Log loudly so this asymmetric behaviour is visible in CI. */
+            GST_WARNING_OBJECT (agent,
+                "%u/%u: TURN allocation succeeded but no relay candidate was "
+                "created (granted lifetime %u s); skipping Refresh scheduling "
+                "for discovery=%p", d->stream->id, d->component->id,
+                lifetime, d);
           }
 
           d->stun_message.buffer = NULL;
