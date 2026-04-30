@@ -95,16 +95,16 @@ check_invariants_for (uint32_t lifetime)
     return;
   }
 
-  /* I6: ms result must never exceed G_MAXUINT (it is fed to APIs that
-   * take `guint`). The saturation in the production formula guarantees
-   * this; assert it explicitly. */
+  /* Saturation bound: the ms result must never exceed G_MAXUINT (it is
+   * fed to APIs that take `guint`). The saturation in the production
+   * formula guarantees this; assert it explicitly. */
   g_assert_cmpuint (result_ms, <=, G_MAXUINT);
 
   /* For lifetimes whose halfway point in milliseconds would overflow
    * `guint`, the saturation clamp kicks in and I1..I3 (which are stated
    * in seconds against `lifetime`) cannot all hold simultaneously --
-   * the s/ms domains diverge. Skip them; I4 + I6 are the meaningful
-   * invariants in that regime. */
+   * the s/ms domains diverge. Skip them; I4 plus the saturation bound
+   * above are the meaningful checks in that regime. */
   if ((guint64) (lifetime / 2) * 1000u > G_MAXUINT)
     return;
 
