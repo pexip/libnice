@@ -3595,22 +3595,62 @@ static gboolean priv_map_reply_to_relay_refresh (NiceAgent *agent, StunMessage *
                * responses rather than just one. coturn with a short
                * stale-nonce can rotate the nonce again between our
                * retry leaving and arriving. The counter is incremented
-               * above first, so MAX of 4 means we send refresh
-               * transactions 1..MAX (the original + MAX-1 retries) and
-               * tear down once the MAX-th transaction has also been
-               * answered with 438/401, before scheduling another. This
-               * bounds the total Refresh transactions sent on this
-               * allocation to NICE_TURN_MAX_CONSECUTIVE_STALE_NONCE. */
+               * above first, so when it reaches
+               * NICE_TURN_MAX_CONSECUTIVE_STALE_NONCE we have already
+               * sent that many Refresh transactions back-to-back; at
+               * that point we stop the immediate retry burst and fall
+               * back to the normal periodic Refresh cadence (handled
+               * below) so a transient stale-nonce storm cannot turn
+               * into either an unbounded retry loop *or* a silent
+               * abandonment of an otherwise live allocation. */
               if (cand->consecutive_stale_nonce >=
                   NICE_TURN_MAX_CONSECUTIVE_STALE_NONCE) {
+                /* The server has answered the most recent burst of
+                 * Refresh transactions with 438/401 a sustained number
+                 * of times in a row. Rather than tearing down the
+                 * refresh candidate (which would leave the allocation
+                 * un-refreshed for the rest of its lifetime and
+                 * silently abandon it), reset the consecutive counter
+                 * and re-arm a normal periodic Refresh based on the
+                 * last known lifetime. This bounds the *immediate*
+                 * retry burst to NICE_TURN_MAX_CONSECUTIVE_STALE_NONCE
+                 * transactions while still letting the agent keep
+                 * trying to refresh the allocation on the regular
+                 * cadence -- so that a transient "stale nonce storm"
+                 * (e.g. a server-side glitch or a clock/nonce re-key
+                 * race) does not permanently kill an otherwise
+                 * recoverable allocation. */
+                guint32 next_ms = priv_turn_lifetime_to_refresh_interval (
+                    cand->last_lifetime_s);
                 GST_WARNING_OBJECT (cand->agent,
                     "%u/%u: TURN Refresh on cand=%p: %u consecutive 438/401 "
-                    "responses, giving up on this candidate",
+                    "responses, backing off to periodic refresh "
+                    "(next attempt in %u ms, last_lifetime=%u s)",
                     cand->stream->id, cand->component->id, cand,
-                    cand->consecutive_stale_nonce);
-                priv_refresh_signal_failure (cand, from, resp,
-                    "Too many consecutive Stale Nonce responses");
-                refresh_cancel (cand);
+                    cand->consecutive_stale_nonce, next_ms,
+                    cand->last_lifetime_s);
+
+                cand->consecutive_stale_nonce = 0;
+
+                /* Cancel any in-flight retransmission tick before
+                 * re-arming the periodic timer, so we don't end up
+                 * with two timers racing for the same allocation. */
+                if (cand->tick_source != NULL) {
+                  g_source_destroy (cand->tick_source);
+                  g_source_unref (cand->tick_source);
+                  cand->tick_source = NULL;
+                }
+
+                if (cand->timer_source != NULL) {
+                  g_source_destroy (cand->timer_source);
+                  g_source_unref (cand->timer_source);
+                  cand->timer_source = NULL;
+                }
+                cand->timer_source =
+                  agent_timeout_add_with_context (cand->agent, next_ms,
+                                                  priv_turn_allocate_refresh_tick,
+                                                  cand);
+
                 trans_found = TRUE;
                 break;
               }
