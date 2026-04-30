@@ -99,8 +99,8 @@ typedef struct
    *   we have received in a row without an intervening success. Reset
    *   to zero on any RELAY_SUCCESS response. Compared against
    *   NICE_TURN_MAX_CONSECUTIVE_STALE_NONCE: when the counter reaches
-   *   the limit the refresh GSource is stopped and the allocation is
-   *   marked failed instead of scheduling another Refresh transaction.
+   *   the limit, the refresh logic backs off and re-arms the periodic
+   *   refresh instead of immediately failing the allocation.
    * - last_lifetime_s: lifetime (seconds) granted by the most recent
    *   successful Allocate / Refresh response. Used both for log lines
    *   and for the release REFRESH at teardown.
