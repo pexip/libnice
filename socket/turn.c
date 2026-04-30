@@ -1877,3 +1877,15 @@ nice_turn_socket_set_ms_connection_id (NiceSocket *sock, StunMessage *msg)
     priv->ms_connection_id_valid = TRUE;
   }
 }
+
+void
+nice_turn_socket_cache_realm_nonce (NiceSocket *sock, StunMessage *msg)
+{
+  TurnPriv *priv;
+
+  if (sock == NULL || sock->priv == NULL || msg == NULL)
+    return;
+
+  priv = (TurnPriv *) sock->priv;
+  priv_cache_credentials (priv, msg);
+}

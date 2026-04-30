@@ -71,6 +71,15 @@ nice_turn_socket_set_ms_realm(NiceSocket *sock, StunMessage *msg);
 void
 nice_turn_socket_set_ms_connection_id (NiceSocket *sock, StunMessage *msg);
 
+/* Update the TURN socket's cached long-term-credential REALM/NONCE
+ * from a TURN response observed at a higher layer (e.g. a successful
+ * Refresh response handled by the agent). Keeping this cache in sync
+ * with the most recently rotated NONCE ensures that subsequent
+ * CHANNELBIND / CreatePermission renewals authenticate up-front
+ * instead of having to recover from a 438 Stale Nonce. */
+void
+nice_turn_socket_cache_realm_nonce (NiceSocket *sock, StunMessage *msg);
+
 
 G_END_DECLS
 

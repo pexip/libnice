@@ -3492,6 +3492,18 @@ static gboolean priv_map_reply_to_relay_refresh (NiceAgent *agent, StunMessage *
                     stun_message_length (resp));
             cand->stun_resp_msg.buffer = cand->stun_resp_buffer;
             cand->stun_resp_msg.buffer_len = sizeof(cand->stun_resp_buffer);
+
+            /* Push the (possibly rotated) NONCE/REALM down into the
+             * TURN socket's credential cache so that the next
+             * CHANNELBIND / CreatePermission renewal authenticates with
+             * the freshly issued NONCE instead of the previous one.
+             * Without this, the socket-level cache only updates from
+             * CHANNELBIND/CreatePermission responses and lags behind
+             * the Refresh path, causing every renewal after a Refresh
+             * to incur an avoidable 438 Stale Nonce round trip. */
+            if (cand->relay_socket != NULL)
+              nice_turn_socket_cache_realm_nonce (cand->relay_socket,
+                  &cand->stun_resp_msg);
           }
 
           GST_INFO_OBJECT (cand->agent,
