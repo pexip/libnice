@@ -3280,6 +3280,26 @@ static gboolean priv_map_reply_to_relay_request (NiceAgent *agent, StunMessage *
           /* case: successful allocate, create a new local candidate */
           NiceAddress niceaddr;
           NiceCandidate *relay_cand;
+          uint16_t resp_nonce_len = 0;
+
+          /* Cache the 200 OK Allocate response so that the freshly
+           * created refresh candidate can extract the most recent
+           * NONCE / REALM from it for its very first Refresh. The
+           * original code only stored stun_resp_msg in the 401/438
+           * error path above, which means d->stun_resp_msg still held
+           * the long-since-superseded NONCE from the unauthenticated
+           * round trip. priv_add_new_turn_refresh() copies that buffer
+           * into the new CandidateRefresh, so without this update the
+           * first Refresh would echo the stale challenge nonce rather
+           * than the one the server issued in this success response. */
+          if (stun_message_find (resp, STUN_ATTRIBUTE_NONCE, &resp_nonce_len)
+              != NULL) {
+            d->stun_resp_msg = *resp;
+            memcpy (d->stun_resp_buffer, resp->buffer,
+                    stun_message_length (resp));
+            d->stun_resp_msg.buffer = d->stun_resp_buffer;
+            d->stun_resp_msg.buffer_len = sizeof (d->stun_resp_buffer);
+          }
 
           /* Server reflexive candidates are only valid for UDP sockets */
           if (res == STUN_USAGE_TURN_RETURN_MAPPED_SUCCESS &&
