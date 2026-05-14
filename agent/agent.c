@@ -2066,6 +2066,35 @@ nice_agent_add_stream_local_address_from_string (NiceAgent * agent,
   return nice_agent_add_stream_local_address (agent, stream_id, &nice_addr);
 }
 
+NICEAPI_EXPORT gboolean
+nice_agent_clear_stream_local_addresses (NiceAgent * agent, guint stream_id)
+{
+  gboolean result = FALSE;
+  Stream *stream;
+  GSList *item;
+
+  agent_lock (agent);
+
+  stream = agent_find_stream (agent, stream_id);
+
+  if (!stream) {
+    goto done;
+  }
+
+  for (item = stream->local_addresses; item; item = g_slist_next (item)) {
+    NiceAddress *address = item->data;
+    nice_address_free (address);
+  }
+  g_slist_free (stream->local_addresses);
+  stream->local_addresses = NULL;
+
+  result = TRUE;
+
+done:
+  agent_unlock (agent);
+  return result;
+}
+
 /* Recompute foundations of all candidate pairs from a given stream
  * having a specific remote candidate, and eventually update the
  * priority of the selected pair as well.
