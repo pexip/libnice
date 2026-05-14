@@ -349,6 +349,22 @@ NICE_EXPORT gboolean
 nice_agent_add_stream_local_address (NiceAgent *agent, guint stream_id, NiceAddress *addr);
 
 /**
+ * nice_agent_clear_stream_local_addresses:
+ * @agent: The #NiceAgent Object
+ * @stream_id: The stream whose local addresses should be cleared
+ *
+ * Remove all local addresses that were previously configured on the
+ * stream @stream_id with nice_agent_add_stream_local_address() or
+ * nice_agent_add_stream_local_address_from_string(). After this call,
+ * new local addresses may be added to replace the cleared ones.
+ *
+ * See also: nice_agent_add_stream_local_address()
+ * Returns: %TRUE on success, %FALSE if the stream id is invalid
+ */
+NICE_EXPORT gboolean
+nice_agent_clear_stream_local_addresses (NiceAgent *agent, guint stream_id);
+
+/**
  * nice_agent_add_stream_local_address_from_string:
  * @agent: The #NiceAgent Object
  * @stream_id: The stream for this address
