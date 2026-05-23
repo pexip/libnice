@@ -246,6 +246,26 @@ typedef enum
   NICE_PROXY_TYPE_LAST = NICE_PROXY_TYPE_HTTP,
 } NiceProxyType;
 
+/**
+ * NiceInterfaceFlags:
+ * @NICE_INTERFACE_NONE: No special properties for this interface.
+ * @NICE_INTERFACE_METERED: The interface is metered (e.g. cellular data),
+ *  and should be deprioritized relative to non-metered interfaces when
+ *  computing host candidate priorities.
+ *
+ * Flags describing properties of a local interface address, passed to
+ * nice_agent_add_local_address_full(). Together with the per-address
+ * @preference value, the flags influence the @local_preference component
+ * of the ICE host candidate priority (RFC 5245 section 4.1.2).
+ *
+ * Since: 0.1.4
+ */
+typedef enum
+{
+  NICE_INTERFACE_NONE    = 0,
+  NICE_INTERFACE_METERED = 1 << 0,
+} NiceInterfaceFlags;
+
 
 /**
  * NiceAgentRecvFunc:
@@ -312,6 +332,36 @@ nice_agent_new (GMainContext *ctx, NiceCompatibility compat, NiceCompatibility t
  */
 NICE_EXPORT gboolean
 nice_agent_add_local_address (NiceAgent *agent, NiceAddress *addr);
+
+/**
+ * nice_agent_add_local_address_full: (skip)
+ * @agent: The #NiceAgent Object
+ * @addr: The address to listen to
+ * If the port is 0, then a random port will be chosen by the system
+ * @preference: An additional value added to the @local_preference of every
+ *  host candidate derived from @addr. Use this to bias candidate ordering
+ *  between interfaces (higher values are preferred). Pass 0 to keep the
+ *  default behaviour.
+ * @flags: Bitmask of #NiceInterfaceFlags describing properties of @addr.
+ *  In particular, %NICE_INTERFACE_METERED causes host candidates derived
+ *  from @addr to be deprioritized so that non-metered interfaces are tried
+ *  first during ICE connectivity checks.
+ *
+ * Like nice_agent_add_local_address(), but additionally records a
+ * per-interface @preference offset and a set of @flags that feed into the
+ * @local_preference component of the ICE priority of the host candidates
+ * derived from @addr.
+ *
+ * If @addr has already been added (with this function or the simpler
+ * variants), the new @preference and @flags replace any previously
+ * configured values for that interface.
+ *
+ * See also: nice_agent_add_local_address(), nice_agent_gather_candidates()
+ * Returns: %TRUE on success, %FALSE on fatal (memory allocation) errors
+ */
+NICE_EXPORT gboolean
+nice_agent_add_local_address_full (NiceAgent *agent, NiceAddress *addr,
+    guint preference, NiceInterfaceFlags flags);
 
 /**
  * nice_agent_add_local_address_from_string:

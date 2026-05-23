@@ -289,6 +289,9 @@ agent_candidate_ice_priority (NiceAgent * agent,
   guint other_preference = 0;
   guint direction_preference = 0;
   guint local_preference = 0;
+  guint extra_preference = 0;
+  NiceInterfaceFlags addr_flags = NICE_INTERFACE_NONE;
+  GSList *item;
 
 #if AGENT_EXTENDED_TURN_CANDIDATE_LOGGING
   if (type == NICE_CANDIDATE_TYPE_RELAYED){
@@ -341,7 +344,31 @@ agent_candidate_ice_priority (NiceAgent * agent,
       break;
 
   }
-  local_preference = (2 << 13) * direction_preference + other_preference;
+
+  /* Look up any per-interface preference/flags configured through
+   * nice_agent_add_local_address_full(). These bias the local_preference
+   * portion of the priority so applications can order interfaces
+   * explicitly (via @preference) and deprioritize undesirable interfaces
+   * such as metered cellular links (via NICE_INTERFACE_METERED). */
+  for (item = agent->local_address_info; item; item = g_slist_next (item)) {
+    NiceAgentLocalAddress *info = item->data;
+
+    if (nice_address_equal_full (&info->addr, &candidate->base_addr, FALSE)) {
+      extra_preference = info->preference;
+      addr_flags = info->flags;
+      break;
+    }
+  }
+
+  /* Metered interfaces lose the transport direction bonus, dropping them
+   * below any non-metered candidate of the same type regardless of
+   * transport. The per-address @preference still applies, so applications
+   * can order multiple metered interfaces relative to each other. */
+  if (addr_flags & NICE_INTERFACE_METERED)
+    direction_preference = 0;
+
+  local_preference = (2 << 13) * direction_preference + other_preference
+      + extra_preference;
 
   /* return _candidate_ice_priority (type_preference, 1, candidate->component_id); */
   return priv_agent_candidate_ice_priority_full (type_preference,
@@ -1945,9 +1972,18 @@ nice_agent_set_transport (NiceAgent * agent,
 NICEAPI_EXPORT gboolean
 nice_agent_add_local_address (NiceAgent * agent, NiceAddress * addr)
 {
+  return nice_agent_add_local_address_full (agent, addr, 0,
+      NICE_INTERFACE_NONE);
+}
+
+NICEAPI_EXPORT gboolean
+nice_agent_add_local_address_full (NiceAgent * agent, NiceAddress * addr,
+    guint preference, NiceInterfaceFlags flags)
+{
   NiceAddress *dup;
   gboolean found = FALSE;
   GSList *item;
+  NiceAgentLocalAddress *info;
 
   agent_lock (agent);
 
@@ -1968,6 +2004,29 @@ nice_agent_add_local_address (NiceAgent * agent, NiceAddress * addr)
   } else {
     nice_address_free (dup);
   }
+
+  /* Record per-address preference/flags so the host candidate priority
+   * computation can pick them up later. If the same address is added more
+   * than once, the latest values win. */
+  info = NULL;
+  for (item = agent->local_address_info; item; item = g_slist_next (item)) {
+    NiceAgentLocalAddress *existing = item->data;
+
+    if (nice_address_equal_full (&existing->addr, addr, FALSE)) {
+      info = existing;
+      break;
+    }
+  }
+
+  if (info == NULL) {
+    info = g_slice_new0 (NiceAgentLocalAddress);
+    info->addr = *addr;
+    nice_address_set_port (&info->addr, 0);
+    agent->local_address_info =
+        g_slist_append (agent->local_address_info, info);
+  }
+  info->preference = preference;
+  info->flags = flags;
 
   agent_unlock (agent);
   return TRUE;
@@ -2721,6 +2780,13 @@ nice_agent_dispose (GObject * object)
 
   g_slist_free (agent->local_addresses);
   agent->local_addresses = NULL;
+
+  for (i = agent->local_address_info; i; i = i->next) {
+    g_slice_free (NiceAgentLocalAddress, i->data);
+  }
+
+  g_slist_free (agent->local_address_info);
+  agent->local_address_info = NULL;
 
   for (i = agent->streams; i; i = i->next) {
     Stream *s = i->data;

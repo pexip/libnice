@@ -77,6 +77,18 @@
 
 #define NICE_COMPONENT_MAX_VALID_CANDIDATES 50 /* maximum number of validates remote candidates to keep, the number is arbitrary but hopefully large enough */
 
+typedef struct _NiceAgentLocalAddress NiceAgentLocalAddress;
+
+/* Per-address configuration recorded by nice_agent_add_local_address_full();
+ * used to influence the local_preference part of the host candidate ICE
+ * priority for candidates derived from this base address. */
+struct _NiceAgentLocalAddress
+{
+  NiceAddress addr;
+  guint preference;
+  NiceInterfaceFlags flags;
+};
+
 struct _NiceAgent
 {
   GObject parent;                 /* gobject pointer */
@@ -106,6 +118,12 @@ struct _NiceAgent
 
   GSList *local_addresses;        /* list of NiceAddresses for local
                                      interfaces */
+  GSList *local_address_info;     /* list of NiceAgentLocalAddress *, one
+                                     entry per address added through
+                                     nice_agent_add_local_address_full(),
+                                     used to plumb per-address preference
+                                     and flags into host candidate priority
+                                     computation */
   GSList *streams;                /* list of Stream objects */
   GMainContext *main_context;     /* main context pointer */
   guint next_candidate_id;        /* id of next created candidate */
