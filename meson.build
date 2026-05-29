@@ -33,21 +33,9 @@ gst_deps = [
   dependency('gstreamer-net-1.0', version : gst_req, fallback : ['gst-plugins-base', 'net_dep']),
 ]
 
+winsock2_dep = cc.find_library('ws2_32', required: host_system == 'windows')
+iphlpapi_dep = cc.find_library('iphlpapi', required: host_system == 'windows')
 openssl_dep = dependency('openssl', version : '>= 1.0.1', required : false)
-if not openssl_dep.found()
-  libeay32_dep = cc.find_library('libeay32', required : false)
-  ssleay32_dep = cc.find_library('ssleay32', required : false)
-  if libeay32_dep.found() and ssleay32_dep.found()
-    openssl_dep = declare_dependency (dependencies : [libeay32_dep, ssleay32_dep])
-  endif
-endif
-
-if host_system == 'windows'
-  winsock2_dep = cc.find_library('ws2_32')
-  iphlpapi_dep = cc.find_library('iphlpapi')
-  crypt32_dep = cc.find_library('Crypt32', required : false)
-  openssl_dep = declare_dependency(dependencies : [openssl_dep, crypt32_dep])
-endif
 
 install_dir = get_option('libdir')
 plugins_install_dir = '@0@/gstreamer-1.0'.format(install_dir)
