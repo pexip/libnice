@@ -149,6 +149,9 @@ component_restart (Component *cmp);
 void
 component_update_selected_pair (NiceAgent *agent, Component *component, NiceCandidate* local, NiceCandidate* remote, guint64 priority);
 
+gboolean
+component_invalidate_selected_pair_if_local (Component *component, NiceCandidate *candidate);
+
 NiceCandidate *
 component_find_remote_candidate (const Component *component, const NiceAddress *addr, NiceCandidateTransport transport);
 

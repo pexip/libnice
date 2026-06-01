@@ -1605,6 +1605,8 @@ nice_agent_gather_candidates (NiceAgent * agent, guint stream_id)
         discovery_prune_local_candidate (agent, candidate);
         refresh_prune_local_candidate (agent, candidate);
 
+        component_invalidate_selected_pair_if_local (component, candidate);
+
         component->local_candidates = g_slist_remove (component->local_candidates, candidate);
         nice_candidate_free (candidate);
         g_free (candidate_s);

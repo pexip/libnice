@@ -254,6 +254,35 @@ void component_update_selected_pair (NiceAgent* agent, Component *component, Nic
 }
 
 /*
+ * Invalidates the component's selected pair if it references the given
+ * local candidate, so that selected_pair.local is never read after the
+ * candidate is freed (e.g. when pruning candidates on interfaces that no
+ * longer exist during a re-gather). If the selected pair is invalidated,
+ * its keepalive timer source is torn down to avoid a leak/use-after-free.
+ *
+ * @return TRUE if the selected pair was invalidated, FALSE otherwise
+ */
+gboolean
+component_invalidate_selected_pair_if_local (Component *component,
+    NiceCandidate *candidate)
+{
+  g_assert (component);
+
+  if (component->selected_pair.local != candidate)
+    return FALSE;
+
+  if (component->selected_pair.keepalive.tick_source != NULL) {
+    g_source_destroy (component->selected_pair.keepalive.tick_source);
+    g_source_unref (component->selected_pair.keepalive.tick_source);
+    component->selected_pair.keepalive.tick_source = NULL;
+  }
+
+  memset (&component->selected_pair, 0, sizeof(CandidatePair));
+
+  return TRUE;
+}
+
+/*
  * Finds a remote candidate with matching address and
  * transport.
  *
