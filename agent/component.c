@@ -412,11 +412,10 @@ nice_component_add_valid_candidate (NiceAgent *agent, Component *component,
     const NiceCandidate *candidate)
 {
   guint count = 0;
-  GList *item, *last = NULL;
+  GList *item;
 
   for (item = component->valid_candidates; item; item = item->next) {
     NiceCandidate *cand = item->data;
-    last = item;
     count++;
     if (nice_candidate_equal_target (cand, candidate))
       return;
@@ -436,10 +435,29 @@ nice_component_add_valid_candidate (NiceAgent *agent, Component *component,
    * we just keep the list not too long.
    */
   if (count > NICE_COMPONENT_MAX_VALID_CANDIDATES) {
-    NiceCandidate *cand = last->data;
-    component->valid_candidates = g_list_delete_link (
-        component->valid_candidates, last);
-    nice_candidate_free (cand);
+    GList *victim = NULL;
+    GList *i;
+
+    /* Never evict the nominated pair's remote. It is only promoted to the head
+       once media arrives, so under a flood of peer-reflexive candidates it can
+       age out before the first packet - after which every packet from it is
+       rejected by nice_component_verify_remote_candidate() for the whole call. */
+    for (i = g_list_last (component->valid_candidates); i; i = i->prev) {
+      NiceCandidate *cand = i->data;
+
+      if (component->selected_pair.remote != NULL &&
+          nice_candidate_equal_target (cand, component->selected_pair.remote))
+        continue;
+      victim = i;
+      break;
+    }
+
+    if (victim != NULL) {
+      NiceCandidate *cand = victim->data;
+      component->valid_candidates = g_list_delete_link (
+          component->valid_candidates, victim);
+      nice_candidate_free (cand);
+    }
   }
 }
 
@@ -471,5 +489,29 @@ nice_component_verify_remote_candidate (Component *component,
       return TRUE;
     }
   }
+
+  /* The caller drops silently, so make this visible: first occurrence and then
+     every 1000th, with the list we are actually matching against. */
+  component->verify_failures++;
+  if (component->verify_failures == 1 ||
+      (component->verify_failures % 1000) == 0) {
+    char from_str[INET6_ADDRSTRLEN];
+    GString *valid = g_string_new (NULL);
+
+    nice_address_to_string (address, from_str);
+    for (item = component->valid_candidates; item; item = item->next) {
+      NiceCandidate *cand = item->data;
+      char cand_str[INET6_ADDRSTRLEN];
+
+      nice_address_to_string (&cand->addr, cand_str);
+      g_string_append_printf (valid, "%s:%u(type %d) ", cand_str,
+          nice_address_get_port (&cand->addr), cand->type);
+    }
+    GST_WARNING ("verify_remote_candidate FAILED (%u dropped): from %s:%u "
+        "sock %p valid_candidates=[%s]", component->verify_failures, from_str,
+        nice_address_get_port (address), nicesock, valid->str);
+    g_string_free (valid, TRUE);
+  }
+
   return FALSE;
 }
