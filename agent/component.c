@@ -504,10 +504,10 @@ nice_component_verify_remote_candidate (Component *component,
       char cand_str[INET6_ADDRSTRLEN];
 
       nice_address_to_string (&cand->addr, cand_str);
-      g_string_append_printf (valid, "%s:%u(type %d) ", cand_str,
+      g_string_append_printf (valid, "[%s]:%u(type %d) ", cand_str,
           nice_address_get_port (&cand->addr), cand->type);
     }
-    GST_WARNING ("verify_remote_candidate FAILED (%u dropped): from %s:%u "
+    GST_WARNING ("verify_remote_candidate FAILED (%u dropped): from [%s]:%u "
         "sock %p valid_candidates=[%s]", component->verify_failures, from_str,
         nice_address_get_port (address), nicesock, valid->str);
     g_string_free (valid, TRUE);
