@@ -36,14 +36,25 @@ test('turn-timeout-env', test_turn_timeout_env,
   timeout : 10,
 )
 
-# Unlike the three above, this one links libnice: it calls the real
+# Unlike the three above, this one calls the real
 # nice_component_add_valid_candidate() / nice_component_verify_remote_candidate()
 # rather than mirroring them, so it cannot drift from the code it guards.
-test_valid_candidate_eviction = executable('test-valid-candidate-eviction',
-  'test-valid-candidate-eviction.c',
-  include_directories : [config_h_inc, libnice_incdir],
-  dependencies : [libagent_dep],
-)
-test('valid-candidate-eviction', test_valid_candidate_eviction,
-  timeout : 10,
-)
+# Those are internal symbols with no NICEAPI_EXPORT, so MSVC resolves nothing for
+# them from nice.lib; link the agent objects directly rather than the library.
+#
+# It is also the only executable here that pulls in GStreamer, and a static
+# GStreamer requires the executable to supply gst_init_static_plugins(), which
+# nothing in libnice does. The logic under test is platform independent, so
+# build it for the shared-library configuration only.
+if not static_build
+  test_valid_candidate_eviction = executable('test-valid-candidate-eviction',
+    'test-valid-candidate-eviction.c',
+    include_directories : [config_h_inc, libnice_incdir, include_directories('../agent')],
+    objects : libagent.extract_all_objects(recursive : false),
+    dependencies : libagent_deps,
+    c_args : libagent_cargs,
+  )
+  test('valid-candidate-eviction', test_valid_candidate_eviction,
+    timeout : 10,
+  )
+endif
