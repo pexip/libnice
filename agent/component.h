@@ -132,6 +132,7 @@ struct _Component
   gboolean writable;
   gboolean peer_gathering_done;
   gboolean fallback_mode;      /* in this case, accepts packets from all, ignore candidate validation */
+  guint verify_failures;       /* count of packets dropped by verify_remote_candidate */
 };
 
 Component *

@@ -35,3 +35,15 @@ test_turn_timeout_env = executable('test-turn-timeout-env',
 test('turn-timeout-env', test_turn_timeout_env,
   timeout : 10,
 )
+
+# Unlike the three above, this one links libnice: it calls the real
+# nice_component_add_valid_candidate() / nice_component_verify_remote_candidate()
+# rather than mirroring them, so it cannot drift from the code it guards.
+test_valid_candidate_eviction = executable('test-valid-candidate-eviction',
+  'test-valid-candidate-eviction.c',
+  include_directories : [config_h_inc, libnice_incdir],
+  dependencies : [libagent_dep],
+)
+test('valid-candidate-eviction', test_valid_candidate_eviction,
+  timeout : 10,
+)
