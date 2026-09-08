@@ -249,13 +249,16 @@ gst_nice_sink_on_overflow (GstNiceSink * sink,
   if (stream_id == sink->stream_id && component_id == sink->component_id) {
     GST_DEBUG_OBJECT (sink, "Sink overflow for stream %d, component %d", stream_id, component_id);
 
+    GstPad * sinkpad = GST_BASE_SINK_PAD (sink);
+    gst_object_ref(sinkpad);
 #if GST_CHECK_VERSION (1,0,0)
-    gst_pad_push_event (GST_BASE_SINK_PAD (sink),
+    gst_pad_push_event (sinkpad,
         gst_event_new_custom (GST_EVENT_CUSTOM_UPSTREAM, gst_structure_new_empty ("PexQosOverflow")));
 #else
-    gst_pad_push_event (GST_BASE_SINK_PAD (sink),
+    gst_pad_push_event (sinkpad,
         gst_event_new_custom (GST_EVENT_CUSTOM_UPSTREAM, gst_structure_new_empty ("PexQosOverflow")));
 #endif
+    gst_object_unref(sinkpad);
   }
 }
 
@@ -267,14 +270,16 @@ gst_nice_sink_on_writable (GstNiceSink * sink,
 
   if (stream_id == sink->stream_id && component_id == sink->component_id) {
     GST_DEBUG_OBJECT (sink, "Sink underflow for stream %d, component %d", stream_id, component_id);
-
+    GstPad * sinkpad = GST_BASE_SINK_PAD (sink);
+    gst_object_ref(sinkpad);
 #if GST_CHECK_VERSION (1,0,0)
-    gst_pad_push_event (GST_BASE_SINK_PAD (sink),
+    gst_pad_push_event (sinkpad,
         gst_event_new_custom (GST_EVENT_CUSTOM_UPSTREAM, gst_structure_new_empty ("PexQosUnderflow")));
 #else
-    gst_pad_push_event (GST_BASE_SINK_PAD (sink),
+    gst_pad_push_event (sinkpad,
         gst_event_new_custom (GST_EVENT_CUSTOM_UPSTREAM, gst_structure_new_empty ("PexQosUnderflow")));
 #endif
+    gst_object_unref(sinkpad);
   }
 }
 
