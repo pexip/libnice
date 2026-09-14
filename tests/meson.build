@@ -58,3 +58,21 @@ if not static_build
     timeout : 10,
   )
 endif
+
+# Exercises GstNiceSink's handling of nice_agent_send() failures. It links
+# the plugin's sink object directly (the plugin is a GStreamer plugin, not a
+# library with public symbols) together with the agent, and needs the sink's
+# header. Like the test above it pulls in GStreamer, so it is only built for
+# the shared-library configuration.
+if not static_build
+  test_nicesink_send_failure = executable('test-nicesink-send-failure',
+    'test-nicesink-send-failure.c',
+    include_directories : [config_h_inc, libnice_incdir,
+      include_directories('../gst')],
+    objects : gstnice.extract_objects('gstnicesink.c'),
+    dependencies : [libagent_dep, glib_deps, gst_deps],
+  )
+  test('nicesink-send-failure', test_nicesink_send_failure,
+    timeout : 30,
+  )
+endif
