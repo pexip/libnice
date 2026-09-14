@@ -69,6 +69,23 @@ struct _GstNiceSink
   gulong overflow_hid;
   gulong writable_hid;
 
+  /* Send failure tracking. Only touched from the streaming thread
+   * (render()) and from property getters. */
+  gboolean send_failing;
+  gboolean escalated;
+  guint64 failure_run_packets;
+  guint64 failure_run_bytes;
+  gint64 failure_run_start;
+  gint64 failure_last_report;
+
+  /* Diagnostics */
+  guint64 send_failures;
+  gint last_send_error;
+
+  /* Optional escalation, disabled by default */
+  gboolean error_on_sustained_failure;
+  guint sustained_failure_timeout;
+
   gboolean signal_disconnection_complete;
   GCond signal_disconnection_complete_cond;
   GMutex signal_disconnection_complete_mutex;
